@@ -124,25 +124,6 @@ export async function activateTask(taskId: string) {
         to_status: "ACTIVE",
     });
 
-    // Notify the user via email if available
-    if (resend && user.email) {
-        try {
-            await resend.emails.send({
-                from: "Vouch <notifications@vouch.tarun.dev>",
-                to: user.email,
-                subject: "Task Activated!",
-                html: `
-          <h1>Task Activated</h1>
-          <p>Hi,</p>
-          <p>You have successfully activated the task: <strong>${(task as any).title}</strong>.</p>
-          <p>Your deadline is: <strong>${new Date((task as any).deadline).toLocaleString()}</strong></p>
-          <p>Good luck!</p>
-        `,
-            });
-        } catch (error) {
-            console.error("Failed to send activation email:", error);
-        }
-    }
 
     revalidatePath(`/dashboard/tasks/${taskId}`);
     return { success: true };
@@ -205,7 +186,7 @@ export async function markTaskComplete(taskId: string) {
     if (resend && (task as any).voucher?.email) {
         try {
             await resend.emails.send({
-                from: "Vouch <notifications@vouch.tarun.dev>",
+                from: "Vouch <notifications@remails.tarunh.com>",
                 to: (task as any).voucher.email,
                 subject: `Review Request: ${(task as any).title}`,
                 html: `
