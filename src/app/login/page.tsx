@@ -49,7 +49,12 @@ export default function LoginPage() {
             } else if (result && "success" in result && result.success) {
                 setMessage({ type: "success", text: result.message || "Success!" });
             }
-        } catch (err) {
+        } catch (err: any) {
+            // Next.js throws a NEXT_REDIRECT error for server-side redirects; ignore it so we don't flash an error
+            if (err?.digest && typeof err.digest === "string" && err.digest.startsWith("NEXT_REDIRECT")) {
+                throw err;
+            }
+
             console.error("Submission error:", err);
             setMessage({ type: "error", text: "An unexpected error occurred." });
         }
