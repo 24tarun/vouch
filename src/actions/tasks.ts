@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { canTransition, type TaskStatus } from "@/lib/xstate/task-machine";
 import { type Database } from "@/lib/types";
 import { type SupabaseClient } from "@supabase/supabase-js";
-import { resend } from "@/lib/resend";
+import { sendNotification } from "@/lib/notifications";
 
 export async function createTask(formData: FormData) {
     const supabase: SupabaseClient<Database> = await createClient();
@@ -131,14 +131,14 @@ export async function markTaskComplete(taskId: string) {
         to_status: "AWAITING_VOUCHER",
     });
 
-    // Notify the voucher via email
-    if (resend && (task as any).voucher?.email) {
-        try {
-            await resend.emails.send({
-                from: "Vouch <notifications@remails.tarunh.com>",
-                to: (task as any).voucher.email,
-                subject: `Review Request: ${(task as any).title}`,
-                html: `
+    // Notify the voucher (Tandem Email + Push)
+    if ((task as any).voucher?.email) {
+        await sendNotification({
+            to: (task as any).voucher.email,
+            userId: (task as any).voucher.id, // Enable push
+            subject: `Review Request: ${(task as any).title}`,
+            title: "Task Review Request",
+            html: `
           <h1>Task Completed!</h1>
           <p>Hi ${(task as any).voucher.username},</p>
           <p><strong>${(task as any).user?.username || "The user"}</strong> has marked their task <strong>"${(task as any).title}"</strong> as complete.</p>
@@ -146,10 +146,7 @@ export async function markTaskComplete(taskId: string) {
           <br/>
           <a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/voucher">Review Task</a>
         `,
-            });
-        } catch (error) {
-            console.error("Failed to send voucher review email:", error);
-        }
+        });
     }
 
     revalidatePath(`/dashboard/tasks/${taskId}`);

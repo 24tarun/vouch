@@ -1,6 +1,6 @@
 import { schedules } from "@trigger.dev/sdk/v3";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { resend } from "@/lib/resend";
+import { sendNotification } from "@/lib/notifications";
 
 export const deadlineWarning = schedules.task({
     id: "deadline-warning",
@@ -43,13 +43,14 @@ export const deadlineWarning = schedules.task({
                 continue;
             }
 
-            // Send email
-            if (resend && task.user?.email) {
+            // Send email (and push)
+            if (task.user?.email) {
                 try {
-                    await resend.emails.send({
-                        from: "Vouch <noreply@remails.tarunh.com>",
+                    await sendNotification({
                         to: task.user.email,
+                        userId: task.user.id,
                         subject: `⏰ 1 Hour Left: ${task.title}`,
+                        title: "Deadline Warning",
                         html: `
               <h1>Task Deadline Approaching</h1>
               <p>Hi ${task.user.username},</p>
@@ -60,7 +61,7 @@ export const deadlineWarning = schedules.task({
               <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/tasks/${task.id}">View Task</a>
             `,
                     });
-                    console.log(`Sent warning email to ${task.user.email}`);
+                    console.log(`Sent warning notification to ${task.user.email}`);
                 } catch (emailError) {
                     console.error(`Failed to send email for task ${task.id}`, emailError);
                 }

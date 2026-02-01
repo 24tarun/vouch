@@ -20,6 +20,8 @@ export const metadata: Metadata = {
   keywords: ["accountability", "productivity", "commitment", "charity"],
 };
 
+import { PlatformProvider } from "@/components/PlatformProvider";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -30,7 +32,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <PlatformProvider>
+          {children}
+        </PlatformProvider>
         <Toaster />
       </body>
     </html>

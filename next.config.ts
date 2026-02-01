@@ -1,7 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  experimental: {
+    allowedDevOrigins: [
+      "localhost:3000",
+      "192.168.178.180:3000", // Your local IP
+      "tas.tarunh.com",
+    ],
+  },
 };
 
 export default nextConfig;

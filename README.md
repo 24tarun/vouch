@@ -103,11 +103,6 @@ npx trigger.dev@latest deploy
 - `deadline-warning`: Runs every 15 minutes (checks tasks with <1 hour until deadline)
 - `monthly-settlement`: Runs on 1st of each month at 9am (sends ledger settlement emails)
 
-## Tech Stack
 
-- **Framework**: Next.js 15 (App Router)
-- **Database**: Supabase (PostgreSQL)
-- **Auth**: Supabase Auth
-- **Emails**: Resend
-- **Jobs**: Trigger.dev
-- **Styling**: Tailwind CSS
+
+VISIT tas.tarunh.com to see the app

@@ -1,6 +1,6 @@
 import { schedules } from "@trigger.dev/sdk/v3";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { resend } from "@/lib/resend";
+import { sendNotification } from "@/lib/notifications";
 
 export const monthlySettlement = schedules.task({
     id: "monthly-settlement",
@@ -38,13 +38,14 @@ export const monthlySettlement = schedules.task({
                 // Send report
                 const amountFormatted = (totalCents / 100).toFixed(2);
 
-                if (resend) {
-                    try {
-                        await resend.emails.send({
-                            from: "Vouch <noreply@remails.tarunh.com>",
-                            to: user.email,
-                            subject: `Monthly Settlement: €${amountFormatted} Donation Due`,
-                            html: `
+                // Send report (Email + Push)
+                try {
+                    await sendNotification({
+                        to: user.email,
+                        userId: user.id,
+                        subject: `Monthly Settlement: €${amountFormatted} Donation Due`,
+                        title: "Monthly Settlement",
+                        html: `
                 <h1>Monthly Accountability Report</h1>
                 <p>Hi ${user.username},</p>
                 <p>For the month of ${period}, your accountability failures totaled:</p>
@@ -53,11 +54,10 @@ export const monthlySettlement = schedules.task({
                 <br/>
                 <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/ledger">View Ledger</a>
               `,
-                        });
-                        console.log(`Sent settlement email to ${user.email}`);
-                    } catch (e) {
-                        console.error(`Failed to send email to ${user.email}`, e);
-                    }
+                    });
+                    console.log(`Sent settlement notification to ${user.email}`);
+                } catch (e) {
+                    console.error(`Failed to send notification to ${user.email}`, e);
                 }
             }
         }

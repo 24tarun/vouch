@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { canTransition, type TaskStatus } from "@/lib/xstate/task-machine";
-import { resend } from "@/lib/resend";
+import { sendNotification } from "@/lib/notifications";
 import { type Database } from "@/lib/types";
 import { type SupabaseClient } from "@supabase/supabase-js";
 
@@ -110,14 +110,14 @@ export async function voucherDeleteTask(taskId: string) {
         to_status: "DELETED",
     } as any);
 
-    // Notify the task owner via email if available
-    if (resend && (task as any).user?.email) {
-        try {
-            await resend.emails.send({
-                from: "Vouch <noreply@remails.tarunh.com>",
-                to: (task as any).user.email,
-                subject: `Task deleted by voucher: ${(task as any).title}`,
-                html: `
+    // Notify the task owner via email (and push in tandem)
+    if ((task as any).user?.email) {
+        await sendNotification({
+            to: (task as any).user.email,
+            userId: (task as any).user.id, // Enable push bridge
+            subject: `Task deleted by voucher: ${(task as any).title}`,
+            title: "Task Deleted",
+            html: `
           <h1>Task Deleted</h1>
           <p>Hi ${(task as any).user.username || "there"},</p>
           <p>Your voucher deleted the task: <strong>${(task as any).title}</strong>.</p>
@@ -125,10 +125,7 @@ export async function voucherDeleteTask(taskId: string) {
           <br/>
           <a href="${process.env.NEXT_PUBLIC_APP_URL || ""}/dashboard">Go to Vouch</a>
         `,
-            });
-        } catch (emailError) {
-            console.error(`Failed to send voucher delete email for task ${taskId}`, emailError);
-        }
+        });
     }
 
     revalidatePath("/dashboard/voucher");
