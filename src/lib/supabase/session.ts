@@ -57,5 +57,15 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url);
     }
 
+    // Redirect to dashboard if logged in and visiting landing or login
+    if (
+        user &&
+        (request.nextUrl.pathname === "/" || request.nextUrl.pathname === "/login")
+    ) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/dashboard";
+        return NextResponse.redirect(url);
+    }
+
     return supabaseResponse;
 }
