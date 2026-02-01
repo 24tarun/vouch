@@ -4,6 +4,7 @@ import { signOut } from "@/actions/auth";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { NavLinks } from "@/components/NavLinks";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -40,54 +41,26 @@ export default async function DashboardLayout({
         <div className="min-h-screen bg-slate-950 text-slate-200">
             {/* Navigation */}
             <nav className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 pt-safe">
-                <div className="pl-safe pr-safe">
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                        <div className="flex justify-between h-16 items-center">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex flex-col">
+                        <div className="flex justify-between h-14 items-center">
                             {/* Logo */}
                             <Link href="/dashboard" className="flex items-center gap-2">
-                                <div className="h-8 w-8 rounded bg-slate-200 flex items-center justify-center">
-                                    <span className="text-xs font-bold text-slate-900 leading-none">TAS</span>
+                                <div className="h-7 w-7 rounded bg-slate-200 flex items-center justify-center">
+                                    <span className="text-[10px] font-bold text-slate-900 leading-none">TAS</span>
                                 </div>
-                                <span className="text-lg font-bold tracking-tight text-white">TAS</span>
+                                <span className="text-base font-bold tracking-tight text-white">TAS</span>
                             </Link>
-
-                            {/* Navigation Links */}
-                            <div className="hidden md:flex items-center gap-8">
-                                <Link
-                                    href="/dashboard"
-                                    className="text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
-                                >
-                                    Tasks
-                                </Link>
-                                <Link
-                                    href="/dashboard/voucher"
-                                    className="text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
-                                >
-                                    Vouching
-                                </Link>
-                                <Link
-                                    href="/dashboard/friends"
-                                    className="text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
-                                >
-                                    Network
-                                </Link>
-                                <Link
-                                    href="/dashboard/ledger"
-                                    className="text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
-                                >
-                                    Ledger
-                                </Link>
-                            </div>
 
                             {/* User Menu */}
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <Button
                                         variant="ghost"
-                                        className="relative h-10 w-10 rounded-full hover:bg-slate-900"
+                                        className="relative h-9 w-9 rounded-full hover:bg-slate-900 pr-0"
                                     >
-                                        <Avatar className="h-8 w-8 border border-slate-800">
-                                            <AvatarFallback className="bg-slate-800 text-slate-200 text-xs">
+                                        <Avatar className="h-7 w-7 border border-slate-800">
+                                            <AvatarFallback className="bg-slate-800 text-slate-200 text-[10px]">
                                                 {initials}
                                             </AvatarFallback>
                                         </Avatar>
@@ -126,12 +99,15 @@ export default async function DashboardLayout({
                                 </DropdownMenuContent>
                             </DropdownMenu>
                         </div>
+
+                        {/* Navigation Links - Horizontal Scroll on Mobile */}
+                        <NavLinks />
                     </div>
                 </div>
             </nav>
 
             {/* Main Content */}
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 pl-safe pr-safe pb-safe">
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pl-safe pr-safe pb-safe">
                 {children}
             </main>
         </div>

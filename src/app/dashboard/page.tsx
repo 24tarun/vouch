@@ -75,52 +75,52 @@ export default async function DashboardPage() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
                 <Card className="bg-slate-800/50 border-slate-700">
-                    <CardHeader className="pb-2">
-                        <CardDescription className="text-slate-400">
+                    <CardHeader className="p-3 pb-1 md:pb-2">
+                        <CardDescription className="text-slate-400 text-[10px] sm:text-xs">
                             Active Tasks
                         </CardDescription>
                     </CardHeader>
-                    <CardContent>
-                        <p className="text-3xl font-bold text-white">{activeTasks.length}</p>
+                    <CardContent className="p-3 pt-0">
+                        <p className="text-xl md:text-3xl font-bold text-white">{activeTasks.length}</p>
                     </CardContent>
                 </Card>
 
                 <Card className="bg-slate-800/50 border-slate-700">
-                    <CardHeader className="pb-2">
-                        <CardDescription className="text-slate-400">
+                    <CardHeader className="p-3 pb-1 md:pb-2">
+                        <CardDescription className="text-slate-400 text-[10px] sm:text-xs">
                             Pending Vouches
                         </CardDescription>
                     </CardHeader>
-                    <CardContent>
-                        <p className="text-3xl font-bold text-slate-200">
+                    <CardContent className="p-3 pt-0">
+                        <p className="text-xl md:text-3xl font-bold text-slate-200">
                             {vouchRequests?.length || 0}
                         </p>
                     </CardContent>
                 </Card>
 
                 <Card className="bg-slate-800/50 border-slate-700">
-                    <CardHeader className="pb-2">
-                        <CardDescription className="text-slate-400">
+                    <CardHeader className="p-3 pb-1 md:pb-2">
+                        <CardDescription className="text-slate-400 text-[10px] sm:text-xs">
                             Completed
                         </CardDescription>
                     </CardHeader>
-                    <CardContent>
-                        <p className="text-3xl font-bold text-green-400">
+                    <CardContent className="p-3 pt-0">
+                        <p className="text-xl md:text-3xl font-bold text-emerald-400">
                             {completedCount}
                         </p>
                     </CardContent>
                 </Card>
 
                 <Card className="bg-slate-800/50 border-slate-700">
-                    <CardHeader className="pb-2">
-                        <CardDescription className="text-slate-400">
-                            Projected Donation
+                    <CardHeader className="p-3 pb-1 md:pb-2">
+                        <CardDescription className="text-slate-400 text-[10px] sm:text-xs">
+                            Monthly Total
                         </CardDescription>
                     </CardHeader>
-                    <CardContent>
-                        <p className="text-3xl font-bold text-slate-200">
+                    <CardContent className="p-3 pt-0">
+                        <p className="text-xl md:text-3xl font-bold text-slate-200">
                             €{(totalFailureCost / 100).toFixed(2)}
                         </p>
                     </CardContent>

@@ -53,14 +53,14 @@ export function PushInitializer() {
     if (!isSupported || isSubscribed || permission === "denied") return null;
 
     return (
-        <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4 mb-6 flex items-center justify-between">
+        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4 mb-6 flex items-center justify-between">
             <div>
-                <h3 className="text-sm font-medium text-slate-200">Enable Mobile Notifications</h3>
-                <p className="text-xs text-slate-400">Get updates on your phone for task deadlines.</p>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Enable Mobile Notifications</h3>
+                <p className="text-xs text-slate-500 font-mono mt-1">Get updates on your phone for task deadlines.</p>
             </div>
             <button
                 onClick={subscribe}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-md transition-colors"
+                className="px-4 py-2 bg-slate-200 hover:bg-white text-slate-900 text-[10px] font-bold uppercase tracking-widest rounded transition-colors"
             >
                 Enable
             </button>
