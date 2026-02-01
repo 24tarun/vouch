@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { Task } from "@/lib/types";
+import { PushInitializer } from "@/components/PushInitializer";
 
 export default async function DashboardPage() {
     const supabase = await createClient();
@@ -57,6 +58,7 @@ export default async function DashboardPage() {
 
     return (
         <div className="space-y-8">
+            <PushInitializer />
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
@@ -66,7 +68,7 @@ export default async function DashboardPage() {
                     </p>
                 </div>
                 <Link href="/dashboard/tasks/new">
-                    <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
+                    <Button haptic="light" className="bg-slate-200 hover:bg-white text-slate-900 font-semibold border-none">
                         + New Task
                     </Button>
                 </Link>
@@ -92,7 +94,7 @@ export default async function DashboardPage() {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-3xl font-bold text-purple-400">
+                        <p className="text-3xl font-bold text-slate-200">
                             {vouchRequests?.length || 0}
                         </p>
                     </CardContent>
@@ -118,7 +120,7 @@ export default async function DashboardPage() {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-3xl font-bold text-pink-400">
+                        <p className="text-3xl font-bold text-slate-200">
                             €{(totalFailureCost / 100).toFixed(2)}
                         </p>
                     </CardContent>
@@ -127,21 +129,22 @@ export default async function DashboardPage() {
 
             {/* Vouch Requests Alert */}
             {vouchRequests && vouchRequests.length > 0 && (
-                <Card className="bg-purple-900/30 border-purple-500/50">
+                <Card className="bg-slate-800/20 border-slate-700">
                     <CardHeader>
-                        <CardTitle className="text-purple-300 flex items-center gap-2">
-                            <span className="h-2 w-2 rounded-full bg-purple-400 animate-pulse" />
+                        <CardTitle className="text-slate-200 flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-slate-400 animate-pulse" />
                             Vouch Requests Pending
                         </CardTitle>
-                        <CardDescription className="text-purple-200/70">
+                        <CardDescription className="text-slate-400">
                             You have {vouchRequests.length} task(s) waiting for your review
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <Link href="/dashboard/voucher">
                             <Button
+                                haptic="medium"
                                 variant="outline"
-                                className="border-purple-500 text-purple-300 hover:bg-purple-500/20"
+                                className="border-slate-700 text-slate-300 hover:bg-slate-800"
                             >
                                 Review Now
                             </Button>
@@ -193,24 +196,24 @@ export default async function DashboardPage() {
 
 function TaskCard({ task, variant = "active" }: { task: Task; variant?: "active" | "history" }) {
     const statusConfig: Record<string, { color: string; icon: string; label: string }> = {
-        CREATED: { color: "bg-blue-500", icon: "🎯", label: "Active" },
-        POSTPONED: { color: "bg-yellow-500", icon: "⏸️", label: "Postponed" },
-        MARKED_COMPLETED: { color: "bg-purple-500", icon: "⏳", label: "Waiting" },
-        AWAITING_VOUCHER: { color: "bg-purple-500", icon: "⏳", label: "Waiting" },
-        COMPLETED: { color: "bg-green-500", icon: "✅", label: "Accepted" },
-        FAILED: { color: "bg-red-500", icon: "❌", label: "Denied / Failed" },
-        RECTIFIED: { color: "bg-orange-500", icon: "🔄", label: "Rectified" },
-        SETTLED: { color: "bg-slate-600", icon: "📁", label: "Settled" },
-        DELETED: { color: "bg-slate-600", icon: "🗑️", label: "Deleted" },
+        CREATED: { color: "bg-slate-700", icon: "🎯", label: "Active" },
+        POSTPONED: { color: "bg-slate-800", icon: "⏸️", label: "Postponed" },
+        MARKED_COMPLETED: { color: "bg-blue-900/50", icon: "⏳", label: "Waiting" },
+        AWAITING_VOUCHER: { color: "bg-blue-900/50", icon: "⏳", label: "Waiting" },
+        COMPLETED: { color: "bg-emerald-900/50 text-emerald-400", icon: "✅", label: "Accepted" },
+        FAILED: { color: "bg-red-900/50 text-red-400", icon: "❌", label: "Denied / Failed" },
+        RECTIFIED: { color: "bg-orange-900/50 text-orange-400", icon: "🔄", label: "Rectified" },
+        SETTLED: { color: "bg-slate-800", icon: "📁", label: "Settled" },
+        DELETED: { color: "bg-slate-800", icon: "🗑️", label: "Deleted" },
     };
 
-    const config = statusConfig[task.status] || { color: "bg-slate-500", icon: "❓", label: task.status };
+    const config = statusConfig[task.status] || { color: "bg-slate-700", icon: "❓", label: task.status };
     const deadline = new Date(task.deadline);
     const isOverdue = deadline < new Date() && !["COMPLETED", "FAILED", "RECTIFIED", "SETTLED", "DELETED"].includes(task.status);
 
     const cardStyles = {
-        active: "bg-slate-800/50 border-slate-700 hover:border-purple-500/50",
-        history: "bg-slate-800/30 border-slate-700/50 opacity-70 hover:opacity-100",
+        active: "bg-slate-800/40 border-slate-800 hover:border-slate-600 hover:bg-slate-800/60",
+        history: "bg-slate-900/30 border-slate-800/50 opacity-70 hover:opacity-100",
     };
 
     return (

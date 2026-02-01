@@ -69,24 +69,24 @@ export default function FriendsPage() {
     }
 
     return (
-        <div className="max-w-2xl mx-auto space-y-6">
+        <div className="max-w-2xl mx-auto space-y-10">
             <div>
-                <h1 className="text-3xl font-bold text-white">Friends</h1>
-                <p className="text-slate-400 mt-1">
-                    Add friends to assign them as vouchers for your tasks
+                <h1 className="text-3xl font-bold text-white tracking-tight">Network</h1>
+                <p className="text-slate-500 mt-2 text-sm leading-relaxed">
+                    Connect with friends to assign them as vouchers for your tasks.
                 </p>
             </div>
 
             {/* Add Friend Form */}
-            <Card className="bg-slate-800/50 border-slate-700">
+            <Card className="bg-slate-900 border-slate-800 shadow-xl">
                 <CardHeader>
-                    <CardTitle className="text-white">Add Friend</CardTitle>
-                    <CardDescription className="text-slate-400">
-                        Enter your friend&apos;s email address to add them
+                    <CardTitle className="text-lg font-bold text-white">Add to Network</CardTitle>
+                    <CardDescription className="text-slate-500 text-xs font-mono uppercase tracking-wider">
+                        Enter email address to connect
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <form onSubmit={handleAddFriend} className="flex gap-3">
+                    <form onSubmit={handleAddFriend} className="flex gap-4">
                         <div className="flex-1">
                             <Label htmlFor="email" className="sr-only">
                                 Email
@@ -94,67 +94,67 @@ export default function FriendsPage() {
                             <Input
                                 id="email"
                                 type="email"
-                                placeholder="friend@example.com"
+                                placeholder="name@domain.com"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 required
-                                className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400"
+                                className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-700 h-12 focus:ring-0 focus:border-slate-600 transition-colors"
                             />
                         </div>
                         <Button
                             type="submit"
                             disabled={isLoading}
-                            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+                            className="bg-slate-200 hover:bg-white text-slate-900 font-bold px-6 h-12 rounded"
                         >
-                            {isLoading ? "Adding..." : "Add Friend"}
+                            {isLoading ? "Adding..." : "Add"}
                         </Button>
                     </form>
 
                     {error && (
-                        <p className="mt-3 text-sm text-red-400">{error}</p>
+                        <p className="mt-4 text-xs font-medium text-red-400 bg-red-400/10 border border-red-400/20 p-2 rounded">{error}</p>
                     )}
                     {success && (
-                        <p className="mt-3 text-sm text-green-400">{success}</p>
+                        <p className="mt-4 text-xs font-medium text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 p-2 rounded">{success}</p>
                     )}
                 </CardContent>
             </Card>
 
             {/* Friends List */}
-            <Card className="bg-slate-800/50 border-slate-700">
+            <Card className="bg-slate-900 border-slate-800 shadow-xl">
                 <CardHeader>
-                    <CardTitle className="text-white">Your Friends</CardTitle>
-                    <CardDescription className="text-slate-400">
-                        {friends.length} friend{friends.length !== 1 ? "s" : ""}
+                    <CardTitle className="text-lg font-bold text-white">Linked Accounts</CardTitle>
+                    <CardDescription className="text-slate-500 text-xs font-mono uppercase tracking-wider">
+                        {friends.length} active connection{friends.length !== 1 ? "s" : ""}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     {friends.length === 0 ? (
-                        <p className="text-slate-400 text-center py-8">
-                            No friends added yet. Add a friend to start creating tasks!
+                        <p className="text-slate-600 text-center py-12 text-sm italic">
+                            No connections found. Build your network to start creating tasks.
                         </p>
                     ) : (
-                        <div className="space-y-3">
+                        <div className="grid gap-4">
                             {friends.map((friend) => (
                                 <div
                                     key={friend.id}
-                                    className="flex items-center justify-between p-3 rounded-lg bg-slate-700/30"
+                                    className="flex items-center justify-between p-4 rounded bg-slate-950 border border-slate-800 hover:border-slate-700 transition-colors"
                                 >
-                                    <div className="flex items-center gap-3">
-                                        <Avatar className="h-10 w-10 border border-slate-600">
-                                            <AvatarFallback className="bg-gradient-to-br from-purple-600 to-pink-600 text-white text-sm">
+                                    <div className="flex items-center gap-4">
+                                        <Avatar className="h-10 w-10 border border-slate-800">
+                                            <AvatarFallback className="bg-slate-900 text-slate-400 text-xs font-mono">
                                                 {friend.username?.slice(0, 2).toUpperCase() || "??"}
                                             </AvatarFallback>
                                         </Avatar>
                                         <div>
-                                            <p className="text-white font-medium">{friend.username}</p>
-                                            <p className="text-sm text-slate-400">{friend.email}</p>
+                                            <p className="text-white font-bold text-sm tracking-tight">{friend.username}</p>
+                                            <p className="text-xs text-slate-500 font-mono">{friend.email}</p>
                                         </div>
                                     </div>
                                     <Button
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => handleRemoveFriend(friend.id)}
-                                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                        className="text-slate-500 hover:text-red-400 hover:bg-red-400/10 text-xs font-mono uppercase tracking-widest"
                                     >
                                         Remove
                                     </Button>
@@ -166,14 +166,12 @@ export default function FriendsPage() {
             </Card>
 
             {/* Info */}
-            <Card className="bg-slate-800/30 border-slate-700/50">
-                <CardContent className="py-4">
-                    <p className="text-sm text-slate-400 text-center">
-                        💡 Friends can only be removed if they are not currently an active
-                        voucher for any of your pending tasks.
-                    </p>
-                </CardContent>
-            </Card>
+            <div className="bg-slate-950 border border-slate-900 rounded-lg p-6">
+                <p className="text-xs text-slate-600 text-center leading-relaxed font-mono uppercase tracking-widest">
+                    Verification Rule: Friends can only be removed if they are not currently an active
+                    voucher for any of your pending tasks.
+                </p>
+            </div>
         </div>
     );
 }

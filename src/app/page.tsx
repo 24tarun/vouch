@@ -3,27 +3,27 @@ import { Button } from "@/components/ui/button";
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div className="min-h-screen bg-slate-950 text-slate-200">
       {/* Navigation */}
-      <nav className="fixed top-0 w-full z-50 bg-slate-900/50 backdrop-blur-sm border-b border-slate-700/50">
+      <nav className="fixed top-0 w-full z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-              <span className="text-sm font-bold text-white">V</span>
+            <div className="h-8 w-8 rounded bg-slate-200 flex items-center justify-center">
+              <span className="text-xs font-bold text-slate-900">TAS</span>
             </div>
-            <span className="text-lg font-semibold text-white">Vouch</span>
+            <span className="text-lg font-bold tracking-tight text-white">TAS</span>
           </div>
           <div className="flex items-center gap-4">
             <Link href="/login">
               <Button
                 variant="ghost"
-                className="text-slate-300 hover:text-white"
+                className="text-slate-400 hover:text-white"
               >
                 Sign In
               </Button>
             </Link>
             <Link href="/login">
-              <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
+              <Button className="bg-slate-200 hover:bg-white text-slate-900 font-semibold border-none">
                 Get Started
               </Button>
             </Link>
@@ -34,26 +34,24 @@ export default function HomePage() {
       {/* Hero */}
       <section className="pt-32 pb-20 px-4">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-block mb-6 px-4 py-1 rounded-full bg-purple-500/20 border border-purple-500/30">
-            <span className="text-sm text-purple-300">
-              💜 Failure helps the world
+          <div className="inline-block mb-6 px-4 py-1 rounded bg-slate-900 border border-slate-800">
+            <span className="text-xs text-slate-400 uppercase tracking-widest font-medium">
+              Task Accountability System
             </span>
           </div>
-          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight">
-            Accountability with{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
-              Real Stakes
-            </span>
+          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight tracking-tighter">
+            Accountability with <br />
+            <span className="text-slate-400">Real Stakes.</span>
           </h1>
-          <p className="text-xl text-slate-400 mb-8 max-w-2xl mx-auto">
+          <p className="text-lg text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
             Set commitments. Assign vouchers. Face consequences. When you fail,
-            your money goes to charity instead of your pocket.
+            your money goes to charity. Pure accountability.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/login">
               <Button
                 size="lg"
-                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-lg px-8"
+                className="bg-slate-200 hover:bg-white text-slate-900 font-bold text-base px-8 py-6 rounded"
               >
                 Start Your First Task
               </Button>
@@ -64,42 +62,36 @@ export default function HomePage() {
 
       {/* How It Works */}
       <section className="py-20 px-4">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-white text-center mb-12">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-2xl font-bold text-white text-center mb-16 tracking-tight">
             How It Works
           </h2>
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="text-center p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-2xl">
-                1
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-2">
+          <div className="grid md:grid-cols-3 gap-12">
+            <div className="text-left">
+              <div className="text-slate-500 font-mono text-sm mb-4">01.</div>
+              <h3 className="text-lg font-bold text-white mb-3">
                 Create a Task
               </h3>
-              <p className="text-slate-400">
-                Set your commitment, deadline, and financial stake (€0.01 - €100)
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Set your commitment, deadline, and financial stake (€0.01 - €100).
               </p>
             </div>
-            <div className="text-center p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl">
-                2
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-2">
+            <div className="text-left">
+              <div className="text-slate-500 font-mono text-sm mb-4">02.</div>
+              <h3 className="text-lg font-bold text-white mb-3">
                 Assign a Voucher
               </h3>
-              <p className="text-slate-400">
-                Your friend verifies completion. No one can lie to themselves.
+              <p className="text-slate-400 text-sm leading-relaxed">
+                A friend verifies completion. We ensure the process is transparent and irreversible.
               </p>
             </div>
-            <div className="text-center p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center text-2xl">
-                3
-              </div>
-              <h3 className="text-xl font-semibold text-white mb-2">
+            <div className="text-left">
+              <div className="text-slate-500 font-mono text-sm mb-4">03.</div>
+              <h3 className="text-lg font-bold text-white mb-3">
                 Complete or Donate
               </h3>
-              <p className="text-slate-400">
-                Succeed and celebrate. Fail and donate to charity. Win-win.
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Success is the only option. Failure means an automatic donation to charity from your monthly ledger.
               </p>
             </div>
           </div>
@@ -107,75 +99,53 @@ export default function HomePage() {
       </section>
 
       {/* Features */}
-      <section className="py-20 px-4 bg-slate-900/50">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-bold text-white text-center mb-12">
-            Built for Real Accountability
-          </h2>
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50">
-              <h3 className="text-lg font-semibold text-white mb-2">
-                ⏰ Irreversible Deadlines
+      <section className="py-20 px-4 border-y border-slate-900 bg-slate-950/50">
+        <div className="max-w-5xl mx-auto">
+          <div className="grid md:grid-cols-2 gap-12">
+            <div>
+              <h3 className="text-lg font-bold text-white mb-2">
+                Irreversible Deadlines
               </h3>
-              <p className="text-slate-400">
-                Once activated, deadlines cannot be extended. One postponement
-                (max 1 hour) per task. That&apos;s it.
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Once activated, deadlines are final. No extensions. No excuses. One 60-minute postponement per task.
               </p>
             </div>
-            <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50">
-              <h3 className="text-lg font-semibold text-white mb-2">
-                👥 Social Verification
+            <div>
+              <h3 className="text-lg font-bold text-white mb-2">
+                Social Verification
               </h3>
-              <p className="text-slate-400">
-                Friends as vouchers. They decide if you actually completed the
-                task. No self-reporting.
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Trust but verify. Your vouchers decide the outcome. Pure peer-to-peer accountability.
               </p>
             </div>
-            <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50">
-              <h3 className="text-lg font-semibold text-white mb-2">
-                💰 Real Financial Stakes
+            <div>
+              <h3 className="text-lg font-bold text-white mb-2">
+                Real Financial Stakes
               </h3>
-              <p className="text-slate-400">
-                Stake €0.01 to €100 per task. Monthly ledger tracks your
-                accountability.
+              <p className="text-slate-400 text-sm leading-relaxed">
+                The sting of loss is a powerful motivator. Stake what you can afford to lose.
               </p>
             </div>
-            <div className="p-6 rounded-2xl bg-slate-800/30 border border-slate-700/50">
-              <h3 className="text-lg font-semibold text-white mb-2">
-                🔄 Limited Safety Nets
+            <div>
+              <h3 className="text-lg font-bold text-white mb-2">
+                Limited Safety Nets
               </h3>
-              <p className="text-slate-400">
-                5 rectify passes per month. 1 force majeure. Use them wisely.
+              <p className="text-slate-400 text-sm leading-relaxed">
+                Rectify passes are limited. Force majeure is for emergencies only. Use your credits wisely.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="py-20 px-4">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-4xl font-bold text-white mb-4">
-            Ready to Hold Yourself Accountable?
-          </h2>
-          <p className="text-xl text-slate-400 mb-8">
-            The worst case: you donate to charity and make the world better.
-          </p>
-          <Link href="/login">
-            <Button
-              size="lg"
-              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-lg px-8"
-            >
-              Get Started Free
-            </Button>
-          </Link>
-        </div>
-      </section>
-
       {/* Footer */}
-      <footer className="border-t border-slate-700/50 py-8 px-4">
-        <div className="max-w-6xl mx-auto text-center text-slate-500 text-sm">
-          <p>© 2026 Vouch. Built for accountability, not profit.</p>
+      <footer className="py-12 px-4">
+        <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-slate-500 text-xs font-mono uppercase tracking-widest">
+          <p>© 2026 TAS / TASK ACCOUNTABILITY SYSTEM</p>
+          <div className="flex gap-6">
+            <Link href="/login" className="hover:text-white transition-colors">Login</Link>
+            <Link href="/login" className="hover:text-white transition-colors">Register</Link>
+          </div>
         </div>
       </footer>
     </div>

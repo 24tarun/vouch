@@ -37,43 +37,43 @@ export default async function DashboardLayout({
     const initials = (profile as any)?.username?.slice(0, 2).toUpperCase() || "??";
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+        <div className="min-h-screen bg-slate-950 text-slate-200">
             {/* Navigation */}
-            <nav className="border-b border-slate-700/50 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50 pt-safe">
+            <nav className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 pt-safe">
                 <div className="pl-safe pr-safe">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="flex justify-between h-16 items-center">
                             {/* Logo */}
                             <Link href="/dashboard" className="flex items-center gap-2">
-                                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                                    <span className="text-sm font-bold text-white">V</span>
+                                <div className="h-8 w-8 rounded bg-slate-200 flex items-center justify-center">
+                                    <span className="text-xs font-bold text-slate-900 leading-none">TAS</span>
                                 </div>
-                                <span className="text-lg font-semibold text-white">Vouch</span>
+                                <span className="text-lg font-bold tracking-tight text-white">TAS</span>
                             </Link>
 
                             {/* Navigation Links */}
-                            <div className="hidden md:flex items-center gap-6">
+                            <div className="hidden md:flex items-center gap-8">
                                 <Link
                                     href="/dashboard"
-                                    className="text-slate-300 hover:text-white transition-colors"
+                                    className="text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
                                 >
                                     Tasks
                                 </Link>
                                 <Link
                                     href="/dashboard/voucher"
-                                    className="text-slate-300 hover:text-white transition-colors"
+                                    className="text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
                                 >
-                                    Vouch Requests
+                                    Vouching
                                 </Link>
                                 <Link
                                     href="/dashboard/friends"
-                                    className="text-slate-300 hover:text-white transition-colors"
+                                    className="text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
                                 >
-                                    Friends
+                                    Network
                                 </Link>
                                 <Link
                                     href="/dashboard/ledger"
-                                    className="text-slate-300 hover:text-white transition-colors"
+                                    className="text-xs font-mono uppercase tracking-widest text-slate-500 hover:text-white transition-colors"
                                 >
                                     Ledger
                                 </Link>
@@ -84,40 +84,40 @@ export default async function DashboardLayout({
                                 <DropdownMenuTrigger asChild>
                                     <Button
                                         variant="ghost"
-                                        className="relative h-10 w-10 rounded-full"
+                                        className="relative h-10 w-10 rounded-full hover:bg-slate-900"
                                     >
-                                        <Avatar className="h-10 w-10 border-2 border-purple-500/50">
-                                            <AvatarFallback className="bg-gradient-to-br from-purple-600 to-pink-600 text-white">
+                                        <Avatar className="h-8 w-8 border border-slate-800">
+                                            <AvatarFallback className="bg-slate-800 text-slate-200 text-xs">
                                                 {initials}
                                             </AvatarFallback>
                                         </Avatar>
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent
-                                    className="w-56 bg-slate-800 border-slate-700"
+                                    className="w-56 bg-slate-900 border-slate-800"
                                     align="end"
                                 >
                                     <DropdownMenuLabel className="text-slate-200">
                                         <div className="flex flex-col space-y-1">
                                             <p className="text-sm font-medium">{(profile as any)?.username}</p>
-                                            <p className="text-xs text-slate-400">{user.email}</p>
+                                            <p className="text-xs text-slate-500 font-mono">{user.email}</p>
                                         </div>
                                     </DropdownMenuLabel>
-                                    <DropdownMenuSeparator className="bg-slate-700" />
+                                    <DropdownMenuSeparator className="bg-slate-800" />
                                     <DropdownMenuItem asChild>
                                         <Link
                                             href="/dashboard/settings"
-                                            className="text-slate-300 cursor-pointer"
+                                            className="text-slate-300 cursor-pointer text-xs uppercase tracking-wider h-10"
                                         >
                                             Settings
                                         </Link>
                                     </DropdownMenuItem>
-                                    <DropdownMenuSeparator className="bg-slate-700" />
+                                    <DropdownMenuSeparator className="bg-slate-800" />
                                     <DropdownMenuItem asChild>
-                                        <form action={signOut}>
+                                        <form action={signOut} className="w-full">
                                             <button
                                                 type="submit"
-                                                className="w-full text-left text-red-400 cursor-pointer"
+                                                className="w-full text-left text-red-500/80 hover:text-red-400 cursor-pointer text-xs uppercase tracking-wider h-10"
                                             >
                                                 Sign out
                                             </button>
@@ -131,7 +131,7 @@ export default async function DashboardLayout({
             </nav>
 
             {/* Main Content */}
-            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pl-safe pr-safe pb-safe">
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 pl-safe pr-safe pb-safe">
                 {children}
             </main>
         </div>

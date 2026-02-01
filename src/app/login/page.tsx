@@ -63,39 +63,39 @@ export default function LoginPage() {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-4">
-            <Card className="w-full max-w-md bg-slate-800/50 border-slate-700 backdrop-blur-sm">
+        <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
+            <Card className="w-full max-w-md bg-slate-900 border-slate-800 shadow-2xl">
                 <CardHeader className="text-center">
-                    <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-                        <span className="text-2xl font-bold text-white">V</span>
+                    <div className="mx-auto mb-6 h-12 w-12 rounded bg-slate-200 flex items-center justify-center">
+                        <span className="text-xs font-bold text-slate-900 leading-none">TAS</span>
                     </div>
-                    <CardTitle className="text-2xl font-bold text-white">
-                        {mode === "signin" ? "Welcome Back" : "Create Account"}
+                    <CardTitle className="text-2xl font-bold text-white tracking-tight">
+                        {mode === "signin" ? "Sign In" : "Create Account"}
                     </CardTitle>
-                    <CardDescription className="text-slate-400">
+                    <CardDescription className="text-slate-500 text-sm">
                         {mode === "signin"
-                            ? "Sign in to continue your accountability journey"
-                            : "Join Vouch and start committing to your goals"}
+                            ? "Access the Task Accountability System"
+                            : "Join TAS and start committing to your goals"}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-6">
                         <div className="space-y-2">
-                            <Label htmlFor="email" className="text-slate-200">
+                            <Label htmlFor="email" className="text-xs font-mono uppercase tracking-widest text-slate-500">
                                 Email
                             </Label>
                             <Input
                                 id="email"
                                 type="email"
-                                placeholder="you@example.com"
+                                placeholder="name@domain.com"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 required
-                                className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400 focus:border-purple-500 focus:ring-purple-500"
+                                className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-700 focus:border-slate-500 focus:ring-0 transition-colors"
                             />
                         </div>
                         <div className="space-y-2">
-                            <Label htmlFor="password" className="text-slate-200">
+                            <Label htmlFor="password" className="text-xs font-mono uppercase tracking-widest text-slate-500">
                                 Password
                             </Label>
                             <Input
@@ -106,15 +106,15 @@ export default function LoginPage() {
                                 onChange={(e) => setPassword(e.target.value)}
                                 required
                                 minLength={6}
-                                className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400 focus:border-purple-500 focus:ring-purple-500"
+                                className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-700 focus:border-slate-500 focus:ring-0 transition-colors"
                             />
                         </div>
 
                         {message && (
                             <div
-                                className={`p-3 rounded-lg text-sm ${message.type === "success"
-                                    ? "bg-green-500/20 text-green-300 border border-green-500/30"
-                                    : "bg-red-500/20 text-red-300 border border-red-500/30"
+                                className={`p-3 rounded text-xs font-medium ${message.type === "success"
+                                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                    : "bg-red-500/10 text-red-400 border border-red-500/20"
                                     }`}
                             >
                                 {message.text}
@@ -124,7 +124,7 @@ export default function LoginPage() {
                         <Button
                             type="submit"
                             disabled={isLoading}
-                            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-medium"
+                            className="w-full bg-slate-200 hover:bg-white text-slate-900 font-bold py-6 rounded transition-all"
                         >
                             {isLoading
                                 ? "Processing..."
@@ -132,16 +132,16 @@ export default function LoginPage() {
                         </Button>
                     </form>
 
-                    <div className="mt-6 text-center text-sm text-slate-400">
+                    <div className="mt-8 text-center text-xs font-mono uppercase tracking-widest text-slate-500">
                         {mode === "signin" ? (
                             <>
-                                Don't have an account?{" "}
+                                Need an account?{" "}
                                 <button
                                     onClick={() => {
                                         setMode("signup");
                                         setMessage(null);
                                     }}
-                                    className="text-purple-400 hover:text-purple-300 font-semibold hover:underline"
+                                    className="text-slate-200 hover:text-white transition-colors"
                                 >
                                     Sign Up
                                 </button>
@@ -154,7 +154,7 @@ export default function LoginPage() {
                                         setMode("signin");
                                         setMessage(null);
                                     }}
-                                    className="text-purple-400 hover:text-purple-300 font-semibold hover:underline"
+                                    className="text-slate-200 hover:text-white transition-colors"
                                 >
                                     Sign In
                                 </button>

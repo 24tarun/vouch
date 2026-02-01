@@ -1,4 +1,5 @@
 import { resend } from "@/lib/resend";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 interface NotificationParams {
     to: string; // Email address
@@ -25,7 +26,7 @@ export async function sendNotification(params: NotificationParams) {
     if (resend && params.to) {
         try {
             results.email = await resend.emails.send({
-                from: "Vouch <noreply@remails.tarunh.com>",
+                from: "TAS <noreply@remails.tarunh.com>",
                 to: params.to,
                 subject: params.subject,
                 html: params.html,
@@ -39,18 +40,36 @@ export async function sendNotification(params: NotificationParams) {
         console.warn("Resend client not initialized, skipping email.");
     }
 
-    // 2. Send Native Push (Future Channel)
+    // 2. Send Mobile/Web Push (Tandem channel)
     if (params.userId) {
         try {
-            // In a real implementation, this would call Firebase Admin or a Trigger.dev task
-            // that sends to APNS/FCM tokens stored in a 'push_tokens' table.
+            const supabase = createAdminClient();
 
-            // TODO: Fetch tokens for user
-            // const tokens = await supabase.from('push_tokens').select('token').eq('user_id', params.userId);
+            // Fetch both native tokens (future) and web push subscriptions
+            const { data: webSubscriptions } = await supabase
+                .from("web_push_subscriptions")
+                .select("subscription")
+                .eq("user_id", params.userId);
 
             console.log(`[Notification Bridge] 🔔 Mobile Push to ${params.userId}: "${params.title || params.subject}"`);
 
-            results.push = { success: true, mocked: true };
+            if (webSubscriptions && webSubscriptions.length > 0) {
+                console.log(`[Notification Bridge] 🌐 Sending Web Push to ${webSubscriptions.length} subscriptions`);
+                // In a production environment with 'web-push' library:
+                // webSubscriptions.forEach(sub => {
+                //   webpush.sendNotification(sub.subscription, JSON.stringify({
+                //     title: params.title || params.subject,
+                //     body: params.text || "Open Vouch to see details",
+                //     data: params.data
+                //   }));
+                // });
+            }
+
+            results.push = {
+                success: true,
+                mocked: true,
+                webSubscriptionsCount: webSubscriptions?.length || 0
+            };
         } catch (error) {
             console.error("Failed to send push:", error);
         }

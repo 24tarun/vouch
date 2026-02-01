@@ -14,13 +14,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vouch - Accountability with Real Stakes",
+  title: "TAS - Task Accountability System",
   description:
     "Set commitments, assign vouchers, face consequences. When you fail, your money goes to charity.",
   keywords: ["accountability", "productivity", "commitment", "charity"],
 };
 
 import { PlatformProvider } from "@/components/PlatformProvider";
+import { PWARegistration } from "@/components/PWARegistration";
 
 export default function RootLayout({
   children,
@@ -29,12 +30,20 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="theme-color" content="#0a0a0a" />
+        <link rel="icon" href="/favicon.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <PlatformProvider>
           {children}
         </PlatformProvider>
+        <PWARegistration />
         <Toaster />
       </body>
     </html>
