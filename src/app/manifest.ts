@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
         description: 'Task Accountability System',
         start_url: '/',
         display: 'standalone',
-        background_color: '#020617',
-        theme_color: '#020617',
+        background_color: '#0a0a0a',
+        theme_color: '#0a0a0a',
         icons: [
             {
                 src: '/favicon.ico',
