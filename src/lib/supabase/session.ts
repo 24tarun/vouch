@@ -21,10 +21,23 @@ export async function updateSession(request: NextRequest) {
                     supabaseResponse = NextResponse.next({
                         request,
                     });
-                    cookiesToSet.forEach(({ name, value, options }) =>
-                        supabaseResponse.cookies.set(name, value, options)
-                    );
+                    cookiesToSet.forEach(({ name, value, options }) => {
+                        const { maxAge: _unused, ...rest } = options;
+                        supabaseResponse.cookies.set(name, value, {
+                            ...rest,
+                            maxAge: 60 * 60 * 24 * 365, // 1 year
+                            path: "/",
+                            sameSite: "lax",
+                            secure: process.env.NODE_ENV === "production",
+                        });
+                    });
                 },
+            },
+            cookieOptions: {
+                maxAge: 60 * 60 * 24 * 365, // 1 year
+                path: "/",
+                sameSite: "lax",
+                secure: process.env.NODE_ENV === "production",
             },
         }
     );

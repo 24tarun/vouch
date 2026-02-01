@@ -9,7 +9,13 @@ export function createClient() {
                 persistSession: true,
                 autoRefreshToken: true,
                 detectSessionInUrl: true
-            }
+            },
+            cookieOptions: {
+                maxAge: 60 * 60 * 24 * 365, // 1 year
+                path: "/",
+                sameSite: "lax",
+                secure: process.env.NODE_ENV === "production",
+            },
         }
     );
 }
