@@ -29,10 +29,11 @@ export default function NewTaskPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Set default deadline to end of today (23:59)
-    const today = new Date();
-    today.setHours(23, 59, 0, 0);
-    const defaultDeadline = today.toISOString().slice(0, 16);
+    // Set default deadline to tomorrow at noon
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(12, 0, 0, 0);
+    const defaultDeadline = tomorrow.toISOString().slice(0, 16);
 
     useEffect(() => {
         async function loadFriends() {
@@ -78,7 +79,6 @@ export default function NewTaskPage() {
                                 name="title"
                                 placeholder="e.g., Complete project proposal"
                                 required
-                                autoFocus
                                 className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400"
                             />
                         </div>
@@ -127,7 +127,7 @@ export default function NewTaskPage() {
                                 min="0.01"
                                 max="100"
                                 step="0.01"
-                                defaultValue="0.10"
+                                placeholder="5.00"
                                 required
                                 className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400"
                             />
@@ -194,7 +194,7 @@ export default function NewTaskPage() {
                             <Button
                                 type="submit"
                                 disabled={isLoading || friends.length === 0}
-                                className="flex-1 bg-slate-200 hover:bg-white text-slate-900 font-bold uppercase tracking-wider border-none"
+                                className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
                             >
                                 {isLoading ? "Creating..." : "🚀 Create Task"}
                             </Button>

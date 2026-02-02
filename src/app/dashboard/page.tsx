@@ -75,47 +75,55 @@ export default async function DashboardPage() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
                 <Card className="bg-slate-800/50 border-slate-700">
-                    <div className="p-3 flex flex-col justify-between h-full min-h-[60px]">
-                        <span className="text-slate-500 font-mono text-[9px] uppercase tracking-wider">
+                    <CardHeader className="p-3 pb-1 md:pb-2">
+                        <CardDescription className="text-slate-400 text-[10px] sm:text-xs">
                             Active Tasks
-                        </span>
-                        <p className="text-2xl font-bold text-white leading-none">{activeTasks.length}</p>
-                    </div>
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-3 pt-0">
+                        <p className="text-xl md:text-3xl font-bold text-white">{activeTasks.length}</p>
+                    </CardContent>
                 </Card>
 
                 <Card className="bg-slate-800/50 border-slate-700">
-                    <div className="p-3 flex flex-col justify-between h-full min-h-[60px]">
-                        <span className="text-slate-500 font-mono text-[9px] uppercase tracking-wider">
+                    <CardHeader className="p-3 pb-1 md:pb-2">
+                        <CardDescription className="text-slate-400 text-[10px] sm:text-xs">
                             Pending Vouches
-                        </span>
-                        <p className="text-2xl font-bold text-slate-200 leading-none">
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-3 pt-0">
+                        <p className="text-xl md:text-3xl font-bold text-slate-200">
                             {vouchRequests?.length || 0}
                         </p>
-                    </div>
+                    </CardContent>
                 </Card>
 
                 <Card className="bg-slate-800/50 border-slate-700">
-                    <div className="p-3 flex flex-col justify-between h-full min-h-[60px]">
-                        <span className="text-slate-500 font-mono text-[9px] uppercase tracking-wider">
+                    <CardHeader className="p-3 pb-1 md:pb-2">
+                        <CardDescription className="text-slate-400 text-[10px] sm:text-xs">
                             Completed
-                        </span>
-                        <p className="text-2xl font-bold text-emerald-400 leading-none">
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-3 pt-0">
+                        <p className="text-xl md:text-3xl font-bold text-emerald-400">
                             {completedCount}
                         </p>
-                    </div>
+                    </CardContent>
                 </Card>
 
                 <Card className="bg-slate-800/50 border-slate-700">
-                    <div className="p-3 flex flex-col justify-between h-full min-h-[60px]">
-                        <span className="text-slate-500 font-mono text-[9px] uppercase tracking-wider">
+                    <CardHeader className="p-3 pb-1 md:pb-2">
+                        <CardDescription className="text-slate-400 text-[10px] sm:text-xs">
                             Monthly Total
-                        </span>
-                        <p className="text-2xl font-bold text-slate-200 leading-none">
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-3 pt-0">
+                        <p className="text-xl md:text-3xl font-bold text-slate-200">
                             €{(totalFailureCost / 100).toFixed(2)}
                         </p>
-                    </div>
+                    </CardContent>
                 </Card>
             </div>
 
