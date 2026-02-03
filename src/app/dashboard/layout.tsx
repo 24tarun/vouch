@@ -111,7 +111,7 @@ export default async function DashboardLayout({
                         </div>
 
                         {/* Navigation Links - Horizontal Scroll on Mobile */}
-                        <NavLinks vouchCount={vouchCount} />
+                        <NavLinks vouchCount={vouchCount || 0} />
                     </div>
                 </div>
             </nav>
