@@ -93,7 +93,7 @@ export default async function HomePage() {
                 Assign a Voucher
               </h3>
               <p className="text-slate-400 text-sm leading-relaxed">
-                A friend verifies completion. We ensure the process is transparent and irreversible.
+                A friend verifies completion. You prove it through whatever means, just convince them you have done it. They can either accept or deny.
               </p>
             </div>
             <div className="text-left">
