@@ -10,8 +10,10 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "./ui/button";
-import { markTaskCompleted, postponeTask } from "@/actions/tasks";
+import { markTaskCompleted, postponeTask, cancelRepetition } from "@/actions/tasks";
 import { cn } from "@/lib/utils";
+import { Repeat } from "lucide-react";
+
 
 interface TaskRowProps {
     task: Task;
@@ -51,6 +53,15 @@ export function TaskRow({ task }: TaskRowProps) {
         }
     };
 
+    const handleCancelRepetition = async () => {
+        try {
+            await cancelRepetition(task.id);
+        } catch (error) {
+            console.error("Failed to cancel repetition", error);
+        }
+    };
+
+
     const deadline = new Date(task.deadline);
     const isOverdue = deadline < new Date() && !isCompleted && !isActuallyCompleted;
 
@@ -87,7 +98,7 @@ export function TaskRow({ task }: TaskRowProps) {
             </button>
 
             {/* Content */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
                 <p className={cn(
                     "text-sm font-medium truncate",
                     isActuallyCompleted ? cn("line-through", currentStatusColor || "text-slate-500") :
@@ -95,7 +106,11 @@ export function TaskRow({ task }: TaskRowProps) {
                 )}>
                     {task.title}
                 </p>
+                {task.recurrence_rule_id && (
+                    <Repeat className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                )}
             </div>
+
 
             {/* Right Side Actions/Info */}
             <div className="flex items-center gap-4 text-xs">
@@ -120,7 +135,14 @@ export function TaskRow({ task }: TaskRowProps) {
                                     <Clock className="mr-2 h-3.5 w-3.5" />
                                     Postpone
                                 </DropdownMenuItem>
+                                {task.recurrence_rule_id && (
+                                    <DropdownMenuItem onClick={handleCancelRepetition} className="text-red-400 focus:bg-slate-800 focus:text-red-300 cursor-pointer text-xs">
+                                        <Repeat className="mr-2 h-3.5 w-3.5" />
+                                        Stop Future Repetitions
+                                    </DropdownMenuItem>
+                                )}
                             </DropdownMenuContent>
+
                         </DropdownMenu>
                     </div>
                 )}

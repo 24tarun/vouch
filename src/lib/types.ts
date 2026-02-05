@@ -27,9 +27,11 @@ export interface Task {
     postponed_at: string | null;
     marked_completed_at: string | null;
     voucher_response_deadline: string | null;
+    recurrence_rule_id: string | null;
     created_at: string;
     updated_at: string;
 }
+
 
 export interface TaskEvent {
     id: string;
@@ -69,11 +71,36 @@ export interface ForceMajeure {
     created_at: string;
 }
 
+export type RecurrenceFrequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | "WEEKDAYS" | "CUSTOM";
+
+export interface RecurrenceRuleConfig {
+    frequency: RecurrenceFrequency;
+    interval: number;
+    days_of_week?: number[]; // 0=Sun, 1=Mon, etc.
+    time_of_day: string; // HH:MM
+}
+
+export interface RecurrenceRule {
+    id: string;
+    user_id: string;
+    voucher_id: string;
+    title: string;
+    description: string | null;
+    failure_cost_cents: number;
+    rule_config: RecurrenceRuleConfig;
+    timezone: string;
+    active: boolean;
+    last_generated_date: string | null; // YYYY-MM-DD
+    created_at: string;
+    updated_at: string;
+}
+
 // Extended types with relations
 export interface TaskWithRelations extends Task {
     user?: Profile;
     voucher?: Profile;
     events?: TaskEvent[];
+    recurrence_rule?: RecurrenceRule;
 }
 
 export interface ProfileWithFriends extends Profile {
@@ -111,6 +138,11 @@ export interface Database {
                 Row: Task
                 Insert: Omit<Task, "id" | "created_at" | "updated_at">
                 Update: Partial<Task>
+            }
+            recurrence_rules: {
+                Row: RecurrenceRule
+                Insert: Omit<RecurrenceRule, "id" | "created_at" | "updated_at">
+                Update: Partial<RecurrenceRule>
             }
             task_events: {
                 Row: TaskEvent

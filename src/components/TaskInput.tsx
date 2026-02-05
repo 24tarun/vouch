@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { createTask } from "@/actions/tasks";
-import { Loader2, Calendar, User, X } from "lucide-react";
+import { Loader2, Calendar, User, X, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import {
     Select,
@@ -11,8 +11,28 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { DEFAULT_FAILURE_COST_EUROS } from "@/lib/constants";
+
+
+
 
 interface TaskInputProps {
     friends: any[];
@@ -24,6 +44,19 @@ export function TaskInput({ friends }: TaskInputProps) {
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
     const [selectedVoucherId, setSelectedVoucherId] = useState<string>("");
     const [failureCost, setFailureCost] = useState(DEFAULT_FAILURE_COST_EUROS);
+
+
+    // Recurrence State
+    const [recurrenceType, setRecurrenceType] = useState<string>(""); // "" means none
+    const [recurrenceLabel, setRecurrenceLabel] = useState<string>("");
+
+    // Custom Recurrence State
+    const [showCustomRecurrence, setShowCustomRecurrence] = useState(false);
+    const [customFreq, setCustomFreq] = useState("DAILY");
+    const [customInterval, setCustomInterval] = useState("1");
+    const [customDays, setCustomDays] = useState<number[]>([]); // 0-6
+
+
     const [showShake, setShowShake] = useState(false);
     const [mounted, setMounted] = useState(false);
 
@@ -103,12 +136,36 @@ export function TaskInput({ friends }: TaskInputProps) {
             formData.append("voucherId", selectedVoucherId);
             formData.append("failureCost", failureCost);
 
+            if (recurrenceType) {
+                formData.append("recurrenceType", recurrenceType);
+                formData.append("userTimezone", Intl.DateTimeFormat().resolvedOptions().timeZone);
+
+                // Defaults for the preset types
+                if (recurrenceType === "DAILY") {
+                    formData.append("recurrenceInterval", "1");
+                }
+                // Custom handling (if type is one of the standards but customized)
+                if (["DAILY", "WEEKLY", "MONTHLY", "YEARLY"].includes(recurrenceType) && recurrenceLabel.startsWith("Every")) {
+                    formData.append("recurrenceInterval", customInterval);
+                    if (recurrenceType === "WEEKLY" && customDays.length > 0) {
+                        formData.append("recurrenceDays", JSON.stringify(customDays));
+                    }
+                }
+
+                // For "WEEKDAYS", frequency is WEEKDAYS.
+                // For now, simple presets.
+            }
+
+
             const result = await createTask(formData);
             if (result?.error) {
                 console.error("Failed to create task", result.error);
             } else {
                 setTitle("");
+                setRecurrenceType("");
+                setRecurrenceLabel("");
                 // setSelectedVoucherId(""); // Keep if user wants to create multiple for same person?
+
             }
         } catch (error) {
             console.error("Failed to create task", error);
@@ -119,165 +176,240 @@ export function TaskInput({ friends }: TaskInputProps) {
 
     return (
         <form onSubmit={handleSubmit} className="relative space-y-3 mb-8">
-            <div className="relative group">
+            <div className="bg-slate-900/50 border border-slate-800/50 focus-within:border-slate-700/50 rounded-xl transition-all shadow-2xl overflow-hidden">
                 <input
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="buy milk @14 vouch bob"
-                    className="w-full bg-slate-900/50 border border-slate-800/50 focus:border-slate-700/50 rounded-xl py-4 px-5 md:pr-[480px] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:bg-slate-900 transition-all font-medium text-lg shadow-2xl"
+                    className="w-full bg-transparent border-none py-4 px-5 text-slate-200 placeholder:text-slate-600 focus:outline-none transition-all font-medium text-lg"
                     disabled={isLoading}
                 />
 
-                {/* Desktop: Inline controls */}
-                <div className="hidden md:flex absolute right-4 top-1/2 -translate-y-1/2 items-center gap-3">
-                    {isLoading ? (
-                        <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
-                    ) : (
-                        <div className="flex items-center gap-2">
-                            {/* Cost Button/Input */}
-                            <div className="relative flex items-center">
-                                <span className="absolute left-2.5 text-slate-500 text-[10px] font-mono pointer-events-none">€</span>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    min="0.01"
-                                    value={failureCost}
-                                    onChange={(e) => setFailureCost(e.target.value)}
-                                    className="h-9 w-16 pl-5 pr-2 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 rounded-md text-slate-300 text-xs font-mono focus:outline-none focus:border-slate-600 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                    placeholder={DEFAULT_FAILURE_COST_EUROS}
-                                />
-                            </div>
+                <div className="p-2 flex items-center gap-1.5 border-t border-slate-800/30 overflow-x-auto no-scrollbar">
+                    {/* Cost Input */}
+                    <div className="relative w-16 shrink-0">
+                        <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-500 text-[9px] font-mono pointer-events-none z-10">€</span>
+                        <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            value={failureCost}
+                            onChange={(e) => setFailureCost(e.target.value)}
+                            className="h-9 w-full pl-4 pr-1 bg-slate-800/30 hover:bg-slate-700/30 border border-slate-700/30 rounded-lg text-slate-300 text-[11px] font-mono focus:outline-none focus:border-slate-600 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-center"
+                            placeholder={DEFAULT_FAILURE_COST_EUROS}
+                        />
+                    </div>
 
-                            {/* Active/Submit Button */}
-                            <Button
-                                type="submit"
-                                variant="ghost"
-                                size="sm"
-                                disabled={isLoading}
-                                className="h-9 px-3 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 text-slate-300 text-xs font-mono"
-                            >
-                                {isLoading ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                    "Active"
-                                )}
-                            </Button>
+                    {/* Voucher Select */}
+                    <div className={`flex-1 min-w-[100px] shrink ${showShake ? "animate-shake" : ""}`}>
+                        <Select value={selectedVoucherId} onValueChange={setSelectedVoucherId}>
+                            <SelectTrigger className="h-9 w-full bg-slate-800/30 border-slate-700/30 text-slate-300 text-[10px] font-mono focus:ring-0 rounded-lg justify-start px-2">
+                                <User className="h-3 w-3 mr-1.5 shrink-0 opacity-50" />
+                                <SelectValue placeholder="Voucher" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-slate-900 border-slate-800 text-slate-300">
+                                {friends.map((friend) => (
+                                    <SelectItem key={friend.id} value={friend.id}>
+                                        {friend.username || friend.email}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
 
-                            {/* Date Picker Button */}
-                            <input
-                                type="datetime-local"
-                                ref={dateInputRef}
-                                className="hidden"
-                                onChange={(e) => {
-                                    if (e.target.value) {
-                                        setSelectedDate(new Date(e.target.value));
-                                    }
-                                }}
-                            />
-                            <Button
+                    {/* Date Picker Button */}
+                    <input
+                        type="datetime-local"
+                        ref={dateInputRef}
+                        className="hidden"
+                        onChange={(e) => {
+                            if (e.target.value) {
+                                setSelectedDate(new Date(e.target.value));
+                            }
+                        }}
+                    />
+                    <button
+                        type="button"
+                        onClick={() => dateInputRef.current?.showPicker()}
+                        className={cn(
+                            "h-9 w-9 shrink-0 bg-slate-800/30 hover:bg-slate-700/30 border border-slate-700/30 text-slate-400 hover:text-slate-200 rounded-lg transition-all flex items-center justify-center",
+                            selectedDate && "text-blue-400 border-blue-500/30 bg-blue-500/5"
+                        )}
+                        title={selectedDate ? selectedDate.toLocaleString() : "Set Date"}
+                    >
+                        <Calendar className="h-3.5 w-3.5" />
+                    </button>
+
+                    {/* Repeat Toggle */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button
                                 type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => dateInputRef.current?.showPicker()}
-                                className="h-9 px-3 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 text-slate-300 text-xs font-mono"
+                                className={cn(
+                                    "h-9 w-9 shrink-0 bg-slate-800/30 hover:bg-slate-700/30 border border-slate-700/30 text-slate-400 hover:text-slate-200 rounded-lg transition-all flex items-center justify-center",
+                                    recurrenceType && "text-blue-400 border-blue-500/30 bg-blue-500/5"
+                                )}
+                                title={recurrenceLabel || "Set Repeat"}
                             >
-                                <Calendar className="h-3.5 w-3.5 mr-2" />
-                                {mounted && selectedDate ? selectedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Date"}
-                            </Button>
+                                <Repeat className="h-3.5 w-3.5" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-slate-900 border-slate-800 text-slate-300 min-w-[180px]">
+                            <DropdownMenuItem onClick={() => { setRecurrenceType(""); setRecurrenceLabel(""); }} className="focus:bg-slate-800 focus:text-slate-200 cursor-pointer text-xs">
+                                None
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator className="bg-slate-800" />
+                            <DropdownMenuItem onClick={() => { setRecurrenceType("DAILY"); setRecurrenceLabel("Daily"); }} className="focus:bg-slate-800 focus:text-slate-200 cursor-pointer text-xs justify-between">
+                                Daily
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setRecurrenceType("WEEKLY"); setRecurrenceLabel("Weekly"); }} className="focus:bg-slate-800 focus:text-slate-200 cursor-pointer text-xs justify-between">
+                                Weekly <span className="text-slate-500 ml-2">({selectedDate ? selectedDate.toLocaleDateString("en-US", { weekday: 'short' }) : "Day"})</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setRecurrenceType("MONTHLY"); setRecurrenceLabel("Monthly"); }} className="focus:bg-slate-800 focus:text-slate-200 cursor-pointer text-xs justify-between">
+                                Monthly <span className="text-slate-500 ml-2">({selectedDate ? selectedDate.getDate() + (([1, 21, 31].includes(selectedDate.getDate())) ? "st" : ([2, 22].includes(selectedDate.getDate())) ? "nd" : ([3, 23].includes(selectedDate.getDate())) ? "rd" : "th") : "Date"})</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setRecurrenceType("YEARLY"); setRecurrenceLabel("Yearly"); }} className="focus:bg-slate-800 focus:text-slate-200 cursor-pointer text-xs justify-between">
+                                Yearly <span className="text-slate-500 ml-2">({selectedDate ? selectedDate.toLocaleDateString("en-US", { month: 'short', day: 'numeric' }) : "Date"})</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator className="bg-slate-800" />
+                            <DropdownMenuItem onClick={() => { setRecurrenceType("WEEKDAYS"); setRecurrenceLabel("Weekdays"); }} className="focus:bg-slate-800 focus:text-slate-200 cursor-pointer text-xs justify-between">
+                                Every Weekday <span className="text-slate-500 ml-2">(Mon - Fri)</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator className="bg-slate-800" />
+                            <DropdownMenuItem onClick={() => {
+                                setShowCustomRecurrence(true);
+                                setCustomFreq("DAILY");
+                                setCustomInterval("1");
+                                setCustomDays(selectedDate ? [selectedDate.getDay()] : []);
+                            }} className="focus:bg-slate-800 focus:text-slate-200 cursor-pointer text-xs">
+                                Custom...
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
 
-                            {/* Voucher Select */}
-                            <div className={showShake ? "animate-shake" : ""}>
-                                <Select value={selectedVoucherId} onValueChange={setSelectedVoucherId}>
-                                    <SelectTrigger className="h-9 min-w-[120px] bg-slate-800/50 border-slate-700/50 text-slate-300 text-xs font-mono focus:ring-0">
-                                        <User className="h-3.5 w-3.5 mr-2" />
-                                        <SelectValue placeholder="Voucher" />
-                                    </SelectTrigger>
-                                    <SelectContent className="bg-slate-900 border-slate-800 text-slate-300">
-                                        {friends.map((friend) => (
-                                            <SelectItem key={friend.id} value={friend.id}>
-                                                {friend.username || friend.email}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-                    )}
+                    {/* Active/Submit Button */}
+                    <button
+                        type="submit"
+                        disabled={isLoading}
+                        className="h-9 w-9 shrink-0 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 rounded-lg transition-all disabled:opacity-50 flex items-center justify-center ml-auto"
+                    >
+                        {isLoading ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />
+                        ) : (
+                            <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                        )}
+                    </button>
                 </div>
             </div>
 
-            {/* Mobile: 2x2 Grid controls below input */}
-            <div className="grid md:hidden grid-cols-2 gap-2">
-                {isLoading ? (
-                    <div className="col-span-2 flex justify-center py-2">
-                        <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
-                    </div>
-                ) : (
-                    <>
-                        {/* Cost Input */}
-                        <div className="relative h-11">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-mono pointer-events-none z-10">€</span>
-                            <input
-                                type="number"
-                                step="0.01"
-                                min="0.01"
-                                value={failureCost}
-                                onChange={(e) => setFailureCost(e.target.value)}
-                                className="h-full w-full pl-6 pr-2 bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 rounded-lg text-slate-300 text-xs font-mono focus:outline-none focus:border-slate-600 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-center"
-                                placeholder={DEFAULT_FAILURE_COST_EUROS}
-                            />
-                        </div>
 
-                        {/* Active/Submit Button */}
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="h-11 w-full bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 text-slate-300 text-xs font-mono rounded-lg transition-all disabled:opacity-50 flex items-center justify-center"
-                        >
-                            {isLoading ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                                "Active"
-                            )}
-                        </button>
-
-                        {/* Date Picker Button */}
-                        <button
-                            type="button"
-                            onClick={() => dateInputRef.current?.showPicker()}
-                            className="h-11 w-full bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 text-slate-300 text-xs font-mono rounded-lg transition-all flex items-center justify-center"
-                        >
-                            <Calendar className="h-3.5 w-3.5 mr-2" />
-                            {mounted && selectedDate ? selectedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Date"}
-                        </button>
-
-                        {/* Voucher Select */}
-                        <div className={`h-11 ${showShake ? "animate-shake" : ""}`}>
-                            <Select value={selectedVoucherId} onValueChange={setSelectedVoucherId}>
-                                <SelectTrigger className="h-full w-full bg-slate-800/50 border-slate-700/50 text-slate-300 text-xs font-mono focus:ring-0 rounded-lg justify-center">
-                                    <User className="h-3.5 w-3.5 mr-2 shrink-0" />
-                                    <SelectValue placeholder="Voucher" />
-                                </SelectTrigger>
-                                <SelectContent className="bg-slate-900 border-slate-800 text-slate-300">
-                                    {friends.map((friend) => (
-                                        <SelectItem key={friend.id} value={friend.id}>
-                                            {friend.username || friend.email}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </>
-                )}
-            </div>
-
-            {/* Help text/Hints */}
+            {/* Test/Hints */}
             <div className="flex gap-4 px-2">
                 <p className="text-[10px] text-slate-500 font-mono uppercase tracking-wider">
                     Tip: Use <span className="text-slate-400">@time</span> and <span className="text-slate-400">vouch name</span>
                 </p>
             </div>
+
+            {/* Custom Recurrence Dialog */}
+            <Dialog open={showCustomRecurrence} onOpenChange={setShowCustomRecurrence}>
+                <DialogContent className="bg-[#1a1c1e] border-slate-800 text-slate-200 sm:max-w-[360px] p-6 rounded-3xl">
+                    <div className="space-y-6">
+                        {/* Due Date Dropdown/Button */}
+                        <div className="relative">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => dateInputRef.current?.showPicker()}
+                                className="w-full h-12 bg-transparent border-2 border-blue-500/50 hover:bg-blue-500/10 text-slate-200 rounded-2xl justify-between px-5 text-lg font-medium"
+                            >
+                                {mounted && selectedDate ? selectedDate.toLocaleDateString("en-US", { month: 'short', day: 'numeric', year: 'numeric' }) : "Due Date"}
+                                <span className="text-slate-500 text-xs">▼</span>
+                            </Button>
+                        </div>
+
+                        {/* Interval Row */}
+                        <div className="flex items-center gap-2">
+                            <div className="flex-1 flex items-center bg-[#242629] rounded-2xl px-4 h-12 border border-slate-800">
+                                <span className="text-slate-400 text-lg mr-auto">Every</span>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={customInterval}
+                                    onChange={(e) => setCustomInterval(e.target.value)}
+                                    className="w-12 bg-transparent text-blue-500 text-xl font-medium text-center focus:outline-none"
+                                />
+                            </div>
+                            <div className="flex-1">
+                                <Select value={customFreq} onValueChange={setCustomFreq}>
+                                    <SelectTrigger className="w-full bg-[#242629] border-slate-800 h-12 rounded-2xl text-lg font-medium ring-0 focus:ring-0">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-[#242629] border-slate-800 text-slate-200">
+                                        <SelectItem value="DAILY">Day</SelectItem>
+                                        <SelectItem value="WEEKLY">Week</SelectItem>
+                                        <SelectItem value="MONTHLY">Month</SelectItem>
+                                        <SelectItem value="YEARLY">Year</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+
+                        {/* Day Selector */}
+                        <div className="flex justify-between items-center px-1">
+                            {["M", "T", "W", "T", "F", "S", "S"].map((day, idx) => {
+                                // Adjusted index for Mon-Sun: 1, 2, 3, 4, 5, 6, 0
+                                const dayIdx = idx === 6 ? 0 : idx + 1;
+                                const isSelected = customDays.includes(dayIdx);
+                                return (
+                                    <button
+                                        key={idx}
+                                        type="button"
+                                        onClick={() => {
+                                            setCustomDays(prev =>
+                                                prev.includes(dayIdx)
+                                                    ? prev.filter(d => d !== dayIdx)
+                                                    : [...prev, dayIdx].sort()
+                                            );
+                                        }}
+                                        className={cn(
+                                            "w-10 h-10 rounded-full text-lg font-medium transition-all flex items-center justify-center",
+                                            isSelected
+                                                ? "bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)]"
+                                                : "text-slate-400 hover:text-slate-200"
+                                        )}
+                                    >
+                                        {day}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-3 pt-2">
+                            <Button
+                                className="flex-1 h-14 bg-blue-600 hover:bg-blue-500 text-white text-xl font-bold rounded-2xl shadow-lg active:scale-[0.98] transition-all"
+                                onClick={() => {
+                                    setRecurrenceType(customFreq);
+                                    const unit = customFreq.toLowerCase().replace("ly", "") + (parseInt(customInterval) > 1 ? "s" : "");
+                                    setRecurrenceLabel(`Every ${customInterval} ${unit}`);
+                                    setShowCustomRecurrence(false);
+                                }}
+                            >
+                                OK
+                            </Button>
+                            <Button
+                                variant="outline"
+                                className="flex-1 h-14 bg-transparent border-slate-700 text-slate-200 text-xl font-medium rounded-2xl hover:bg-slate-800 transition-all"
+                                onClick={() => setShowCustomRecurrence(false)}
+                            >
+                                Cancel
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </form>
+
     );
 }

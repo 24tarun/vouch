@@ -105,6 +105,69 @@ export async function createTask(formData: FormData) {
         return { error: "You can only assign friends as vouchers" };
     }
 
+    const recurrenceType = formData.get("recurrenceType") as string;
+    const recurrenceInterval = parseInt(formData.get("recurrenceInterval") as string || "1");
+    // Only parse days if present
+    const recurrenceDaysStr = formData.get("recurrenceDays") as string;
+    const recurrenceDays = recurrenceDaysStr ? JSON.parse(recurrenceDaysStr) : undefined;
+    const userTimezone = formData.get("userTimezone") as string;
+
+    // Check if it's a repetitive task
+    let recurrenceRuleId: string | null = null;
+
+    if (recurrenceType && userTimezone) {
+        // Calculate time_of_day from initial deadline
+        const initialDeadlineDate = new Date(deadline);
+        // We need the time in strict HH:MM format. 
+        // Best to use the local time component if we trust the input date was constructed correctly relative to UTC/Local.
+        // However, converting to the USER'S timezone to extract HH:MM is safer if we have the timezone.
+
+        // Helper to get HH:MM in specific timezone
+        const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+            timeZone: userTimezone
+        });
+        const timeOfDay = timeFormatter.format(initialDeadlineDate);
+
+        const ruleConfig = {
+            frequency: recurrenceType,
+            interval: recurrenceInterval,
+            days_of_week: recurrenceDays,
+            time_of_day: timeOfDay
+        };
+
+        // Insert recurrence rule
+        // @ts-ignore
+        const { data: rule, error: ruleError } = await (supabase.from(RecurrenceRuleTable) as any)
+            .insert({
+                user_id: (user as any).id,
+                voucher_id: voucherId,
+                title,
+                description: description || null,
+                failure_cost_cents: Math.round(failureCostEuros * 100),
+                rule_config: ruleConfig,
+                timezone: userTimezone,
+                active: true,
+                // Set last_generated_date to the date part of the deadline in user's timezone
+                // This prevents immediate regeneration of the task we are about to create manually
+                last_generated_date: new Intl.DateTimeFormat("en-CA", {
+                    timeZone: userTimezone,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit'
+                }).format(initialDeadlineDate)
+            })
+            .select()
+            .single();
+
+        if (ruleError) {
+            return { error: "Failed to create recurrence rule: " + ruleError.message };
+        }
+        recurrenceRuleId = (rule as any).id;
+    }
+
     // @ts-ignore
     const { data: task, error } = await (supabase.from("tasks" as any) as any)
         .insert({
@@ -115,6 +178,7 @@ export async function createTask(formData: FormData) {
             failure_cost_cents: Math.round(failureCostEuros * 100),
             deadline: new Date(deadline).toISOString(),
             status: "CREATED",
+            recurrence_rule_id: recurrenceRuleId
         })
         .select()
         .single();
@@ -131,12 +195,55 @@ export async function createTask(formData: FormData) {
         actor_id: (user as any).id,
         from_status: "CREATED",
         to_status: "CREATED",
-        metadata: { title, deadline, failure_cost_cents: Math.round(failureCostEuros * 100) },
+        metadata: {
+            title,
+            deadline,
+            failure_cost_cents: Math.round(failureCostEuros * 100),
+            recurrence_rule_id: recurrenceRuleId
+        },
     });
 
     revalidatePath("/dashboard");
     return { success: true, taskId: (task as any).id };
 }
+
+// Just a constant for the table name if I don't import it
+const RecurrenceRuleTable = "recurrence_rules";
+
+export async function cancelRepetition(taskId: string) {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) return { error: "Not authenticated" };
+
+    // Get task to find recurrence_rule_id
+    // @ts-ignore
+    const { data: task } = await supabase.from("tasks")
+        .select("recurrence_rule_id")
+        .eq("id", taskId)
+        .eq("user_id", user.id)
+        .single();
+
+    if (!task || !(task as any).recurrence_rule_id) {
+        return { error: "Task is not repetitive" };
+    }
+
+    // Disable the rule
+    const ruleId = (task as any).recurrence_rule_id;
+
+    // @ts-ignore
+    const { error } = await (supabase.from(RecurrenceRuleTable) as any)
+        .update({ active: false })
+        .eq("id", ruleId)
+        .eq("user_id", user.id);
+
+    if (error) return { error: error.message };
+
+    revalidatePath("/dashboard");
+    revalidatePath(`/dashboard/tasks/${taskId}`);
+    return { success: true };
+}
+
 
 export async function markTaskComplete(taskId: string) {
     const supabase = await createClient();
@@ -365,7 +472,8 @@ export async function getTask(taskId: string) {
         .select(`
       *,
       user:profiles!tasks_user_id_fkey(*),
-      voucher:profiles!tasks_voucher_id_fkey(*)
+      voucher:profiles!tasks_voucher_id_fkey(*),
+      recurrence_rule:recurrence_rules(*)
     `)
         .eq("id", (taskId as any))
         .single();

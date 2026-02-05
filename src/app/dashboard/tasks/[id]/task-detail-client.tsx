@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { markTaskComplete, postponeTask, forceMajeureTask } from "@/actions/tasks";
+import { markTaskComplete, postponeTask, forceMajeureTask, cancelRepetition } from "@/actions/tasks";
 import { Button } from "@/components/ui/button";
+import { Repeat } from "lucide-react";
+
 import {
     Card,
     CardContent,
@@ -108,6 +110,19 @@ export default function TaskDetailClient({
         router.refresh();
     }
 
+    async function handleCancelRepetition() {
+        if (!confirm("Are you sure you want to stop future repetitions? This task will remain, but no more will be created.")) return;
+        setIsLoading(true);
+        setError(null);
+        const result = await cancelRepetition(task.id);
+        if (result.error) {
+            setError(result.error);
+        }
+        setIsLoading(false);
+        router.refresh();
+    }
+
+
     // Calculate max postpone time (1 hour from current deadline)
     const maxPostpone = new Date(deadline.getTime() + 60 * 60 * 1000);
     const minPostpone = new Date(deadline.getTime() + 60 * 1000);
@@ -117,7 +132,12 @@ export default function TaskDetailClient({
             {/* Header */}
             <div className="flex items-start justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold text-white">{task.title}</h1>
+                    <h1 className="text-3xl font-bold text-white flex items-center gap-2">
+                        {task.title}
+                        {task.recurrence_rule_id && (
+                            <Repeat className="h-6 w-6 text-slate-500 shrink-0" />
+                        )}
+                    </h1>
                     <div className="flex items-center gap-3 mt-2">
                         <Badge className={`${statusColors[task.status]} text-white`}>
                             {task.status === "FAILED"
@@ -264,6 +284,18 @@ export default function TaskDetailClient({
                             className="text-slate-500 hover:text-white hover:bg-slate-800"
                         >
                             {isLoading ? "..." : "🆘 Use Force Majeure"}
+                        </Button>
+                    )}
+
+                    {task.recurrence_rule_id && (
+                        <Button
+                            variant="destructive"
+                            onClick={handleCancelRepetition}
+                            disabled={isLoading}
+                            className="bg-red-950/30 text-red-400 border border-red-900/50 hover:bg-red-900/40"
+                        >
+                            <Repeat className="mr-2 h-4 w-4" />
+                            {isLoading ? "Stopping..." : "Stop Future Repetitions"}
                         </Button>
                     )}
 
