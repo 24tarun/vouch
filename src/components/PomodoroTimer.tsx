@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pause, Play, Square, ChevronDown, ChevronUp, X, Minimize2, Maximize2 } from "lucide-react";
+import { Pause, Play, Square, Minimize2, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PomoSession } from "@/lib/types";
 
@@ -18,10 +18,10 @@ export interface PomodoroTimerProps {
 export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPause, onResume, onStop }: PomodoroTimerProps) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [progress, setProgress] = useState(0);
+    const [isFullscreen, setIsFullscreen] = useState(false);
 
     // VFD Color Style
     const vfdColor = "text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.6)]";
-    const ringColor = "stroke-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.5)]";
 
     useEffect(() => {
         const calculateTime = () => {
@@ -47,17 +47,40 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
         return () => clearInterval(interval);
     }, [session]);
 
+    useEffect(() => {
+        const onFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+
+        document.addEventListener("fullscreenchange", onFullscreenChange);
+        return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    }, []);
+
     // Format HH:MM or MM:SS
     const formatTime = (seconds: number) => {
-        if (seconds >= 6000) { // > 100 mins
+        if (seconds >= 6000) {
             const h = Math.floor(seconds / 3600);
             const m = Math.floor((seconds % 3600) / 60);
-            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+            return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
         }
 
         const m = Math.floor(seconds / 60);
         const s = seconds % 60;
-        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+    };
+
+    const toggleFullscreen = async () => {
+        try {
+            if (!document.fullscreenElement) {
+                await document.documentElement.requestFullscreen();
+                setIsFullscreen(true);
+            } else {
+                await document.exitFullscreen();
+                setIsFullscreen(false);
+            }
+        } catch {
+            // Ignore API failures. The overlay still covers the viewport.
+        }
     };
 
     if (minimized) {
@@ -65,10 +88,10 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
             <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
                 <div
                     onClick={onMinimize}
-                    className="group bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-full h-14 pl-2 pr-5 flex items-center gap-3 shadow-2xl cursor-pointer hover:border-cyan-500/30 transition-all overflow-hidden"
+                    className="group bg-black border border-slate-800 rounded-full h-20 pl-3 pr-6 flex items-center gap-4 shadow-2xl cursor-pointer hover:border-cyan-500/40 transition-all overflow-hidden min-w-[230px]"
                 >
                     {/* Tiny Circular Progress */}
-                    <div className="relative w-10 h-10 flex items-center justify-center">
+                    <div className="relative w-14 h-14 flex items-center justify-center">
                         <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
                             <path
                                 className="text-slate-800"
@@ -86,14 +109,14 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
                                 strokeWidth="4"
                             />
                         </svg>
-                        <div className={cn("absolute inset-0 flex items-center justify-center text-[10px] font-bold font-mono", vfdColor)}>
+                        <div className={cn("absolute inset-0 flex items-center justify-center text-xs font-bold font-mono", vfdColor)}>
                             {Math.ceil(timeLeft / 60)}
                         </div>
                     </div>
 
                     <div className="flex flex-col">
-                        <span className="text-xs font-medium text-slate-200 truncate max-w-[120px]">{taskTitle}</span>
-                        <span className={cn("text-[10px] font-mono tracking-wider", session.status === "PAUSED" ? "text-amber-400" : "text-slate-400")}>
+                        <span className="text-sm font-medium text-slate-200 truncate max-w-[150px]">{taskTitle}</span>
+                        <span className={cn("text-xs font-mono tracking-wider", session.status === "PAUSED" ? "text-amber-400" : "text-slate-400")}>
                             {session.status === "PAUSED" ? "PAUSED" : "ACTIVE"}
                         </span>
                     </div>
@@ -103,24 +126,36 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="relative w-full max-w-sm mx-4 bg-[#0a0a0a] border border-slate-800 rounded-3xl p-8 shadow-2xl flex flex-col items-center gap-8 ring-1 ring-white/5">
+        <div className="fixed inset-0 z-50 bg-black text-slate-200 animate-in fade-in duration-200">
+            <div className="absolute top-6 left-6">
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-600 font-semibold">Current Task</p>
+                <h3 className="text-xl font-semibold text-white mt-1 max-w-[70vw] truncate">{taskTitle}</h3>
+            </div>
 
-                {/* Header */}
-                <div className="w-full flex justify-between items-start">
-                    <div className="space-y-1">
-                        <p className="text-xs uppercase tracking-widest text-slate-500 font-semibold">Current Task</p>
-                        <h3 className="text-lg font-medium text-white line-clamp-2 leading-tight">{taskTitle}</h3>
-                    </div>
-                    <button onClick={onMinimize} className="p-2 -mr-2 text-slate-500 hover:text-white transition-colors">
-                        <Minimize2 className="w-5 h-5" />
-                    </button>
-                </div>
+            <div className="absolute top-6 right-6 flex items-center gap-1">
+                <button
+                    type="button"
+                    onClick={toggleFullscreen}
+                    className="p-2 text-slate-500 hover:text-cyan-300 transition-colors"
+                    title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                >
+                    <Maximize2 className="w-5 h-5" />
+                </button>
+                <button
+                    type="button"
+                    onClick={onMinimize}
+                    className="p-2 text-slate-500 hover:text-white transition-colors"
+                    title="Minimize timer"
+                >
+                    <Minimize2 className="w-5 h-5" />
+                </button>
+            </div>
 
+            <div className="h-full w-full flex flex-col items-center justify-center gap-10 px-4">
                 {/* Main Clock */}
-                <div className="relative w-64 h-64 flex items-center justify-center">
+                <div className="relative w-[310px] h-[310px] sm:w-[380px] sm:h-[380px] flex items-center justify-center">
                     {/* SVG Ring */}
-                    <svg className="absolute w-full h-full -rotate-90 drop-shadow-lg" viewBox="0 0 100 100">
+                    <svg className="absolute w-full h-full -rotate-90" viewBox="0 0 100 100">
                         {/* Track */}
                         <circle
                             cx="50"
@@ -139,37 +174,34 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
                             stroke="currentColor"
                             strokeWidth="3"
                             strokeLinecap="round"
-                            className="text-cyan-500 transition-all duration-1000 ease-linear shadow-[0_0_10px_currentColor]"
-                            strokeDasharray={`${progress * 2.83}, 283`} // 2 * PI * 45 ≈ 283
+                            className="text-cyan-500 transition-all duration-1000 ease-linear"
+                            strokeDasharray={`${progress * 2.83}, 283`}
                         />
                     </svg>
 
-                    {/* VFD Display */}
-                    <div className="flex flex-col items-center gap-2 z-10">
-                        <div className={cn("text-6xl font-mono font-bold tracking-tight py-2 px-4 bg-black/50 rounded-lg border border-cyan-900/30 shadow-[inset_0_0_20px_rgba(6,182,212,0.1)]", vfdColor)}>
-                            {formatTime(timeLeft)}
-                        </div>
-                        <span className={cn("text-xs font-bold tracking-[0.2em] uppercase", session.status === "PAUSED" ? "text-amber-400 animate-pulse" : "text-cyan-700")}>
-                            {session.status === "PAUSED" ? "PAUSED" : "FOCUSING"}
-                        </span>
+                    {/* VFD Display (minimal: no rectangular box) */}
+                    <div className={cn("text-7xl sm:text-8xl font-mono font-bold tracking-tight z-10", vfdColor)}>
+                        {formatTime(timeLeft)}
                     </div>
                 </div>
 
                 {/* Controls */}
-                <div className="flex items-center gap-6 w-full justify-center">
+                <div className="flex items-center gap-10 w-full justify-center">
                     {session.status === "ACTIVE" ? (
                         <button
                             onClick={onPause}
-                            className="w-16 h-16 rounded-full bg-slate-900 border border-slate-700 text-slate-200 flex items-center justify-center hover:bg-slate-800 hover:border-slate-600 transition-all hover:scale-105 active:scale-95"
+                            className="text-slate-200 hover:text-cyan-300 transition-colors hover:scale-105 active:scale-95 p-2"
+                            title="Pause"
                         >
-                            <Pause className="w-6 h-6 fill-current" />
+                            <Pause className="w-10 h-10 fill-current" />
                         </button>
                     ) : (
                         <button
                             onClick={onResume}
-                            className="w-16 h-16 rounded-full bg-slate-900 border border-slate-700 text-slate-200 flex items-center justify-center hover:bg-slate-800 hover:border-slate-600 transition-all hover:scale-105 active:scale-95"
+                            className="text-slate-200 hover:text-cyan-300 transition-colors hover:scale-105 active:scale-95 p-2"
+                            title="Resume"
                         >
-                            <Play className="w-6 h-6 fill-current pl-1" />
+                            <Play className="w-10 h-10 fill-current" />
                         </button>
                     )}
 
@@ -179,9 +211,10 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
                                 onStop();
                             }
                         }}
-                        className="w-16 h-16 rounded-full bg-red-950/30 border border-red-900/50 text-red-500 flex items-center justify-center hover:bg-red-900/30 hover:border-red-500/50 transition-all hover:scale-105 active:scale-95 group"
+                        className="text-red-500 hover:text-red-400 transition-colors hover:scale-105 active:scale-95 p-2"
+                        title="Stop"
                     >
-                        <Square className="w-5 h-5 fill-current" />
+                        <Square className="w-9 h-9 fill-current" />
                     </button>
                 </div>
             </div>
