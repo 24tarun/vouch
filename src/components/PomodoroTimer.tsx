@@ -15,6 +15,43 @@ export interface PomodoroTimerProps {
     onStop: () => void;
 }
 
+const DIGIT_SEGMENTS: Record<string, [boolean, boolean, boolean, boolean, boolean, boolean, boolean]> = {
+    "0": [true, true, true, true, true, true, false],
+    "1": [false, true, true, false, false, false, false],
+    "2": [true, true, false, true, true, false, true],
+    "3": [true, true, true, true, false, false, true],
+    "4": [false, true, true, false, false, true, true],
+    "5": [true, false, true, true, false, true, true],
+    "6": [true, false, true, true, true, true, true],
+    "7": [true, true, true, false, false, false, false],
+    "8": [true, true, true, true, true, true, true],
+    "9": [true, true, true, true, false, true, true],
+};
+
+function SevenSegmentDigit({ digit }: { digit: string }) {
+    const segments = DIGIT_SEGMENTS[digit] || DIGIT_SEGMENTS["0"];
+    return (
+        <span className="seven-seg-digit" aria-hidden="true">
+            <span className={cn("seven-seg-segment seven-seg-a", segments[0] && "seven-seg-on")} />
+            <span className={cn("seven-seg-segment seven-seg-b", segments[1] && "seven-seg-on")} />
+            <span className={cn("seven-seg-segment seven-seg-c", segments[2] && "seven-seg-on")} />
+            <span className={cn("seven-seg-segment seven-seg-d", segments[3] && "seven-seg-on")} />
+            <span className={cn("seven-seg-segment seven-seg-e", segments[4] && "seven-seg-on")} />
+            <span className={cn("seven-seg-segment seven-seg-f", segments[5] && "seven-seg-on")} />
+            <span className={cn("seven-seg-segment seven-seg-g", segments[6] && "seven-seg-on")} />
+        </span>
+    );
+}
+
+function SevenSegmentColon() {
+    return (
+        <span className="seven-seg-colon" aria-hidden="true">
+            <span className="seven-seg-colon-dot seven-seg-on" />
+            <span className="seven-seg-colon-dot seven-seg-on" />
+        </span>
+    );
+}
+
 export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPause, onResume, onStop }: PomodoroTimerProps) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [progress, setProgress] = useState(0);
@@ -83,6 +120,8 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
         }
     };
 
+    const formattedTime = formatTime(timeLeft);
+
     if (minimized) {
         return (
             <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-10 fade-in duration-300">
@@ -128,8 +167,7 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
     return (
         <div className="fixed inset-0 z-50 bg-black text-slate-200 animate-in fade-in duration-200">
             <div className="absolute top-6 left-6">
-                <p className="text-xs uppercase tracking-[0.22em] text-slate-600 font-semibold">Current Task</p>
-                <h3 className="text-xl font-semibold text-white mt-1 max-w-[70vw] truncate">{taskTitle}</h3>
+                <h3 className="text-xl font-semibold text-white max-w-[70vw] truncate">{taskTitle}</h3>
             </div>
 
             <div className="absolute top-6 right-6 flex items-center gap-1">
@@ -153,35 +191,12 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
 
             <div className="h-full w-full flex flex-col items-center justify-center gap-10 px-4">
                 {/* Main Clock */}
-                <div className="relative w-[310px] h-[310px] sm:w-[380px] sm:h-[380px] flex items-center justify-center">
-                    {/* SVG Ring */}
-                    <svg className="absolute w-full h-full -rotate-90" viewBox="0 0 100 100">
-                        {/* Track */}
-                        <circle
-                            cx="50"
-                            cy="50"
-                            r="45"
-                            fill="none"
-                            stroke="#1e293b"
-                            strokeWidth="3"
-                        />
-                        {/* Progress */}
-                        <circle
-                            cx="50"
-                            cy="50"
-                            r="45"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="3"
-                            strokeLinecap="round"
-                            className="text-cyan-500 transition-all duration-1000 ease-linear"
-                            strokeDasharray={`${progress * 2.83}, 283`}
-                        />
-                    </svg>
-
-                    {/* VFD Display (minimal: no rectangular box) */}
-                    <div className={cn("text-7xl sm:text-8xl font-mono font-bold tracking-tight z-10", vfdColor)}>
-                        {formatTime(timeLeft)}
+                <div className="relative min-h-[170px] flex items-center justify-center">
+                    {/* VFD Display */}
+                    <div className={cn("seven-seg-display z-10", vfdColor)} aria-label={`Time remaining ${formattedTime}`}>
+                        {formattedTime.split("").map((char, i) =>
+                            char === ":" ? <SevenSegmentColon key={`colon-${i}`} /> : <SevenSegmentDigit key={`digit-${i}-${char}`} digit={char} />
+                        )}
                     </div>
                 </div>
 
@@ -190,7 +205,7 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
                     {session.status === "ACTIVE" ? (
                         <button
                             onClick={onPause}
-                            className="text-slate-200 hover:text-cyan-300 transition-colors hover:scale-105 active:scale-95 p-2"
+                            className="text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.45)] hover:text-cyan-300 hover:drop-shadow-[0_0_12px_rgba(34,211,238,0.6)] transition-all hover:scale-105 active:scale-95 p-2"
                             title="Pause"
                         >
                             <Pause className="w-10 h-10 fill-current" />
@@ -198,7 +213,7 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
                     ) : (
                         <button
                             onClick={onResume}
-                            className="text-slate-200 hover:text-cyan-300 transition-colors hover:scale-105 active:scale-95 p-2"
+                            className="text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.45)] hover:text-cyan-300 hover:drop-shadow-[0_0_12px_rgba(34,211,238,0.6)] transition-all hover:scale-105 active:scale-95 p-2"
                             title="Resume"
                         >
                             <Play className="w-10 h-10 fill-current" />
@@ -211,7 +226,7 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
                                 onStop();
                             }
                         }}
-                        className="text-red-500 hover:text-red-400 transition-colors hover:scale-105 active:scale-95 p-2"
+                        className="text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.45)] hover:text-cyan-300 hover:drop-shadow-[0_0_12px_rgba(34,211,238,0.6)] transition-all hover:scale-105 active:scale-95 p-2"
                         title="Stop"
                     >
                         <Square className="w-9 h-9 fill-current" />
