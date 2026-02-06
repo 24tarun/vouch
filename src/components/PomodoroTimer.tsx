@@ -93,6 +93,21 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
         return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
     }, []);
 
+    useEffect(() => {
+        if (!isFullscreen) return;
+
+        const prevBodyOverflow = document.body.style.overflow;
+        const prevHtmlOverflow = document.documentElement.style.overflow;
+
+        document.body.style.overflow = "hidden";
+        document.documentElement.style.overflow = "hidden";
+
+        return () => {
+            document.body.style.overflow = prevBodyOverflow;
+            document.documentElement.style.overflow = prevHtmlOverflow;
+        };
+    }, [isFullscreen]);
+
     // Format HH:MM or MM:SS
     const formatTime = (seconds: number) => {
         if (seconds >= 6000) {
