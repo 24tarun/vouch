@@ -13,13 +13,15 @@ async function autoEndLingeringPomoSession(
     userId: string,
     source: PomoAutoEndSource
 ) {
-    const { data: session, error: sessionError } = await supabase.from("pomo_sessions")
+    const sessionResult = await (supabase.from("pomo_sessions") as any)
         .select("*")
         .eq("user_id", userId)
         .in("status", ["ACTIVE", "PAUSED"])
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
+    const session = sessionResult.data as any;
+    const sessionError = sessionResult.error;
 
     if (sessionError) {
         console.error("Failed to fetch active pomo during sign-out:", sessionError);
@@ -35,7 +37,7 @@ async function autoEndLingeringPomoSession(
         : 0;
     const finalElapsed = (session.elapsed_seconds || 0) + additionalElapsed;
 
-    const { data: updatedSession, error: updateError } = await supabase.from("pomo_sessions")
+    const { data: updatedSession, error: updateError } = await (supabase.from("pomo_sessions") as any)
         .update({
             status: "COMPLETED",
             elapsed_seconds: finalElapsed,
@@ -56,7 +58,7 @@ async function autoEndLingeringPomoSession(
 
     if (!session.task_id) return;
 
-    const { data: task } = await supabase.from("tasks")
+    const { data: task } = await (supabase.from("tasks") as any)
         .select("status")
         .eq("id", session.task_id)
         .eq("user_id", userId)
@@ -64,7 +66,7 @@ async function autoEndLingeringPomoSession(
 
     if (!task?.status) return;
 
-    const { error: eventError } = await supabase.from("task_events").insert({
+    const { error: eventError } = await (supabase.from("task_events") as any).insert({
         task_id: session.task_id,
         event_type: "POMO_COMPLETED",
         actor_id: userId,

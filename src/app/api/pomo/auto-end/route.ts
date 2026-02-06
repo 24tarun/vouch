@@ -23,24 +23,32 @@ export async function POST(req: NextRequest) {
             // Ignore malformed payload; we'll fallback to latest active session.
         }
 
-        const activeSessionQuery = sessionId
-            ? supabase
-                .from("pomo_sessions")
+        let session: any = null;
+        let selectError: any = null;
+
+        if (sessionId) {
+            const res = await (supabase
+                .from("pomo_sessions") as any)
                 .select("*")
                 .eq("id", sessionId)
                 .eq("user_id", user.id)
                 .eq("status", "ACTIVE")
-                .maybeSingle()
-            : supabase
-                .from("pomo_sessions")
+                .maybeSingle();
+            session = res.data;
+            selectError = res.error;
+        } else {
+            const res = await (supabase
+                .from("pomo_sessions") as any)
                 .select("*")
                 .eq("user_id", user.id)
                 .eq("status", "ACTIVE")
                 .order("created_at", { ascending: false })
                 .limit(1)
                 .maybeSingle();
+            session = res.data;
+            selectError = res.error;
+        }
 
-        const { data: session, error: selectError } = await activeSessionQuery;
         if (selectError) {
             return NextResponse.json({ error: selectError.message }, { status: 500 });
         }
@@ -54,8 +62,8 @@ export async function POST(req: NextRequest) {
         const additionalElapsed = Math.max(0, Math.floor((now.getTime() - startTime.getTime()) / 1000));
         const finalElapsed = (session.elapsed_seconds || 0) + additionalElapsed;
 
-        const { data: updatedSession, error: updateError } = await supabase
-            .from("pomo_sessions")
+        const { data: updatedSession, error: updateError } = await ((supabase
+            .from("pomo_sessions") as any)
             .update({
                 status: "COMPLETED",
                 elapsed_seconds: finalElapsed,
@@ -65,7 +73,7 @@ export async function POST(req: NextRequest) {
             .eq("user_id", user.id)
             .eq("status", "ACTIVE")
             .select("id")
-            .maybeSingle();
+            .maybeSingle());
 
         if (updateError) {
             return NextResponse.json({ error: updateError.message }, { status: 500 });
@@ -77,15 +85,15 @@ export async function POST(req: NextRequest) {
         }
 
         if (session.task_id) {
-            const { data: task } = await supabase
-                .from("tasks")
+            const { data: task } = await (supabase
+                .from("tasks") as any)
                 .select("status")
                 .eq("id", session.task_id)
                 .eq("user_id", user.id)
                 .single();
 
             if (task?.status) {
-                const { error: eventError } = await supabase.from("task_events").insert({
+                const { error: eventError } = await (supabase.from("task_events") as any).insert({
                     task_id: session.task_id,
                     event_type: "POMO_COMPLETED",
                     actor_id: user.id,
