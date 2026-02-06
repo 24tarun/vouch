@@ -44,72 +44,84 @@ export default async function HomePage() {
       </nav>
 
       {/* Hero */}
-      <section className="pt-32 pb-20 px-4">
+      <section className="pt-32 pb-15 px-4 sm:px-6">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-block mb-6 px-4 py-1 rounded bg-slate-900 border border-slate-800">
-            <span className="text-xs text-slate-400 uppercase tracking-widest font-medium">
+          <div className="inline-flex flex-wrap items-center justify-center gap-3 mb-6 px-3 sm:px-4 py-1">
+            <span className="text-[10px] sm:text-xs text-slate-400 uppercase tracking-widest font-medium">
               TASK ACCOUNTABILITY SYSTEM by{" "}
-              <a
-                href="#footer"
-                className="hover:text-white transition-colors"
-              >
-                Tarun Hariharan
-              </a>
+              <span className="text-slate-300">Tarun Hariharan</span>
             </span>
+            <div className="flex items-center gap-3 text-slate-400">
+              <a
+                href="mailto:tarun2k01@gmail.com"
+                className="hover:text-white transition-colors"
+                aria-label="Email"
+              >
+                <Mail size={25} />
+              </a>
+              <a
+                href="https://www.linkedin.com/in/tarun2k01"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-white transition-colors"
+                aria-label="LinkedIn"
+              >
+                <Linkedin size={25} />
+              </a>
+              <a
+                href="https://tarunh.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-white transition-colors"
+                aria-label="Personal Website"
+              >
+                <Globe size={25} />
+              </a>
+            </div>
           </div>
-          <h1 className="text-5xl md:text-7xl font-bold text-white mb-6 leading-tight tracking-tighter">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6 leading-tight tracking-tighter px-4">
             Accountability with <br />
             <span className="text-slate-400">Real Stakes.</span>
           </h1>
-          <p className="text-lg text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
-            Set commitments. Assign vouchers. Face consequences. When you fail,
-            your money goes to charity. Pure accountability.
+          <p className="text-base sm:text-lg text-slate-400 mb-4 max-w-xl mx-auto leading-relaxed px-4">
+            A system that costs you money when you fail to complete your tasks. Studies show that introducing financial stakes significantly increases the likelihood of task completion.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/login?mode=signup">
-              <Button
-                size="lg"
-                className="bg-slate-200 hover:bg-white text-slate-900 font-bold text-base px-8 py-6 rounded"
-              >
-                Sign Up Now
-              </Button>
-            </Link>
-          </div>
         </div>
       </section>
 
       {/* How It Works */}
-      <section className="py-20 px-4">
+      <section className="pt-8 pb-20 px-4 sm:px-6">
         <div className="max-w-5xl mx-auto">
-          <h2 className="text-2xl font-bold text-white text-center mb-16 tracking-tight">
+          <h2 className="text-xl sm:text-2xl font-bold text-white text-center mb-12 sm:mb-16 tracking-tight">
             How It Works
           </h2>
-          <div className="grid md:grid-cols-3 gap-12">
+          <div className="grid md:grid-cols-3 gap-8 sm:gap-12">
             <div className="text-left">
-              <div className="text-slate-500 font-mono text-sm mb-4">01.</div>
-              <h3 className="text-lg font-bold text-white mb-3">
+              <h3 className="text-base sm:text-lg font-bold text-white mb-3">
+                <span className="text-slate-500 font-mono text-sm mr-2">01.</span>
                 Create a Task
               </h3>
               <p className="text-slate-400 text-sm leading-relaxed">
-                Set your commitment, deadline, and failure cost (€0.01 - €100).
+                Set your deadline, failure cost, repetition.<br></br>
+                Start focusing with the help of the built in Pomodoro timer.
               </p>
             </div>
             <div className="text-left">
-              <div className="text-slate-500 font-mono text-sm mb-4">02.</div>
-              <h3 className="text-lg font-bold text-white mb-3">
-                Add friends and assign them as vouchers for any of your tasks
+              <h3 className="text-base sm:text-lg font-bold text-white mb-3">
+                <span className="text-slate-500 font-mono text-sm mr-2">02.</span>
+                Add friends and assign them as vouchers
               </h3>
               <p className="text-slate-400 text-sm leading-relaxed">
-                A voucher verifies completion. You prove it through whatever means, just convince them you have done it. They can either accept or deny.
+               voucher verifies completion.  They can either accept or deny.
               </p>
             </div>
             <div className="text-left">
-              <div className="text-slate-500 font-mono text-sm mb-4">03.</div>
-              <h3 className="text-lg font-bold text-white mb-3">
-                If you fail the deadline or if your vouchers deny your task, failure costs you the failure cost that you set
+              <h3 className="text-base sm:text-lg font-bold text-white mb-3">
+                <span className="text-slate-500 font-mono text-sm mr-2">03.</span>
+                If you fail the deadline or voucher denies, failure costs your failure.
               </h3>
               <p className="text-slate-400 text-sm leading-relaxed">
-                At the end of the month, your total failure costs are donated to a charity of your choice.
+                At the end of the month, your total failure costs are donated to a charity/person of your choice.
               </p>
             </div>
           </div>
@@ -117,11 +129,11 @@ export default async function HomePage() {
       </section>
 
       {/* Features */}
-      <section className="py-20 px-4 border-y border-slate-900 bg-slate-950/50">
+      <section className="py-20 px-4 sm:px-6 border-y border-slate-900 bg-slate-950/50">
         <div className="max-w-5xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-12">
+          <div className="grid md:grid-cols-2 gap-8 sm:gap-12">
             <div>
-              <h3 className="text-lg font-bold text-white mb-2">
+              <h3 className="text-base sm:text-lg font-bold text-white mb-2">
                 Irreversible Deadlines
               </h3>
               <p className="text-slate-400 text-sm leading-relaxed">
@@ -129,7 +141,7 @@ export default async function HomePage() {
               </p>
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white mb-2">
+              <h3 className="text-base sm:text-lg font-bold text-white mb-2">
                 Social Verification
               </h3>
               <p className="text-slate-400 text-sm leading-relaxed">
@@ -137,7 +149,7 @@ export default async function HomePage() {
               </p>
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white mb-2">
+              <h3 className="text-base sm:text-lg font-bold text-white mb-2">
                 Real Financial Stakes
               </h3>
               <p className="text-slate-400 text-sm leading-relaxed">
@@ -145,7 +157,7 @@ export default async function HomePage() {
               </p>
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white mb-2">
+              <h3 className="text-base sm:text-lg font-bold text-white mb-2">
                 Limited Safety Nets
               </h3>
               <p className="text-slate-400 text-sm leading-relaxed">
@@ -156,39 +168,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer id="footer" className="py-12 px-4 border-t border-slate-900">
-        <div className="max-w-5xl mx-auto flex flex-col items-center justify-center gap-4 text-slate-500">
-          <p className="text-sm text-slate-400 mb-2">Reach out to me via:</p>
-          <div className="flex items-center justify-center gap-6">
-            <a
-              href="mailto:tarun2k01@gmail.com"
-              className="hover:text-white transition-colors"
-              aria-label="Email"
-            >
-              <Mail size={20} />
-            </a>
-            <a
-              href="https://www.linkedin.com/in/tarun2k01"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-white transition-colors"
-              aria-label="LinkedIn"
-            >
-              <Linkedin size={20} />
-            </a>
-            <a
-              href="https://tarunh.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-white transition-colors"
-              aria-label="Personal Website"
-            >
-              <Globe size={20} />
-            </a>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }
