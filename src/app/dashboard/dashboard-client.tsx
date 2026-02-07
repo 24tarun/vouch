@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createTask, markTaskCompleted } from "@/actions/tasks";
 import { DashboardHeaderActions } from "@/components/DashboardHeaderActions";
@@ -62,11 +62,22 @@ export default function DashboardClient({
 }: DashboardClientProps) {
     const router = useRouter();
     const [, startRefreshTransition] = useTransition();
-    const split = splitTasks(initialTasks);
+    const split = useMemo(() => splitTasks(initialTasks), [initialTasks]);
 
     const [activeTasks, setActiveTasks] = useState<Task[]>(split.active);
     const [completedTasks, setCompletedTasks] = useState<Task[]>(split.completed.slice(0, MAX_COMPLETED_TASKS));
     const [completingTaskIds, setCompletingTaskIds] = useState<Set<string>>(new Set());
+
+    useEffect(() => {
+        setActiveTasks(split.active);
+        setCompletedTasks(split.completed.slice(0, MAX_COMPLETED_TASKS));
+        setCompletingTaskIds((prev) => {
+            if (prev.size === 0) return prev;
+            const activeIds = new Set(split.active.map((task) => task.id));
+            const next = new Set(Array.from(prev).filter((taskId) => activeIds.has(taskId)));
+            return next.size === prev.size ? prev : next;
+        });
+    }, [split]);
 
     const refreshInBackground = () => {
         startRefreshTransition(() => {
