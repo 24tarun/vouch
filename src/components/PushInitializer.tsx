@@ -43,12 +43,24 @@ export function PushInitializer() {
 
     const subscribe = async () => {
         try {
+            setError(null);
             haptics.light();
             const status = await Notification.requestPermission();
             setPermission(status);
 
-            if (status !== "granted") return;
+            if (status === "denied") {
+                haptics.error();
+                setError("Notification permission denied. Enable notifications in browser settings.");
+                return;
+            }
+
+            if (status !== "granted") {
+                setError("Notification permission was dismissed.");
+                return;
+            }
+
             if (!hasVapidKey) {
+                haptics.error();
                 setError("Push is not configured. Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY.");
                 return;
             }
@@ -62,12 +74,15 @@ export function PushInitializer() {
             const result = await saveSubscription(JSON.parse(JSON.stringify(sub)));
             if (result.success) {
                 setIsSubscribed(true);
+                setError(null);
                 haptics.medium();
             } else if (result.error) {
+                haptics.error();
                 setError(result.error);
             }
         } catch (err) {
             console.error("Subscription failed:", err);
+            haptics.error();
             setError(err instanceof Error ? err.message : "Subscription failed.");
         }
     };
@@ -83,7 +98,18 @@ export function PushInitializer() {
         );
     }
 
-    if (!supportsPush || isSubscribed || permission === "denied") return null;
+    if (!supportsPush) {
+        return (
+            <div className="bg-slate-900 border border-slate-800 rounded-lg p-4 mb-6">
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Push Unavailable</h3>
+                <p className="text-xs text-slate-500 font-mono mt-1">
+                    This browser does not support Web Push in the current mode.
+                </p>
+            </div>
+        );
+    }
+
+    if (isSubscribed || permission === "denied") return null;
 
     return (
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-4 mb-6">

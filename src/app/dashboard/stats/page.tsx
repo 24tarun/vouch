@@ -7,80 +7,74 @@ export default async function OverviewPage() {
     const {
         data: { user },
     } = await supabase.auth.getUser();
-
-    // @ts-ignore
-    const { data: tasks } = await supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", user?.id as any)
-        .order("updated_at", { ascending: false });
-
-    // @ts-ignore
-    const { data: vouchRequests } = await supabase
-        .from("tasks")
-        .select("*")
-        .eq("voucher_id", user?.id as any)
-        .eq("status", "AWAITING_VOUCHER");
-
-    // Get ledger summary for current month
+    const userId = user?.id as any;
     const currentPeriod = new Date().toISOString().slice(0, 7);
-    // @ts-ignore
-    const { data: ledgerEntries } = await supabase
-        .from("ledger_entries")
-        .select("*")
-        .eq("user_id", user?.id as any)
-        .eq("period", currentPeriod);
 
-    const totalFailureCost =
-        (ledgerEntries as any)?.reduce((sum: number, entry: any) => sum + entry.amount_cents, 0) || 0;
+    const [tasksResult, vouchRequestsResult, ledgerEntriesResult, pomoSessionsResult] = await Promise.all([
+        // @ts-ignore
+        supabase
+            .from("tasks")
+            .select("*")
+            .eq("user_id", userId)
+            .order("updated_at", { ascending: false }),
+        // @ts-ignore
+        supabase
+            .from("tasks")
+            .select("*", { count: "exact", head: true })
+            .eq("voucher_id", userId)
+            .eq("status", "AWAITING_VOUCHER"),
+        // @ts-ignore
+        supabase
+            .from("ledger_entries")
+            .select("amount_cents")
+            .eq("user_id", userId)
+            .eq("period", currentPeriod),
+        // @ts-ignore
+        supabase
+            .from("pomo_sessions")
+            .select("task_id, elapsed_seconds, task:tasks!inner(status)")
+            .eq("user_id", userId)
+            .neq("status", "DELETED"),
+    ]);
 
-    // Get pomo sessions for time focused
-    // @ts-ignore
-    const { data: allSessions } = await supabase
-        .from("pomo_sessions")
-        .select("elapsed_seconds, task:tasks!inner(status)")
-        .eq("user_id", user?.id as any);
+    const tasks = (tasksResult.data as Task[] | null) || [];
+    const pendingVouchCount = vouchRequestsResult.count || 0;
+    const ledgerEntries = (ledgerEntriesResult.data as Array<{ amount_cents: number }> | null) || [];
+    const allSessions = (pomoSessionsResult.data as Array<{
+        task_id: string;
+        elapsed_seconds: number;
+        task: { status: string } | null;
+    }> | null) || [];
 
-    const validSessions = (allSessions as any)?.filter((s: any) =>
-        !["FAILED", "DELETED"].includes(s.task.status)
-    ) || [];
+    const totalFailureCost = ledgerEntries.reduce((sum, entry) => sum + (entry.amount_cents || 0), 0);
 
-    const totalSeconds = validSessions.reduce((sum: number, s: any) => sum + s.elapsed_seconds, 0);
+    const validSessions = allSessions.filter((session) => {
+        const status = session.task?.status;
+        return status !== "FAILED" && status !== "DELETED";
+    });
+
+    const totalSeconds = validSessions.reduce((sum, session) => sum + (session.elapsed_seconds || 0), 0);
     const totalHours = Math.floor(totalSeconds / 3600);
     const totalMinutes = Math.floor((totalSeconds % 3600) / 60);
 
     const activeTasks =
-        (tasks as Task[])?.filter((t) =>
+        tasks.filter((t) =>
             ["CREATED", "POSTPONED", "AWAITING_VOUCHER", "MARKED_COMPLETED"].includes(t.status)
-        ) || [];
+        );
 
     const activeTasksCount = activeTasks.length;
 
     const historyTasks =
-        (tasks as Task[])?.filter((t) =>
+        tasks.filter((t) =>
             ["COMPLETED", "FAILED", "RECTIFIED", "SETTLED", "DELETED"].includes(t.status)
-        ) || [];
+        );
 
-    const historyTasksCount = historyTasks.length;
-
-    const taskIds = (tasks as Task[])?.map((t) => t.id) || [];
-    let taskPomoTotals = new Map<string, number>();
-
-    if (taskIds.length > 0) {
-        // @ts-ignore
-        const { data: sessionRows } = await supabase
-            .from("pomo_sessions")
-            .select("task_id, elapsed_seconds")
-            .eq("user_id", user?.id as any)
-            .in("task_id", taskIds as any)
-            .neq("status", "DELETED");
-
-        taskPomoTotals = ((sessionRows as any[]) || []).reduce((map, row) => {
-            const current = map.get(row.task_id) || 0;
-            map.set(row.task_id, current + (row.elapsed_seconds || 0));
-            return map;
-        }, new Map<string, number>());
-    }
+    const taskPomoTotals = allSessions.reduce((map, row) => {
+        if (!row.task_id) return map;
+        const current = map.get(row.task_id) || 0;
+        map.set(row.task_id, current + (row.elapsed_seconds || 0));
+        return map;
+    }, new Map<string, number>());
 
     const activeTasksWithPomo = activeTasks.map((task) => ({
         ...task,
@@ -115,7 +109,7 @@ export default async function OverviewPage() {
                 </div>
                 <div className="space-y-1">
                     <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Pending Vouches</p>
-                    <p className="text-4xl font-light text-purple-400">{vouchRequests?.length || 0}</p>
+                    <p className="text-4xl font-light text-purple-400">{pendingVouchCount}</p>
                 </div>
                 <div className="space-y-1">
                     <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Monthly Loss</p>

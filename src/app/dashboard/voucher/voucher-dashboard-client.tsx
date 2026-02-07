@@ -1,30 +1,61 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { voucherAccept, voucherDeny, authorizeRectify } from "@/actions/voucher";
+import { authorizeRectify, getVouchHistoryPage, voucherAccept, voucherDeny } from "@/actions/voucher";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { TaskWithRelations } from "@/lib/types";
-import { Check, Timer, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Loader2, Timer, X } from "lucide-react";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
+import { toast } from "sonner";
 
 interface VoucherDashboardClientProps {
     pendingTasks: TaskWithRelations[];
-    failedTasks: (TaskWithRelations & { rectify_passes_used?: number })[];
-    assignedTasks: TaskWithRelations[];
-    historyTasks: (TaskWithRelations & { rectify_passes_used?: number })[];
+}
+
+type HistoryTask = TaskWithRelations & { rectify_passes_used?: number };
+
+const HISTORY_PAGE_SIZE = 10;
+const RECTIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+function mergeTasksById(
+    existing: HistoryTask[],
+    incoming: HistoryTask[],
+    mode: "append" | "prepend" = "append"
+): HistoryTask[] {
+    const result = mode === "prepend" ? [...incoming, ...existing] : [...existing, ...incoming];
+    const seen = new Set<string>();
+
+    return result.filter((task) => {
+        if (seen.has(task.id)) return false;
+        seen.add(task.id);
+        return true;
+    });
+}
+
+function isWithinRectifyWindow(updatedAt: string, referenceTimestamp: number): boolean {
+    const failedAtTs = new Date(updatedAt).getTime();
+    if (Number.isNaN(failedAtTs)) return false;
+
+    return referenceTimestamp <= failedAtTs + RECTIFY_WINDOW_MS;
 }
 
 export default function VoucherDashboardClient({
     pendingTasks,
-    historyTasks,
 }: VoucherDashboardClientProps) {
     const router = useRouter();
     const [, startRefreshTransition] = useTransition();
+
     const [pendingState, setPendingState] = useState<TaskWithRelations[]>(pendingTasks);
-    const [historyState, setHistoryState] = useState<(TaskWithRelations & { rectify_passes_used?: number })[]>(historyTasks);
+    const [historyState, setHistoryState] = useState<HistoryTask[]>([]);
     const [inFlightIds, setInFlightIds] = useState<Set<string>>(new Set());
+
+    const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+    const [historyLoaded, setHistoryLoaded] = useState(false);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyOffset, setHistoryOffset] = useState(0);
+    const [historyHasMore, setHistoryHasMore] = useState(true);
 
     const refreshInBackground = () => {
         startRefreshTransition(() => {
@@ -44,6 +75,41 @@ export default function VoucherDashboardClient({
         });
     };
 
+    const loadHistoryPage = async (offset: number, replace: boolean) => {
+        if (historyLoading) return;
+
+        setHistoryLoading(true);
+        try {
+            const result = await getVouchHistoryPage(offset, HISTORY_PAGE_SIZE);
+            if (result?.error) {
+                toast.error(result.error);
+                return;
+            }
+
+            const tasks = (result?.tasks as HistoryTask[] | undefined) || [];
+            setHistoryState((prev) => (replace ? tasks : mergeTasksById(prev, tasks, "append")));
+            setHistoryOffset(result?.nextOffset ?? offset + tasks.length);
+            setHistoryHasMore(Boolean(result?.hasMore));
+            setHistoryLoaded(true);
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    const handleHistoryToggle = () => {
+        const nextOpen = !isHistoryOpen;
+        setIsHistoryOpen(nextOpen);
+
+        if (nextOpen && !historyLoaded && !historyLoading) {
+            void loadHistoryPage(0, true);
+        }
+    };
+
+    const handleLoadMore = () => {
+        if (historyLoading || !historyHasMore) return;
+        void loadHistoryPage(historyOffset, false);
+    };
+
     async function handleAccept(taskId: string) {
         if (inFlightIds.has(taskId)) return;
         const currentTask = pendingState.find((task) => task.id === taskId);
@@ -56,14 +122,15 @@ export default function VoucherDashboardClient({
             captureSnapshot: () => ({ pendingState, historyState }),
             applyOptimistic: () => {
                 setPendingState((prev) => prev.filter((task) => task.id !== taskId));
-                setHistoryState((prev) => [
-                    {
+
+                if (historyLoaded) {
+                    const optimisticHistoryTask: HistoryTask = {
                         ...currentTask,
                         status: "COMPLETED",
                         updated_at: nowIso,
-                    },
-                    ...prev.filter((task) => task.id !== taskId),
-                ]);
+                    };
+                    setHistoryState((prev) => mergeTasksById(prev, [optimisticHistoryTask], "prepend"));
+                }
             },
             runMutation: () => voucherAccept(taskId),
             rollback: (snapshot) => {
@@ -90,14 +157,15 @@ export default function VoucherDashboardClient({
             captureSnapshot: () => ({ pendingState, historyState }),
             applyOptimistic: () => {
                 setPendingState((prev) => prev.filter((task) => task.id !== taskId));
-                setHistoryState((prev) => [
-                    {
+
+                if (historyLoaded) {
+                    const optimisticHistoryTask: HistoryTask = {
                         ...currentTask,
                         status: "FAILED",
                         updated_at: nowIso,
-                    },
-                    ...prev.filter((task) => task.id !== taskId),
-                ]);
+                    };
+                    setHistoryState((prev) => mergeTasksById(prev, [optimisticHistoryTask], "prepend"));
+                }
             },
             runMutation: () => voucherDeny(taskId),
             rollback: (snapshot) => {
@@ -116,6 +184,11 @@ export default function VoucherDashboardClient({
         if (inFlightIds.has(taskId)) return;
         const currentTask = historyState.find((task) => task.id === taskId);
         if (!currentTask) return;
+
+        if (!isWithinRectifyWindow(currentTask.updated_at, Date.now())) {
+            toast.error("Rectify window expired (7 days).");
+            return;
+        }
 
         setTaskInFlight(taskId, true);
         const optimisticPassCount = (currentTask.rectify_passes_used ?? 0) + 1;
@@ -183,24 +256,57 @@ export default function VoucherDashboardClient({
             </section>
 
             <section className="space-y-4">
-                <h2 className="text-xl font-semibold text-slate-500 border-b border-slate-900 pb-2">
-                    Vouched
-                </h2>
-                {historyState.length === 0 ? (
-                    <div className="py-8 text-center">
-                        <p className="text-slate-600 text-sm">No history yet</p>
-                    </div>
-                ) : (
+                <Button
+                    variant="ghost"
+                    onClick={handleHistoryToggle}
+                    className="group flex items-center gap-2 text-slate-400 hover:text-white px-0 hover:bg-transparent"
+                >
+                    {isHistoryOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    <span className="font-medium text-sm">Vouched</span>
+                </Button>
+
+                {isHistoryOpen && (
                     <div className="flex flex-col border-t border-slate-900/50">
-                        {historyState.map((task) => (
-                            <CompactHistoryItem
-                                key={task.id}
-                                task={task}
-                                onOpenTask={() => router.push(`/dashboard/tasks/${task.id}`)}
-                                onRectify={() => handleRectify(task.id)}
-                                isLoading={inFlightIds.has(task.id)}
-                            />
-                        ))}
+                        {historyLoading && !historyLoaded ? (
+                            <div className="py-8 text-center text-slate-500 text-sm">Loading history...</div>
+                        ) : historyState.length === 0 ? (
+                            <div className="py-8 text-center">
+                                <p className="text-slate-600 text-sm">No history yet</p>
+                            </div>
+                        ) : (
+                            <>
+                                {historyState.map((task) => (
+                                    <CompactHistoryItem
+                                        key={task.id}
+                                        task={task}
+                                        onOpenTask={() => router.push(`/dashboard/tasks/${task.id}`)}
+                                        onRectify={() => handleRectify(task.id)}
+                                        isLoading={inFlightIds.has(task.id)}
+                                    />
+                                ))}
+
+                                {historyHasMore && (
+                                    <div className="pt-4 flex justify-center">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={handleLoadMore}
+                                            disabled={historyLoading}
+                                            className="border-slate-800 bg-slate-900/50 text-slate-300 hover:text-white"
+                                        >
+                                            {historyLoading ? (
+                                                <>
+                                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                    Loading...
+                                                </>
+                                            ) : (
+                                                "Load more"
+                                            )}
+                                        </Button>
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
                 )}
             </section>
@@ -300,11 +406,13 @@ function CompactHistoryItem({
     onRectify,
     isLoading,
 }: {
-    task: TaskWithRelations & { rectify_passes_used?: number };
+    task: HistoryTask;
     onOpenTask: () => void;
     onRectify: () => void;
     isLoading: boolean;
 }) {
+    const [renderNow] = useState(() => Date.now());
+
     const statusColors: Record<string, string> = {
         COMPLETED: "text-lime-300",
         FAILED: "text-[#dc322f]",
@@ -314,6 +422,7 @@ function CompactHistoryItem({
     };
 
     const isRectifiable = task.status === "FAILED";
+    const withinRectifyWindow = isWithinRectifyWindow(task.updated_at, renderNow);
     const passLimitReached = (task.rectify_passes_used ?? 0) >= 5;
 
     return (
@@ -345,7 +454,7 @@ function CompactHistoryItem({
             </div>
 
             <div className="flex items-center gap-3">
-                {isRectifiable && (
+                {isRectifiable && withinRectifyWindow && (
                     <div className="flex flex-col items-end">
                         <Button
                             size="sm"

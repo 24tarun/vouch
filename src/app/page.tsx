@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Linkedin, Mail, Globe } from "lucide-react";
+import { BuildStamp } from "@/components/BuildStamp";
 
 export default async function HomePage() {
   const supabase = await createClient();
@@ -144,6 +145,11 @@ export default async function HomePage() {
         </div>
       </section>
 
+      <footer className="border-t border-slate-900 px-4 sm:px-6 py-6">
+        <div className="max-w-5xl mx-auto">
+          <BuildStamp />
+        </div>
+      </footer>
     </div>
   );
 }

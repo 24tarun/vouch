@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCachedPendingVouchCountForVoucher } from "@/actions/voucher";
 import { NavLinks } from "@/components/NavLinks";
 import { RealtimeListener } from "@/components/RealtimeListener";
 
@@ -17,12 +18,7 @@ export default async function DashboardLayout({
         redirect("/login");
     }
 
-    // Fetch vouch requests count
-    const { count: vouchCount } = await supabase
-        .from("tasks")
-        .select("*", { count: 'exact', head: true })
-        .eq("voucher_id", user.id)
-        .eq("status", "AWAITING_VOUCHER");
+    const vouchCount = await getCachedPendingVouchCountForVoucher(user.id);
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-200">
@@ -31,7 +27,7 @@ export default async function DashboardLayout({
             <nav className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 pt-safe">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="h-14 flex items-center">
-                        <NavLinks vouchCount={vouchCount || 0} />
+                        <NavLinks vouchCount={vouchCount} />
                     </div>
                 </div>
             </nav>

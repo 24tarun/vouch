@@ -13,6 +13,8 @@ function invalidatePendingVoucherRequestsCache(voucherId: string) {
     revalidateTag(pendingVoucherRequestsTag(voucherId), "max");
 }
 
+const RECTIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 export async function voucherAccept(taskId: string) {
     const supabase = await createClient();
     const {
@@ -248,6 +250,16 @@ export async function authorizeRectify(taskId: string) {
         return { error: `Cannot rectify task in ${(task as any).status} status` };
     }
 
+    const failedAtTs = new Date((task as any).updated_at).getTime();
+    if (Number.isNaN(failedAtTs)) {
+        return { error: "Rectify window could not be evaluated." };
+    }
+
+    const rectifyExpiresAtTs = failedAtTs + RECTIFY_WINDOW_MS;
+    if (Date.now() > rectifyExpiresAtTs) {
+        return { error: "Rectify window expired (7 days)." };
+    }
+
     // Check rectify pass usage
     const currentPeriod = new Date().toISOString().slice(0, 7);
     const { count } = await supabase
@@ -351,6 +363,35 @@ export async function getCachedPendingVouchRequestsForVoucher(voucherId: string)
     return loadPendingRequests();
 }
 
+export async function getCachedPendingVouchCountForVoucher(voucherId: string) {
+    if (!voucherId) return 0;
+
+    const loadPendingCount = unstable_cache(
+        async () => {
+            const supabaseAdmin = createAdminClient();
+
+            const { count, error } = await (supabaseAdmin.from("tasks") as any)
+                .select("*", { count: "exact", head: true })
+                .eq("voucher_id", voucherId as any)
+                .eq("status", "AWAITING_VOUCHER");
+
+            if (error) {
+                console.error("Failed to load pending vouch count:", error.message);
+                return 0;
+            }
+
+            return count || 0;
+        },
+        ["pending-vouch-count", voucherId],
+        {
+            tags: [pendingVoucherRequestsTag(voucherId)],
+            revalidate: 120,
+        }
+    );
+
+    return loadPendingCount();
+}
+
 export async function getPendingVouchRequests() {
     const supabase = await createClient();
     const {
@@ -428,6 +469,75 @@ export async function getFailedTasks() {
     return tasksWithCounts;
 }
 
+const FINAL_HISTORY_STATUSES = ["COMPLETED", "FAILED", "RECTIFIED", "SETTLED", "DELETED"];
+
+export async function getVouchHistoryPage(offsetInput: number, limitInput: number) {
+    const supabase = await createClient();
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { tasks: [], hasMore: false, nextOffset: 0, error: "Not authenticated" };
+    }
+
+    const offset = Number.isFinite(offsetInput) ? Math.max(0, Math.floor(offsetInput)) : 0;
+    const normalizedLimitRaw = Number.isFinite(limitInput) ? Math.floor(limitInput) : 10;
+    const limit = Math.min(50, Math.max(1, normalizedLimitRaw));
+
+    // Fetch one extra row to determine if there is another page.
+    const rangeFrom = offset;
+    const rangeTo = offset + limit;
+
+    // @ts-ignore
+    const { data: rawTasks, error } = await (supabase.from("tasks") as any)
+        .select(`
+            *,
+            user:profiles!tasks_user_id_fkey(*)
+        `)
+        .eq("voucher_id", (user as any).id)
+        .in("status", FINAL_HISTORY_STATUSES)
+        .order("updated_at", { ascending: false })
+        .range(rangeFrom, rangeTo);
+
+    if (error) {
+        return { tasks: [], hasMore: false, nextOffset: offset, error: error.message };
+    }
+
+    const pagedRows = (rawTasks as any[]) || [];
+    const hasMore = pagedRows.length > limit;
+    const visibleRows = hasMore ? pagedRows.slice(0, limit) : pagedRows;
+
+    if (visibleRows.length === 0) {
+        return { tasks: [], hasMore: false, nextOffset: offset };
+    }
+
+    const currentPeriod = new Date().toISOString().slice(0, 7);
+    const ownerIds = [...new Set(visibleRows.map((task) => task.user_id as string).filter(Boolean))];
+
+    const ownerCountEntries = await Promise.all(ownerIds.map(async (ownerId) => {
+        const { count } = await supabase
+            .from("rectify_passes" as any)
+            .select("*", { count: "exact", head: true })
+            .eq("user_id", ownerId as any)
+            .eq("period", currentPeriod);
+
+        return [ownerId, count || 0] as const;
+    }));
+
+    const countsByOwner = new Map<string, number>(ownerCountEntries);
+    const tasks = visibleRows.map((task) => ({
+        ...task,
+        rectify_passes_used: countsByOwner.get(task.user_id) || 0,
+    }));
+
+    return {
+        tasks,
+        hasMore,
+        nextOffset: offset + tasks.length,
+    };
+}
+
 export async function getVouchHistory() {
     const supabase = await createClient();
     const {
@@ -435,8 +545,6 @@ export async function getVouchHistory() {
     } = await supabase.auth.getUser();
 
     if (!user) return [];
-
-    const finalStatuses = ["COMPLETED", "FAILED", "RECTIFIED", "SETTLED", "DELETED"];
 
     const currentPeriod = new Date().toISOString().slice(0, 7);
 
@@ -447,7 +555,7 @@ export async function getVouchHistory() {
       user:profiles!tasks_user_id_fkey(*)
     `)
         .eq("voucher_id", (user as any).id)
-        .in("status", finalStatuses)
+        .in("status", FINAL_HISTORY_STATUSES)
         .order("updated_at", { ascending: false });
 
     if (!tasks) return [];

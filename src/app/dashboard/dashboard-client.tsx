@@ -10,6 +10,8 @@ import { CollapsibleCompletedList } from "@/components/CollapsibleCompletedList"
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import type { Profile, Task } from "@/lib/types";
 
+const MAX_COMPLETED_TASKS = 10;
+
 interface DashboardClientProps {
     initialTasks: Task[];
     friends: Profile[];
@@ -59,7 +61,7 @@ export default function DashboardClient({
     const split = splitTasks(initialTasks);
 
     const [activeTasks, setActiveTasks] = useState<Task[]>(split.active);
-    const [completedTasks, setCompletedTasks] = useState<Task[]>(split.completed);
+    const [completedTasks, setCompletedTasks] = useState<Task[]>(split.completed.slice(0, MAX_COMPLETED_TASKS));
     const [completingTaskIds, setCompletingTaskIds] = useState<Set<string>>(new Set());
 
     const refreshInBackground = () => {
@@ -151,7 +153,9 @@ export default function DashboardClient({
             }),
             applyOptimistic: () => {
                 setActiveTasks((prev) => prev.filter((currentTask) => currentTask.id !== task.id));
-                setCompletedTasks((prev) => [optimisticTask, ...prev.filter((currentTask) => currentTask.id !== task.id)]);
+                setCompletedTasks((prev) =>
+                    [optimisticTask, ...prev.filter((currentTask) => currentTask.id !== task.id)].slice(0, MAX_COMPLETED_TASKS)
+                );
             },
             runMutation: () => markTaskCompleted(task.id),
             rollback: (snapshot) => {

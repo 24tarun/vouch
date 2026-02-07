@@ -4,6 +4,7 @@ import { getFriends } from "@/actions/friends";
 import { DEFAULT_FAILURE_COST_CENTS } from "@/lib/constants";
 import DashboardClient from "@/app/dashboard/dashboard-client";
 import { getCachedActiveTasksForUser } from "@/actions/tasks";
+import { BuildStamp } from "@/components/BuildStamp";
 
 export default async function DashboardPage() {
     const supabase = await createClient();
@@ -28,7 +29,8 @@ export default async function DashboardPage() {
             .select("*")
             .eq("user_id", userId || "")
             .in("status", finalStatuses)
-            .order("created_at", { ascending: false }),
+            .order("updated_at", { ascending: false })
+            .limit(10),
     ]);
 
     const profileDefaults = rawProfileDefaults as {
@@ -45,12 +47,17 @@ export default async function DashboardPage() {
     const initialTasks = [...((activeTasks as Task[]) || []), ...completedTasks];
 
     return (
-        <DashboardClient
-            initialTasks={initialTasks}
-            friends={friends}
-            defaultFailureCostEuros={defaultFailureCostEuros}
-            defaultVoucherId={defaultVoucherId}
-            userId={userId || ""}
-        />
+        <>
+            <DashboardClient
+                initialTasks={initialTasks}
+                friends={friends}
+                defaultFailureCostEuros={defaultFailureCostEuros}
+                defaultVoucherId={defaultVoucherId}
+                userId={userId || ""}
+            />
+            <footer className="max-w-3xl mx-auto px-4 md:px-0 pb-8 pt-4">
+                <BuildStamp />
+            </footer>
+        </>
     );
 }
