@@ -1,16 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { ArrowUpDown, Bell, RotateCw } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { showSampleNotification } from "@/lib/client-notifications";
+import { invalidateClientCachesAndReload } from "@/lib/client-refresh";
 
 export function DashboardHeaderActions() {
-    const router = useRouter();
     const [isTestingNotification, setIsTestingNotification] = useState(false);
-    const [isRefreshing, startRefreshTransition] = useTransition();
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     const handleTestNotification = async () => {
         if (isTestingNotification) return;
@@ -27,11 +26,15 @@ export function DashboardHeaderActions() {
         toast.success("Sample notification sent.");
     };
 
-    const handleRefresh = () => {
+    const handleRefresh = async () => {
         if (isRefreshing) return;
-        startRefreshTransition(() => {
-            router.refresh();
-        });
+        setIsRefreshing(true);
+        try {
+            await invalidateClientCachesAndReload();
+        } catch {
+            setIsRefreshing(false);
+            toast.error("Failed to perform hard refresh.");
+        }
     };
 
     return (
