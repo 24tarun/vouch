@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canTransition, type TaskStatus } from "@/lib/xstate/task-machine";
@@ -8,9 +8,19 @@ import { type Database } from "@/lib/types";
 import { type SupabaseClient } from "@supabase/supabase-js";
 import { sendNotification } from "@/lib/notifications";
 import { DEFAULT_FAILURE_COST_CENTS } from "@/lib/constants";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
 
 const INVALID_DEADLINE_ERROR = "Deadline is invalid.";
 const PAST_DEADLINE_ERROR = "Deadline must be in the future.";
+
+function invalidateActiveTasksCache(userId: string) {
+    revalidateTag(activeTasksTag(userId), "max");
+}
+
+function invalidatePendingVoucherRequestsCache(voucherId: string) {
+    revalidateTag(pendingVoucherRequestsTag(voucherId), "max");
+}
 
 function parseAndValidateFutureDeadline(rawDeadline: string): { deadline?: Date; error?: string } {
     const parsedDeadline = new Date(rawDeadline);
@@ -105,11 +115,42 @@ export async function createTaskSimple(title: string) {
         metadata: { title, type: "simple" },
     });
 
+    invalidateActiveTasksCache(user.id);
     revalidatePath("/dashboard");
     return { success: true, taskId: (task as any).id };
 }
 
 export const markTaskCompleted = markTaskComplete; // Alias for component compatibility
+
+export async function getCachedActiveTasksForUser(userId: string) {
+    if (!userId) return [];
+
+    const loadActiveTasks = unstable_cache(
+        async () => {
+            const supabaseAdmin = createAdminClient();
+            // @ts-ignore
+            const { data, error } = await (supabaseAdmin.from("tasks") as any)
+                .select("*")
+                .eq("user_id", userId as any)
+                .in("status", ["CREATED", "POSTPONED"])
+                .order("created_at", { ascending: false });
+
+            if (error) {
+                console.error("Failed to load cached active tasks:", error.message);
+                return [];
+            }
+
+            return (data as any[]) || [];
+        },
+        ["active-tasks", userId],
+        {
+            tags: [activeTasksTag(userId)],
+            revalidate: 300,
+        }
+    );
+
+    return loadActiveTasks();
+}
 
 export async function createTask(formData: FormData) {
     const supabase: SupabaseClient<Database> = await createClient();
@@ -252,6 +293,7 @@ export async function createTask(formData: FormData) {
         },
     });
 
+    invalidateActiveTasksCache((user as any).id);
     revalidatePath("/dashboard");
     return { success: true, taskId: (task as any).id };
 }
@@ -346,6 +388,8 @@ export async function markTaskComplete(taskId: string) {
         to_status: "AWAITING_VOUCHER",
     });
 
+    invalidateActiveTasksCache((user as any).id);
+    invalidatePendingVoucherRequestsCache((task as any).voucher_id);
     // Mirror accept/deny behavior so voucher list cache is invalidated on new request.
     revalidatePath("/dashboard/voucher");
     revalidatePath(`/dashboard/tasks/${taskId}`);
@@ -411,6 +455,7 @@ export async function postponeTask(taskId: string, newDeadline?: string) {
         metadata: { new_deadline: newDeadlineDate.toISOString() },
     });
 
+    invalidateActiveTasksCache((user as any).id);
     revalidatePath(`/dashboard/tasks/${taskId}`);
     return { success: true };
 }
@@ -547,6 +592,7 @@ export async function getTask(taskId: string) {
                 (task as any).status = "FAILED";
                 (task as any).updated_at = now.toISOString();
 
+                invalidateActiveTasksCache((task as any).user_id);
                 revalidatePath(`/dashboard/tasks/${taskId}`);
             }
         }

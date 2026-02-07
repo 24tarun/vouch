@@ -1,12 +1,17 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { canTransition, type TaskStatus } from "@/lib/xstate/task-machine";
 import { sendNotification } from "@/lib/notifications";
 import { type Database } from "@/lib/types";
 import { type SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { pendingVoucherRequestsTag } from "@/lib/cache-tags";
+
+function invalidatePendingVoucherRequestsCache(voucherId: string) {
+    revalidateTag(pendingVoucherRequestsTag(voucherId), "max");
+}
 
 export async function voucherAccept(taskId: string) {
     const supabase = await createClient();
@@ -51,6 +56,7 @@ export async function voucherAccept(taskId: string) {
         to_status: "COMPLETED",
     });
 
+    invalidatePendingVoucherRequestsCache((user as any).id);
     revalidatePath("/dashboard/voucher");
     revalidatePath(`/dashboard/tasks/${taskId}`);
     return { success: true };
@@ -129,6 +135,7 @@ export async function voucherDeleteTask(taskId: string) {
         });
     }
 
+    invalidatePendingVoucherRequestsCache((user as any).id);
     revalidatePath("/dashboard/voucher");
     revalidatePath("/dashboard");
 
@@ -210,6 +217,7 @@ export async function voucherDeny(taskId: string) {
         });
     }
 
+    invalidatePendingVoucherRequestsCache((user as any).id);
     revalidatePath("/dashboard/voucher");
     revalidatePath(`/dashboard/tasks/${taskId}`);
     return { success: true };
@@ -292,6 +300,57 @@ export async function authorizeRectify(taskId: string) {
     return { success: true };
 }
 
+export async function getCachedPendingVouchRequestsForVoucher(voucherId: string) {
+    if (!voucherId) return [];
+
+    const loadPendingRequests = unstable_cache(
+        async () => {
+            const supabaseAdmin = createAdminClient();
+            // @ts-ignore
+            const { data: tasks } = await (supabaseAdmin.from("tasks") as any)
+                .select(`
+                    *,
+                    user:profiles!tasks_user_id_fkey(*)
+                `)
+                .eq("voucher_id", voucherId as any)
+                .eq("status", "AWAITING_VOUCHER")
+                .order("voucher_response_deadline", { ascending: true });
+
+            const pendingTasks = (tasks as any[]) || [];
+            if (pendingTasks.length === 0) return [];
+
+            const taskIds = pendingTasks.map((task) => task.id);
+            const ownerIds = [...new Set(pendingTasks.map((task) => task.user_id))];
+
+            // @ts-ignore
+            const { data: sessions } = await (supabaseAdmin.from("pomo_sessions") as any)
+                .select("task_id, elapsed_seconds")
+                .in("task_id", taskIds as any)
+                .in("user_id", ownerIds as any)
+                .neq("status", "DELETED");
+
+            const secondsByTask = new Map<string, number>();
+            for (const row of (sessions as any[]) || []) {
+                const key = row.task_id as string;
+                const total = secondsByTask.get(key) || 0;
+                secondsByTask.set(key, total + (row.elapsed_seconds || 0));
+            }
+
+            return pendingTasks.map((task) => ({
+                ...task,
+                pomo_total_seconds: secondsByTask.get(task.id) || 0,
+            }));
+        },
+        ["pending-vouch-requests", voucherId],
+        {
+            tags: [pendingVoucherRequestsTag(voucherId)],
+            revalidate: 300,
+        }
+    );
+
+    return loadPendingRequests();
+}
+
 export async function getPendingVouchRequests() {
     const supabase = await createClient();
     const {
@@ -300,43 +359,7 @@ export async function getPendingVouchRequests() {
 
     if (!user) return [];
 
-    // @ts-ignore
-    const { data: tasks } = await (supabase.from("tasks") as any)
-        .select(`
-      *,
-      user:profiles!tasks_user_id_fkey(*)
-    `)
-        .eq("voucher_id", (user as any).id)
-        .eq("status", "AWAITING_VOUCHER")
-        .order("voucher_response_deadline", { ascending: true });
-
-    const pendingTasks = (tasks as any[]) || [];
-    if (pendingTasks.length === 0) return [];
-
-    const taskIds = pendingTasks.map((task) => task.id);
-    const ownerIds = [...new Set(pendingTasks.map((task) => task.user_id))];
-
-    // Aggregate focused time per task for voucher visibility.
-    // Use admin client because vouchers cannot read owners' pomo_sessions under RLS.
-    const supabaseAdmin = createAdminClient();
-    // @ts-ignore
-    const { data: sessions } = await (supabaseAdmin.from("pomo_sessions") as any)
-        .select("task_id, elapsed_seconds")
-        .in("task_id", taskIds as any)
-        .in("user_id", ownerIds as any)
-        .neq("status", "DELETED");
-
-    const secondsByTask = new Map<string, number>();
-    for (const row of (sessions as any[]) || []) {
-        const key = row.task_id as string;
-        const total = secondsByTask.get(key) || 0;
-        secondsByTask.set(key, total + (row.elapsed_seconds || 0));
-    }
-
-    return pendingTasks.map((task) => ({
-        ...task,
-        pomo_total_seconds: secondsByTask.get(task.id) || 0,
-    }));
+    return getCachedPendingVouchRequestsForVoucher(user.id);
 }
 
 export async function getAssignedTasksForVoucher() {

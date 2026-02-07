@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Task } from "@/lib/types";
 import { Check, ExternalLink } from "lucide-react";
@@ -17,6 +18,7 @@ interface TaskRowProps {
 
 export function TaskRow({ task, onComplete, isCompleting = false }: TaskRowProps) {
     const router = useRouter();
+    const hasPrefetchedRef = useRef(false);
     const isActuallyCompleted = useMemo(
         () => ["AWAITING_VOUCHER", "COMPLETED", "FAILED", "RECTIFIED", "SETTLED", "DELETED"].includes(task.status),
         [task.status]
@@ -42,15 +44,18 @@ export function TaskRow({ task, onComplete, isCompleting = false }: TaskRowProps
     const currentStatusColor = statusColors[task.status] || "";
     const detailPath = `/dashboard/tasks/${task.id}`;
 
+    const prefetchTaskDetails = () => {
+        if (hasPrefetchedRef.current) return;
+        hasPrefetchedRef.current = true;
+        void router.prefetch(detailPath);
+    };
+
     const handleRowDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
         const target = e.target as HTMLElement;
         if (target.closest("button,[role='menuitem'],a,input,select,textarea")) {
             return;
         }
-        router.push(detailPath);
-    };
-
-    const handleOpenTaskDetails = () => {
+        prefetchTaskDetails();
         router.push(detailPath);
     };
 
@@ -59,6 +64,9 @@ export function TaskRow({ task, onComplete, isCompleting = false }: TaskRowProps
             "group flex items-center gap-3 py-3 border-b border-slate-800/50 last:border-0 hover:bg-slate-900/20 -mx-4 px-4 transition-colors",
             isActuallyCompleted && "opacity-80"
         )}
+            onMouseEnter={prefetchTaskDetails}
+            onFocus={prefetchTaskDetails}
+            onTouchStart={prefetchTaskDetails}
             onDoubleClick={handleRowDoubleClick}
             title="Double-click to open task details"
         >
@@ -100,14 +108,15 @@ export function TaskRow({ task, onComplete, isCompleting = false }: TaskRowProps
                 </div>
 
                 <Button
-                    type="button"
+                    asChild
                     variant="ghost"
-                    onClick={handleOpenTaskDetails}
                     className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800"
                     aria-label="Open task"
                     title="Open task"
                 >
-                    <ExternalLink className="h-3.5 w-3.5" />
+                    <Link href={detailPath} prefetch>
+                        <ExternalLink className="h-3.5 w-3.5" />
+                    </Link>
                 </Button>
             </div>
         </div>

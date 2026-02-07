@@ -3,6 +3,7 @@ import type { Task } from "@/lib/types";
 import { getFriends } from "@/actions/friends";
 import { DEFAULT_FAILURE_COST_CENTS } from "@/lib/constants";
 import DashboardClient from "@/app/dashboard/dashboard-client";
+import { getCachedActiveTasksForUser } from "@/actions/tasks";
 
 export default async function DashboardPage() {
     const supabase = await createClient();
@@ -11,14 +12,25 @@ export default async function DashboardPage() {
     } = await supabase.auth.getUser();
     const userId = user?.id;
 
-    // Fetch friends for TaskInput
-    const friends = await getFriends();
+    const finalStatuses = ["COMPLETED", "AWAITING_VOUCHER", "RECTIFIED", "SETTLED", "FAILED", "DELETED"];
 
-    const { data: rawProfileDefaults } = await supabase
-        .from("profiles")
-        .select("default_failure_cost_cents, default_voucher_id")
-        .eq("id", userId || "")
-        .maybeSingle();
+    const [friends, rawProfileDefaults, activeTasks, completedTasksResult] = await Promise.all([
+        getFriends(),
+        supabase
+            .from("profiles")
+            .select("default_failure_cost_cents, default_voucher_id")
+            .eq("id", userId || "")
+            .maybeSingle()
+            .then((result) => result.data),
+        getCachedActiveTasksForUser(userId || ""),
+        supabase
+            .from("tasks")
+            .select("*")
+            .eq("user_id", userId || "")
+            .in("status", finalStatuses)
+            .order("created_at", { ascending: false }),
+    ]);
+
     const profileDefaults = rawProfileDefaults as {
         default_failure_cost_cents: number | null;
         default_voucher_id: string | null;
@@ -29,15 +41,12 @@ export default async function DashboardPage() {
     ).toFixed(2);
     const defaultVoucherId = profileDefaults?.default_voucher_id ?? null;
 
-    const { data: tasks } = await supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", userId || "")
-        .order("created_at", { ascending: false });
+    const completedTasks = (completedTasksResult.data as Task[] | null) || [];
+    const initialTasks = [...((activeTasks as Task[]) || []), ...completedTasks];
 
     return (
         <DashboardClient
-            initialTasks={(tasks as Task[]) || []}
+            initialTasks={initialTasks}
             friends={friends}
             defaultFailureCostEuros={defaultFailureCostEuros}
             defaultVoucherId={defaultVoucherId}
