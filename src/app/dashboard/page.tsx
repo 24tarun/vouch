@@ -56,18 +56,20 @@ export default async function DashboardPage() {
     const initialTasks = [...dedupedActiveTasks, ...completedTasks];
 
     return (
-        <>
-            <DashboardClient
-                initialTasks={initialTasks}
-                friends={friends}
-                defaultFailureCostEuros={defaultFailureCostEuros}
-                defaultVoucherId={defaultVoucherId}
-                userId={userId || ""}
-                username={username}
-            />
-            <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+0.25rem)] z-50 px-2 text-center">
-                <BuildStamp className="inline-block text-[10px] leading-4 tracking-[0.03em] text-slate-400 font-mono" />
+        <div className="flex min-h-[calc(100dvh-8rem)] flex-col">
+            <div className="flex-1">
+                <DashboardClient
+                    initialTasks={initialTasks}
+                    friends={friends}
+                    defaultFailureCostEuros={defaultFailureCostEuros}
+                    defaultVoucherId={defaultVoucherId}
+                    userId={userId || ""}
+                    username={username}
+                />
             </div>
-        </>
+            <div className="pt-6 pb-safe">
+                <BuildStamp className="text-center text-[10px] leading-4 tracking-[0.03em] text-slate-400 font-mono" />
+            </div>
+        </div>
     );
 }
