@@ -13,8 +13,8 @@ interface DeadlineWarningTask {
     } | null;
 }
 
-const PRE_REMINDER_EVENT = "DEADLINE_WARNING_2M";
-const FINAL_REMINDER_EVENT = "DEADLINE_FINAL_REMINDER";
+const ONE_HOUR_REMINDER_EVENT = "DEADLINE_WARNING_1H";
+const TWO_MIN_REMINDER_EVENT = "DEADLINE_WARNING_2M";
 const ACTIVE_STATUSES: TaskStatus[] = ["CREATED", "POSTPONED"];
 
 function toIso(date: Date): string {
@@ -92,11 +92,46 @@ export const deadlineWarning = schedules.task({
     run: async () => {
         const supabase = createAdminClient();
         const now = new Date();
+        const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
+        const fiftyNineMinutesFromNow = new Date(now.getTime() + 59 * 60 * 1000);
         const twoMinutesFromNow = new Date(now.getTime() + 2 * 60 * 1000);
-        const oneMinuteAgo = new Date(now.getTime() - 60 * 1000);
-        const nowIso = toIso(now);
+        const oneMinuteFromNow = new Date(now.getTime() + 60 * 1000);
 
-        // Reminder 1: in the final 2 minutes before deadline.
+        // Reminder 1: approximately one hour before deadline.
+        const oneHourResponse = await supabase
+            .from("tasks")
+            .select(`
+                id,
+                title,
+                deadline,
+                status,
+                user:profiles!tasks_user_id_fkey(id)
+            `)
+            .in("status", ACTIVE_STATUSES as any)
+            .gt("deadline", toIso(fiftyNineMinutesFromNow))
+            .lte("deadline", toIso(oneHourFromNow));
+
+        if (oneHourResponse.error) {
+            console.error("Error fetching tasks for one-hour deadline warnings:", oneHourResponse.error);
+        } else {
+            const tasks = (oneHourResponse.data || []) as unknown as DeadlineWarningTask[];
+            const taskIds = tasks.map((task) => task.id);
+            const alreadyWarnedTaskIds = await loadExistingReminderTaskIds(taskIds, ONE_HOUR_REMINDER_EVENT);
+
+            for (const task of tasks) {
+                if (!task.user?.id) continue;
+                if (alreadyWarnedTaskIds.has(task.id)) continue;
+
+                await sendReminderAndLogEvent(
+                    task,
+                    ONE_HOUR_REMINDER_EVENT,
+                    "Deadline in 1 hour",
+                    `1 hour left for ${task.title}`
+                );
+            }
+        }
+
+        // Reminder 2: approximately two minutes before deadline.
         const twoMinuteResponse = await supabase
             .from("tasks")
             .select(`
@@ -107,62 +142,28 @@ export const deadlineWarning = schedules.task({
                 user:profiles!tasks_user_id_fkey(id)
             `)
             .in("status", ACTIVE_STATUSES as any)
-            .gt("deadline", nowIso)
+            .gt("deadline", toIso(oneMinuteFromNow))
             .lte("deadline", toIso(twoMinutesFromNow));
 
         if (twoMinuteResponse.error) {
             console.error("Error fetching tasks for two-minute deadline warnings:", twoMinuteResponse.error);
-        } else {
-            const tasks = (twoMinuteResponse.data || []) as unknown as DeadlineWarningTask[];
-            const taskIds = tasks.map((task) => task.id);
-            const alreadyWarnedTaskIds = await loadExistingReminderTaskIds(taskIds, PRE_REMINDER_EVENT);
-
-            for (const task of tasks) {
-                if (!task.user?.id) continue;
-                if (alreadyWarnedTaskIds.has(task.id)) continue;
-
-                await sendReminderAndLogEvent(
-                    task,
-                    PRE_REMINDER_EVENT,
-                    "Task deadline in 2 minutes",
-                    `2 minutes left for ${task.title}`
-                );
-            }
-        }
-
-        // Reminder 2: at deadline time (with one-minute scheduler tolerance).
-        const finalReminderResponse = await supabase
-            .from("tasks")
-            .select(`
-                id,
-                title,
-                deadline,
-                status,
-                user:profiles!tasks_user_id_fkey(id)
-            `)
-            .in("status", ACTIVE_STATUSES as any)
-            .lte("deadline", nowIso)
-            .gt("deadline", toIso(oneMinuteAgo));
-
-        if (finalReminderResponse.error) {
-            console.error("Error fetching tasks for final deadline reminders:", finalReminderResponse.error);
             return;
         }
 
-        const finalReminderTasks = (finalReminderResponse.data || []) as unknown as DeadlineWarningTask[];
-        const finalReminderTaskIds = finalReminderTasks.map((task) => task.id);
-        const alreadyFinalRemindedTaskIds = await loadExistingReminderTaskIds(
-            finalReminderTaskIds,
-            FINAL_REMINDER_EVENT
+        const twoMinuteTasks = (twoMinuteResponse.data || []) as unknown as DeadlineWarningTask[];
+        const twoMinuteTaskIds = twoMinuteTasks.map((task) => task.id);
+        const alreadyTwoMinuteWarnedTaskIds = await loadExistingReminderTaskIds(
+            twoMinuteTaskIds,
+            TWO_MIN_REMINDER_EVENT
         );
 
-        for (const task of finalReminderTasks) {
+        for (const task of twoMinuteTasks) {
             if (!task.user?.id) continue;
-            if (alreadyFinalRemindedTaskIds.has(task.id)) continue;
+            if (alreadyTwoMinuteWarnedTaskIds.has(task.id)) continue;
 
             await sendReminderAndLogEvent(
                 task,
-                FINAL_REMINDER_EVENT,
+                TWO_MIN_REMINDER_EVENT,
                 "Final reminder",
                 `final reminder for ${task.title}`
             );
