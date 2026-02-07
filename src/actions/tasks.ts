@@ -318,9 +318,9 @@ export async function markTaskComplete(taskId: string) {
         await sendNotification({
             to: (task as any).voucher.email,
             userId: (task as any).voucher.id, // Enable push
-            subject: `You have got a new vouch request for a task: ${(task as any).title}`,
+            subject: `new vouch request from ${(task as any).user?.username} for task: ${(task as any).title}`,
             title: "Task Review Request",
-            text: `You have got a new vouch request for task: ${(task as any).title}`,
+            text: `You have got a new vouch request from ${(task as any).user?.username} for task: ${(task as any).title}`,
             html: `
           <h1>Task Completed!</h1>
           <p>Hi ${(task as any).voucher.username},</p>

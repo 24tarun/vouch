@@ -55,9 +55,9 @@ export async function voucherAccept(taskId: string) {
         await sendNotification({
             to: (task as any).user.email,
             userId: (task as any).user.id,
-            subject: `Your task has been approved: ${(task as any).title}`,
+            subject: `Your task ${(task as any).title} has been approved`,
             title: "Task approved",
-            text: `Your task has been approved: ${(task as any).title}`,
+            text: `Your task ${(task as any).title} has been approved`,
             html: `
                 <h1>Your task has been approved</h1>
                 <p>Good news, ${(task as any).user.username || "there"}.</p>
@@ -213,11 +213,11 @@ export async function voucherDeny(taskId: string) {
         await sendNotification({
             to: (task as any).user.email,
             userId: (task as any).user.id,
-            subject: `Your task has been denied: ${(task as any).title}`,
+            subject: `Your task ${(task as any).title} has been denied`,
             title: "Task denied",
-            text: `Your task has been denied: ${(task as any).title}`,
+            text: `Your task ${(task as any).title} has been denied`,
             html: `
-                <h1>Your task has been denied</h1>
+                <h1>Your task ${(task as any).title} has been denied</h1>
                 <p>Hi ${(task as any).user.username || "there"},</p>
                 <p>Your voucher denied <strong>${(task as any).title}</strong>.</p>
                 <p>Failure cost was applied to your ledger.</p>
