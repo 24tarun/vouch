@@ -97,14 +97,17 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
     }
 
     return (
-        <div className="max-w-2xl mx-auto space-y-6">
+        <div className="max-w-3xl mx-auto space-y-8 pb-20 mt-12 px-4 md:px-0">
             <div>
                 <h1 className="text-3xl font-bold text-white">Settings</h1>
-                <p className="text-slate-400 mt-1">Manage your account</p>
+                <p className="text-slate-400 mt-1">Manage your profile and task defaults</p>
+                <p className="text-xs text-slate-500 font-mono mt-2">
+                    Signed in as <span className="text-slate-300">{profile.email}</span>
+                </p>
             </div>
 
             {/* Profile Settings */}
-            <Card className="bg-slate-800/50 border-slate-700">
+            <Card className="bg-slate-900/40 border-slate-800">
                 <CardHeader>
                     <CardTitle className="text-white">Profile</CardTitle>
                     <CardDescription className="text-slate-400">
@@ -113,18 +116,6 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleUsernameSubmit} className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="email" className="text-slate-200">
-                                Email
-                            </Label>
-                            <Input
-                                id="email"
-                                value={profile.email}
-                                disabled
-                                className="bg-slate-700/30 border-slate-600 text-slate-400"
-                            />
-                        </div>
-
                         <div className="space-y-2">
                             <Label htmlFor="username" className="text-slate-200">
                                 Username
@@ -135,7 +126,7 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
                                 onChange={(e) => setUsername(e.target.value)}
                                 minLength={3}
                                 required
-                                className="bg-slate-700/50 border-slate-600 text-white"
+                                className="bg-slate-800/40 border-slate-700 text-white"
                             />
                             <p className="text-xs text-slate-500">
                                 Your friends can find you by this username
@@ -150,7 +141,7 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
                         <Button
                             type="submit"
                             disabled={isUsernameLoading || username === profile.username}
-                            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+                            className="bg-slate-100 text-slate-950 hover:bg-white font-semibold"
                         >
                             {isUsernameLoading ? "Saving..." : "Save Changes"}
                         </Button>
@@ -158,7 +149,7 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
                 </CardContent>
             </Card>
 
-            <Card className="bg-slate-800/50 border-slate-700">
+            <Card className="bg-slate-900/40 border-slate-800">
                 <CardHeader>
                     <CardTitle className="text-white">Task Defaults</CardTitle>
                     <CardDescription className="text-slate-400">
@@ -179,7 +170,7 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
                                 step="1"
                                 value={defaultPomoDurationMinutes}
                                 onChange={(e) => setDefaultPomoDurationMinutes(e.target.value)}
-                                className="bg-slate-700/50 border-slate-600 text-white"
+                                className="bg-slate-800/40 border-slate-700 text-white"
                             />
                         </div>
 
@@ -195,7 +186,7 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
                                 step="0.01"
                                 value={defaultFailureCostEuros}
                                 onChange={(e) => setDefaultFailureCostEuros(e.target.value)}
-                                className="bg-slate-700/50 border-slate-600 text-white"
+                                className="bg-slate-800/40 border-slate-700 text-white"
                             />
                         </div>
 
@@ -211,11 +202,11 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
                             >
                                 <SelectTrigger
                                     id="defaultVoucherId"
-                                    className="bg-slate-700/50 border-slate-600 text-white w-full"
+                                    className="bg-slate-800/40 border-slate-700 text-white w-full"
                                 >
                                     <SelectValue placeholder="No default voucher" />
                                 </SelectTrigger>
-                                <SelectContent className="bg-slate-800 border-slate-700 text-white">
+                                <SelectContent className="bg-slate-900 border-slate-800 text-white">
                                     <SelectItem value={NONE_VOUCHER_VALUE}>No default voucher</SelectItem>
                                     {friends.map((friend) => (
                                         <SelectItem key={friend.id} value={friend.id}>
@@ -234,7 +225,7 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
                         <Button
                             type="submit"
                             disabled={isDefaultsLoading}
-                            className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
+                            className="bg-slate-100 text-slate-950 hover:bg-white font-semibold"
                         >
                             {isDefaultsLoading ? "Saving..." : "Save Defaults"}
                         </Button>
@@ -243,7 +234,7 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
             </Card>
 
             {/* Account Info */}
-            <Card className="bg-slate-800/50 border-slate-700">
+            <Card className="bg-slate-900/40 border-slate-800">
                 <CardHeader>
                     <CardTitle className="text-white">Account</CardTitle>
                 </CardHeader>
@@ -258,7 +249,7 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
             </Card>
 
             {/* Charity Placeholder */}
-            <Card className="bg-slate-800/50 border-slate-700">
+            <Card className="bg-slate-900/40 border-slate-800">
                 <CardHeader>
                     <CardTitle className="text-white">Charity Preferences</CardTitle>
                     <CardDescription className="text-slate-400">
