@@ -27,9 +27,18 @@ import {
     DEFAULT_FAILURE_COST_EUROS,
 } from "@/lib/constants";
 import type { Profile } from "@/lib/types";
+import { isIOS } from "@/lib/platform";
+import {
+    combineDateAndTime,
+    getDatePartFromLocalDateTime,
+    getTimePartFromLocalDateTime,
+    localDateTimeToIso,
+    toDateTimeLocalValue,
+} from "@/lib/datetime-local";
 
 export default function NewTaskPage() {
     const router = useRouter();
+    const isIOSDevice = isIOS();
     const [friends, setFriends] = useState<Profile[]>([]);
     const [selectedVoucherId, setSelectedVoucherId] = useState("");
     const [failureCost, setFailureCost] = useState(DEFAULT_FAILURE_COST_EUROS);
@@ -44,7 +53,11 @@ export default function NewTaskPage() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(12, 0, 0, 0);
-    const defaultDeadline = tomorrow.toISOString().slice(0, 16);
+    const defaultDeadline = toDateTimeLocalValue(tomorrow);
+    const [deadlineValue, setDeadlineValue] = useState(defaultDeadline);
+    const [deadlineDate, setDeadlineDate] = useState(() => getDatePartFromLocalDateTime(defaultDeadline));
+    const [deadlineTime, setDeadlineTime] = useState(() => getTimePartFromLocalDateTime(defaultDeadline));
+    const iosDeadlineValue = combineDateAndTime(deadlineDate, deadlineTime);
 
     useEffect(() => {
         async function loadData() {
@@ -81,8 +94,23 @@ export default function NewTaskPage() {
             return;
         }
 
+        const deadlineLocal = formData.get("deadline");
+        if (typeof deadlineLocal !== "string" || !deadlineLocal) {
+            setError("Please select a valid deadline.");
+            setIsLoading(false);
+            return;
+        }
+
+        const deadlineIso = localDateTimeToIso(deadlineLocal);
+        if (!deadlineIso) {
+            setError("Please select a valid deadline.");
+            setIsLoading(false);
+            return;
+        }
+
         formData.set("voucherId", effectiveSelectedVoucherId);
         formData.set("failureCost", failureCost);
+        formData.set("deadline", deadlineIso);
         const result = await createTask(formData);
 
         if (result?.error) {
@@ -136,14 +164,40 @@ export default function NewTaskPage() {
                             <Label htmlFor="deadline" className="text-slate-200">
                                 Deadline *
                             </Label>
-                            <Input
-                                id="deadline"
-                                name="deadline"
-                                type="datetime-local"
-                                defaultValue={defaultDeadline}
-                                required
-                                className="bg-slate-700/50 border-slate-600 text-white"
-                            />
+                            {isIOSDevice ? (
+                                <div className="space-y-2">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        <Input
+                                            id="deadlineDate"
+                                            type="date"
+                                            value={deadlineDate}
+                                            onChange={(e) => setDeadlineDate(e.target.value)}
+                                            required
+                                            className="bg-slate-700/50 border-slate-600 text-white"
+                                        />
+                                        <Input
+                                            id="deadlineTime"
+                                            type="time"
+                                            value={deadlineTime}
+                                            onChange={(e) => setDeadlineTime(e.target.value)}
+                                            step="60"
+                                            required
+                                            className="bg-slate-700/50 border-slate-600 text-white"
+                                        />
+                                    </div>
+                                    <input type="hidden" name="deadline" value={iosDeadlineValue} readOnly />
+                                </div>
+                            ) : (
+                                <Input
+                                    id="deadline"
+                                    name="deadline"
+                                    type="datetime-local"
+                                    value={deadlineValue}
+                                    onChange={(e) => setDeadlineValue(e.target.value)}
+                                    required
+                                    className="bg-slate-700/50 border-slate-600 text-white"
+                                />
+                            )}
                             <p className="text-xs text-slate-500">
                                 Once active, deadlines are immutable
                             </p>

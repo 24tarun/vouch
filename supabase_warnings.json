@@ -1,0 +1,136 @@
+[
+    {
+      "name": "function_search_path_mutable",
+      "title": "Function Search Path Mutable",
+      "level": "WARN",
+      "facing": "EXTERNAL",
+      "categories": [
+        "SECURITY"
+      ],
+      "description": "Detects functions where the search_path parameter is not set.",
+      "detail": "Function \\`public.update_updated_at\\` has a role mutable search_path",
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable",
+      "metadata": {
+        "name": "update_updated_at",
+        "type": "function",
+        "schema": "public"
+      },
+      "cache_key": "function_search_path_mutable_public_update_updated_at_10ff09e0d1433006b865e7959e736c46"
+    },
+    {
+      "name": "function_search_path_mutable",
+      "title": "Function Search Path Mutable",
+      "level": "WARN",
+      "facing": "EXTERNAL",
+      "categories": [
+        "SECURITY"
+      ],
+      "description": "Detects functions where the search_path parameter is not set.",
+      "detail": "Function \\`public.handle_new_user\\` has a role mutable search_path",
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable",
+      "metadata": {
+        "name": "handle_new_user",
+        "type": "function",
+        "schema": "public"
+      },
+      "cache_key": "function_search_path_mutable_public_handle_new_user_dd6e8bdd60f6d750688ba87a089c7bfc"
+    },
+    {
+      "name": "rls_policy_always_true",
+      "title": "RLS Policy Always True",
+      "level": "WARN",
+      "facing": "EXTERNAL",
+      "categories": [
+        "SECURITY"
+      ],
+      "description": "Detects RLS policies that use overly permissive expressions like \\`USING (true)\\` or \\`WITH CHECK (true)\\` for UPDATE, DELETE, or INSERT operations. SELECT policies with \\`USING (true)\\` are intentionally excluded as this pattern is often used deliberately for public read access.",
+      "detail": "Table `public.ledger_entries` has an RLS policy `System can insert ledger entries` for `INSERT` that allows unrestricted access (WITH CHECK clause is always true). This effectively bypasses row-level security for -.",
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0024_permissive_rls_policy",
+      "metadata": {
+        "name": "ledger_entries",
+        "qual": null,
+        "type": "table",
+        "roles": [
+          "-"
+        ],
+        "schema": "public",
+        "command": "INSERT",
+        "with_check": "true",
+        "policy_name": "System can insert ledger entries",
+        "permissive_using": false,
+        "permissive_with_check": true
+      },
+      "cache_key": "rls_policy_always_true_public_ledger_entries_System can insert ledger entries"
+    },
+    {
+      "name": "rls_policy_always_true",
+      "title": "RLS Policy Always True",
+      "level": "WARN",
+      "facing": "EXTERNAL",
+      "categories": [
+        "SECURITY"
+      ],
+      "description": "Detects RLS policies that use overly permissive expressions like \\`USING (true)\\` or \\`WITH CHECK (true)\\` for UPDATE, DELETE, or INSERT operations. SELECT policies with \\`USING (true)\\` are intentionally excluded as this pattern is often used deliberately for public read access.",
+      "detail": "Table `public.rectify_passes` has an RLS policy `System can insert rectify passes` for `INSERT` that allows unrestricted access (WITH CHECK clause is always true). This effectively bypasses row-level security for -.",
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0024_permissive_rls_policy",
+      "metadata": {
+        "name": "rectify_passes",
+        "qual": null,
+        "type": "table",
+        "roles": [
+          "-"
+        ],
+        "schema": "public",
+        "command": "INSERT",
+        "with_check": "true",
+        "policy_name": "System can insert rectify passes",
+        "permissive_using": false,
+        "permissive_with_check": true
+      },
+      "cache_key": "rls_policy_always_true_public_rectify_passes_System can insert rectify passes"
+    },
+    {
+      "name": "rls_policy_always_true",
+      "title": "RLS Policy Always True",
+      "level": "WARN",
+      "facing": "EXTERNAL",
+      "categories": [
+        "SECURITY"
+      ],
+      "description": "Detects RLS policies that use overly permissive expressions like \\`USING (true)\\` or \\`WITH CHECK (true)\\` for UPDATE, DELETE, or INSERT operations. SELECT policies with \\`USING (true)\\` are intentionally excluded as this pattern is often used deliberately for public read access.",
+      "detail": "Table `public.task_events` has an RLS policy `System can insert events` for `INSERT` that allows unrestricted access (WITH CHECK clause is always true). This effectively bypasses row-level security for -.",
+      "remediation": "https://supabase.com/docs/guides/database/database-linter?lint=0024_permissive_rls_policy",
+      "metadata": {
+        "name": "task_events",
+        "qual": null,
+        "type": "table",
+        "roles": [
+          "-"
+        ],
+        "schema": "public",
+        "command": "INSERT",
+        "with_check": "true",
+        "policy_name": "System can insert events",
+        "permissive_using": false,
+        "permissive_with_check": true
+      },
+      "cache_key": "rls_policy_always_true_public_task_events_System can insert events"
+    },
+    {
+      "name": "auth_leaked_password_protection",
+      "title": "Leaked Password Protection Disabled",
+      "level": "WARN",
+      "facing": "EXTERNAL",
+      "categories": [
+        "SECURITY"
+      ],
+      "description": "Leaked password protection is currently disabled.",
+      "detail": "Supabase Auth prevents the use of compromised passwords by checking against HaveIBeenPwned.org. Enable this feature to enhance security.",
+      "cache_key": "auth_leaked_password_protection",
+      "remediation": "https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection",
+      "metadata": {
+        "type": "auth",
+        "entity": "Auth"
+      }
+    }
+  ]

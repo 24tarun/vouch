@@ -3,10 +3,9 @@ import { TaskInput } from "@/components/TaskInput";
 import { TaskRow } from "@/components/TaskRow";
 import { CollapsibleCompletedList } from "@/components/CollapsibleCompletedList";
 import type { Task } from "@/lib/types";
-import { ArrowUpDown } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { getFriends } from "@/actions/friends";
 import { DEFAULT_FAILURE_COST_CENTS } from "@/lib/constants";
+import { DashboardHeaderActions } from "@/components/DashboardHeaderActions";
 
 export default async function DashboardPage() {
     const supabase = await createClient();
@@ -53,12 +52,7 @@ export default async function DashboardPage() {
                 <h1 className="text-2xl font-bold text-white flex items-center gap-2">
                     Inbox
                 </h1>
-                <div className="flex items-center gap-2">
-                    {/* Placeholder for sorting or menu if needed later */}
-                    <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white" disabled>
-                        <ArrowUpDown className="h-4 w-4" />
-                    </Button>
-                </div>
+                <DashboardHeaderActions />
             </div>
 
             {/* Input */}
