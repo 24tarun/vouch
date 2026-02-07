@@ -272,7 +272,7 @@ export async function markTaskComplete(taskId: string) {
     }
 
     const { data: task } = await (supabase.from("tasks") as any)
-        .select("*, voucher:profiles!tasks_voucher_id_fkey(email, username), user:profiles!tasks_user_id_fkey(username)")
+        .select("*, voucher:profiles!tasks_voucher_id_fkey(id, email, username), user:profiles!tasks_user_id_fkey(id, username)")
         .eq("id", (taskId as any))
         .eq("user_id", (user as any).id)
         .single();
@@ -318,8 +318,9 @@ export async function markTaskComplete(taskId: string) {
         await sendNotification({
             to: (task as any).voucher.email,
             userId: (task as any).voucher.id, // Enable push
-            subject: `Review Request: ${(task as any).title}`,
+            subject: `You have got a new vouch request for a task: ${(task as any).title}`,
             title: "Task Review Request",
+            text: `You have got a new vouch request for task: ${(task as any).title}`,
             html: `
           <h1>Task Completed!</h1>
           <p>Hi ${(task as any).voucher.username},</p>
@@ -328,6 +329,9 @@ export async function markTaskComplete(taskId: string) {
           <br/>
           <a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/voucher">Review Task</a>
         `,
+            url: "/dashboard/voucher",
+            tag: `new-vouch-request-${taskId}`,
+            data: { taskId, kind: "NEW_VOUCH_REQUEST" },
         });
     }
 
@@ -710,7 +714,10 @@ export async function resumePomoSession(sessionId: string) {
     return { success: true };
 }
 
-export async function endPomoSession(sessionId: string) {
+export async function endPomoSession(
+    sessionId: string,
+    source: "manual_stop" | "timer_completed" | "system" = "manual_stop"
+) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: "Not authenticated" };
@@ -750,7 +757,7 @@ export async function endPomoSession(sessionId: string) {
     if (session.task_id) {
         // @ts-ignore
         const { data: task } = await (supabase.from("tasks") as any)
-            .select("status")
+            .select("id, title, status")
             .eq("id", session.task_id as any)
             .eq("user_id", user.id)
             .single();
@@ -766,8 +773,28 @@ export async function endPomoSession(sessionId: string) {
                     session_id: session.id,
                     duration_minutes: session.duration_minutes,
                     elapsed_seconds: finalElapsed,
+                    source,
                 },
             });
+
+            if (source === "timer_completed") {
+                await sendNotification({
+                    to: user.email || undefined,
+                    userId: user.id,
+                    subject: `Pomodoro complete: ${task.title}`,
+                    title: "Pomodoro completed",
+                    text: `Your pomodoro has ended and has been logged for ${task.title}.`,
+                    email: false,
+                    push: true,
+                    url: `/dashboard/tasks/${task.id}`,
+                    tag: `pomo-completed-${session.id}`,
+                    data: {
+                        taskId: task.id,
+                        sessionId: session.id,
+                        kind: "POMO_COMPLETED",
+                    },
+                });
+            }
         }
     }
 

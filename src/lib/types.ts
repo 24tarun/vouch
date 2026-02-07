@@ -88,6 +88,14 @@ export interface PomoSession {
     updated_at: string;
 }
 
+export interface WebPushSubscription {
+    id: string;
+    user_id: string;
+    subscription: Json;
+    created_at: string;
+    updated_at: string;
+}
+
 export type RecurrenceFrequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | "WEEKDAYS" | "CUSTOM";
 
 export interface RecurrenceRuleConfig {
@@ -186,6 +194,11 @@ export interface Database {
                 Row: PomoSession
                 Insert: Omit<PomoSession, "id" | "created_at" | "updated_at">
                 Update: Partial<PomoSession>
+            }
+            web_push_subscriptions: {
+                Row: WebPushSubscription
+                Insert: Omit<WebPushSubscription, "id" | "created_at" | "updated_at">
+                Update: Partial<WebPushSubscription>
             }
         }
         Views: {

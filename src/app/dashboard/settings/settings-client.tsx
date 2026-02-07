@@ -19,6 +19,7 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
+import { PushInitializer } from "@/components/PushInitializer";
 import type { Profile } from "@/lib/types";
 import {
     DEFAULT_FAILURE_COST_CENTS,
@@ -105,6 +106,8 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
                     Signed in as <span className="text-slate-300">{profile.email}</span>
                 </p>
             </div>
+
+            <PushInitializer />
 
             {/* Profile Settings */}
             <Card className="bg-slate-900/40 border-slate-800">

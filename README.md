@@ -28,6 +28,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 # Resend (Emails)
 RESEND_API_KEY=re_123456789
 
+# Web Push (VAPID)
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=your_vapid_public_key
+VAPID_PRIVATE_KEY=your_vapid_private_key
+VAPID_SUBJECT=mailto:you@yourdomain.com
+
 # Trigger.dev (Background Jobs)
 TRIGGER_SECRET_KEY=tr_dev_123456789
 NEXT_PUBLIC_TRIGGER_PUBLIC_API_KEY=tr_pub_123456789
@@ -91,6 +96,9 @@ npx trigger.dev@latest deploy
    - `SUPABASE_SERVICE_ROLE_KEY` = Your Supabase secret/service role key
    - `RESEND_API_KEY` = Your Resend API key
    - `NEXT_PUBLIC_APP_URL` = Your production URL (e.g., `https://tas.tarunh.com`)
+   - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` = Your VAPID public key
+   - `VAPID_PRIVATE_KEY` = Your VAPID private key
+   - `VAPID_SUBJECT` = Mailto/contact subject, e.g. `mailto:you@yourdomain.com`
 
 ### Test Your Tasks
 
@@ -101,6 +109,7 @@ npx trigger.dev@latest deploy
 
 **Scheduled Tasks:**
 - `deadline-warning`: Runs every 15 minutes (checks tasks with <1 hour until deadline)
+- `voucher-deadline-warning`: Runs every 15 minutes (checks voucher approvals with <1 hour left)
 - `monthly-settlement`: Runs on 1st of each month at 9am (sends ledger settlement emails)
 
 

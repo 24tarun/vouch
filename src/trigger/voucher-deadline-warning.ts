@@ -3,21 +3,20 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sendNotification } from "@/lib/notifications";
 import type { TaskStatus } from "@/lib/xstate/task-machine";
 
-interface DeadlineWarningTask {
+interface VoucherDeadlineWarningTask {
     id: string;
     title: string;
-    deadline: string;
     status: TaskStatus;
-    failure_cost_cents: number;
-    user: {
+    voucher_response_deadline: string;
+    voucher: {
         id: string;
         email: string;
         username: string | null;
     } | null;
 }
 
-export const deadlineWarning = schedules.task({
-    id: "deadline-warning",
+export const voucherDeadlineWarning = schedules.task({
+    id: "voucher-deadline-warning",
     cron: "*/15 * * * *",
     run: async () => {
         const supabase = createAdminClient();
@@ -30,53 +29,51 @@ export const deadlineWarning = schedules.task({
             .select(`
                 id,
                 title,
-                deadline,
                 status,
-                failure_cost_cents,
-                user:profiles!tasks_user_id_fkey(id, email, username)
+                voucher_response_deadline,
+                voucher:profiles!tasks_voucher_id_fkey(id, email, username)
             `)
-            .in("status", ["CREATED", "POSTPONED"])
-            .gt("deadline", nowIso)
-            .lt("deadline", oneHourFromNow);
+            .eq("status", "AWAITING_VOUCHER")
+            .gt("voucher_response_deadline", nowIso)
+            .lt("voucher_response_deadline", oneHourFromNow);
 
         if (response.error) {
-            console.error("Error fetching tasks for deadline warning:", response.error);
+            console.error("Error fetching tasks for voucher deadline warning:", response.error);
             return;
         }
 
-        const rows = (response.data || []) as unknown as DeadlineWarningTask[];
-        console.log(`Found ${rows.length} tasks near deadline`);
+        const rows = (response.data || []) as unknown as VoucherDeadlineWarningTask[];
+        console.log(`Found ${rows.length} tasks near voucher response deadline`);
 
         for (const task of rows) {
             const existingEventRes = await supabase
                 .from("task_events")
                 .select("id")
                 .eq("task_id", task.id)
-                .eq("event_type", "DEADLINE_WARNING")
+                .eq("event_type", "VOUCHER_DEADLINE_WARNING")
                 .limit(1);
 
             if (existingEventRes.data && existingEventRes.data.length > 0) {
                 continue;
             }
 
-            if (task.user?.email) {
+            if (task.voucher?.email) {
                 await sendNotification({
-                    to: task.user.email,
-                    userId: task.user.id,
-                    subject: `1 hour left to finish task: ${task.title}`,
-                    title: "Deadline in 1 hour",
-                    text: `Only 1 hour left to finish task: ${task.title}`,
+                    to: task.voucher.email,
+                    userId: task.voucher.id,
+                    subject: `Less than 1 hour to approve task: ${task.title}`,
+                    title: "Approval deadline in 1 hour",
+                    text: `You have less than 1 hour to approve task: ${task.title}`,
                     html: `
-                        <h1>1 hour left to finish</h1>
-                        <p>Hi ${task.user.username || "there"},</p>
-                        <p>Only 1 hour left to finish task: <strong>${task.title}</strong>.</p>
-                        <p>Deadline: ${new Date(task.deadline).toLocaleString()}</p>
-                        <p>Failure Cost: €${(task.failure_cost_cents / 100).toFixed(2)}</p>
-                        <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/tasks/${task.id}">Open task</a></p>
+                        <h1>Less than 1 hour to approve</h1>
+                        <p>Hi ${task.voucher.username || "there"},</p>
+                        <p>You have less than 1 hour to approve task: <strong>${task.title}</strong>.</p>
+                        <p>Approval deadline: ${new Date(task.voucher_response_deadline).toLocaleString()}</p>
+                        <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/voucher">Review request</a></p>
                     `,
-                    url: `/dashboard/tasks/${task.id}`,
-                    tag: `deadline-warning-${task.id}`,
-                    data: { taskId: task.id, kind: "DEADLINE_WARNING" },
+                    url: "/dashboard/voucher",
+                    tag: `voucher-deadline-warning-${task.id}`,
+                    data: { taskId: task.id, kind: "VOUCHER_DEADLINE_WARNING" },
                 });
             }
 
@@ -93,11 +90,11 @@ export const deadlineWarning = schedules.task({
 
             await taskEvents.insert({
                 task_id: task.id,
-                event_type: "DEADLINE_WARNING",
+                event_type: "VOUCHER_DEADLINE_WARNING",
                 actor_id: null,
                 from_status: task.status,
                 to_status: task.status,
-                metadata: { deadline: task.deadline },
+                metadata: { voucher_response_deadline: task.voucher_response_deadline },
             });
         }
     },

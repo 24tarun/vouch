@@ -20,7 +20,7 @@ export async function voucherAccept(taskId: string) {
 
     // @ts-ignore
     const { data: task } = await (supabase.from("tasks") as any)
-        .select("*")
+        .select("*, user:profiles!tasks_user_id_fkey(id, email, username)")
         .eq("id", (taskId as any))
         .eq("voucher_id", (user as any).id)
         .single();
@@ -50,6 +50,25 @@ export async function voucherAccept(taskId: string) {
         from_status: (task as any).status,
         to_status: "COMPLETED",
     });
+
+    if ((task as any).user?.email) {
+        await sendNotification({
+            to: (task as any).user.email,
+            userId: (task as any).user.id,
+            subject: `Your task has been approved: ${(task as any).title}`,
+            title: "Task approved",
+            text: `Your task has been approved: ${(task as any).title}`,
+            html: `
+                <h1>Your task has been approved</h1>
+                <p>Good news, ${(task as any).user.username || "there"}.</p>
+                <p><strong>${(task as any).title}</strong> was approved by your voucher.</p>
+                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/tasks/${taskId}">Open task</a></p>
+            `,
+            url: `/dashboard/tasks/${taskId}`,
+            tag: `task-approved-${taskId}`,
+            data: { taskId, kind: "TASK_APPROVED" },
+        });
+    }
 
     revalidatePath("/dashboard/voucher");
     revalidatePath(`/dashboard/tasks/${taskId}`);
@@ -147,7 +166,7 @@ export async function voucherDeny(taskId: string) {
 
     // @ts-ignore
     const { data: task } = await (supabase.from("tasks") as any)
-        .select("*")
+        .select("*, user:profiles!tasks_user_id_fkey(id, email, username)")
         .eq("id", (taskId as any))
         .eq("voucher_id", (user as any).id)
         .single();
@@ -189,6 +208,26 @@ export async function voucherDeny(taskId: string) {
         from_status: (task as any).status,
         to_status: "FAILED",
     });
+
+    if ((task as any).user?.email) {
+        await sendNotification({
+            to: (task as any).user.email,
+            userId: (task as any).user.id,
+            subject: `Your task has been denied: ${(task as any).title}`,
+            title: "Task denied",
+            text: `Your task has been denied: ${(task as any).title}`,
+            html: `
+                <h1>Your task has been denied</h1>
+                <p>Hi ${(task as any).user.username || "there"},</p>
+                <p>Your voucher denied <strong>${(task as any).title}</strong>.</p>
+                <p>Failure cost was applied to your ledger.</p>
+                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/tasks/${taskId}">Open task</a></p>
+            `,
+            url: `/dashboard/tasks/${taskId}`,
+            tag: `task-denied-${taskId}`,
+            data: { taskId, kind: "TASK_DENIED" },
+        });
+    }
 
     revalidatePath("/dashboard/voucher");
     revalidatePath(`/dashboard/tasks/${taskId}`);

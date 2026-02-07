@@ -12,7 +12,7 @@ export interface PomodoroTimerProps {
     onMinimize: () => void;
     onPause: () => void;
     onResume: () => void;
-    onStop: () => void;
+    onStop: (source?: "manual_stop" | "timer_completed" | "system") => void;
 }
 
 function getSessionTiming(session: PomoSession) {
@@ -102,7 +102,7 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
         if (autoStopTriggeredRef.current) return;
 
         autoStopTriggeredRef.current = true;
-        onStop();
+        onStop("timer_completed");
     }, [session.status, timeLeft, progress, onStop]);
 
     useEffect(() => {
@@ -259,7 +259,7 @@ export function PomodoroTimer({ session, taskTitle, minimized, onMinimize, onPau
                     <button
                         onClick={() => {
                             if (confirm("Are you sure you want to stop this session?")) {
-                                onStop();
+                                onStop("manual_stop");
                             }
                         }}
                         className="text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.45)] hover:text-cyan-300 hover:drop-shadow-[0_0_12px_rgba(34,211,238,0.6)] transition-all hover:scale-105 active:scale-95 p-2"

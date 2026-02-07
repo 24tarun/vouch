@@ -13,6 +13,8 @@ import {
 import { PomoSession } from "@/lib/types";
 import { PomodoroTimer } from "@/components/PomodoroTimer";
 
+type PomoEndSource = "manual_stop" | "timer_completed" | "system";
+
 interface PomodoroContextType {
     session: PomoSession | null;
     taskTitle: string | null;
@@ -20,7 +22,7 @@ interface PomodoroContextType {
     startSession: (taskId: string, durationMinutes: number) => Promise<void>;
     pauseSession: () => Promise<void>;
     resumeSession: () => Promise<void>;
-    stopSession: () => Promise<void>;
+    stopSession: (source?: PomoEndSource) => Promise<void>;
     minimized: boolean;
     setMinimized: (v: boolean) => void;
     suppressUnloadWarning: () => void;
@@ -137,7 +139,7 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
         // Check for ANY active or paused session
         if (session) {
             if (session.task_id === taskId) {
-                const endRes = await endPomoSession(session.id);
+                const endRes = await endPomoSession(session.id, "system");
                 if (endRes.error) {
                     toast.error(endRes.error);
                     setMinimized(false);
@@ -197,9 +199,9 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const stopSession = async () => {
+    const stopSession = async (source: PomoEndSource = "manual_stop") => {
         if (!session) return;
-        const res = await endPomoSession(session.id);
+        const res = await endPomoSession(session.id, source);
         if (res.error) {
             toast.error(res.error);
         } else {

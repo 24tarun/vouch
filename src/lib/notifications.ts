@@ -1,75 +1,81 @@
 import { resend } from "@/lib/resend";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { sendPushToUser, type PushPayload } from "@/lib/web-push";
 
-interface NotificationParams {
-    to: string; // Email address
-    userId?: string; // For push notifications
+export interface NotificationParams {
+    to?: string;
+    userId?: string;
     subject: string;
-    html: string;
+    html?: string;
     text?: string;
-    title?: string; // Often same as subject, specific for push
-    data?: Record<string, any>; // Deep link data etc
+    title?: string;
+    data?: Record<string, unknown>;
+    url?: string;
+    tag?: string;
+    email?: boolean;
+    push?: boolean;
+    pushPayload?: PushPayload;
+}
+
+function stripHtml(input: string): string {
+    return input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function resolvePushPayload(params: NotificationParams): PushPayload {
+    if (params.pushPayload) {
+        return params.pushPayload;
+    }
+
+    const fallbackBody =
+        params.text ||
+        (params.html ? stripHtml(params.html).slice(0, 160) : "Open TAS to view details.");
+
+    return {
+        title: params.title || params.subject,
+        body: fallbackBody,
+        url: params.url,
+        tag: params.tag,
+        data: params.data,
+    };
 }
 
 /**
  * Unified Notification Bridge.
- * Sends email via Resend and (optionally) Push Notification via native bridge.
- * This ensures "Tandem" delivery as requested.
+ * Sends email and push in tandem unless channel flags disable one side.
  */
 export async function sendNotification(params: NotificationParams) {
-    const results = {
-        email: null as any,
-        push: null as any,
+    const shouldSendEmail = params.email !== false;
+    const shouldSendPush = params.push !== false;
+
+    const results: {
+        email: unknown;
+        push: unknown;
+    } = {
+        email: null,
+        push: null,
     };
 
-    // 1. Send Email (Primary MVP Channel)
-    if (resend && params.to) {
-        try {
-            results.email = await resend.emails.send({
-                from: "TAS <noreply@remails.tarunh.com>",
-                to: params.to,
-                subject: params.subject,
-                html: params.html,
-                text: params.text,
-            });
-        } catch (error) {
-            console.error("Failed to send email:", error);
-            // We don't throw here to ensure push might still work, or at least doesn't crash the action
+    if (shouldSendEmail) {
+        if (resend && params.to && params.html) {
+            try {
+                results.email = await resend.emails.send({
+                    from: "TAS <noreply@remails.tarunh.com>",
+                    to: params.to,
+                    subject: params.subject,
+                    html: params.html,
+                    text: params.text,
+                });
+            } catch (error) {
+                console.error("Failed to send email:", error);
+            }
+        } else if (!resend) {
+            console.warn("Resend client not initialized, skipping email.");
         }
-    } else if (!resend) {
-        console.warn("Resend client not initialized, skipping email.");
     }
 
-    // 2. Send Mobile/Web Push (Tandem channel)
-    if (params.userId) {
+    if (shouldSendPush && params.userId) {
         try {
-            const supabase = createAdminClient();
-
-            // Fetch both native tokens (future) and web push subscriptions
-            const { data: webSubscriptions } = await supabase
-                .from("web_push_subscriptions")
-                .select("subscription")
-                .eq("user_id", params.userId);
-
-            console.log(`[Notification Bridge] 🔔 Mobile Push to ${params.userId}: "${params.title || params.subject}"`);
-
-            if (webSubscriptions && webSubscriptions.length > 0) {
-                console.log(`[Notification Bridge] 🌐 Sending Web Push to ${webSubscriptions.length} subscriptions`);
-                // In a production environment with 'web-push' library:
-                // webSubscriptions.forEach(sub => {
-                //   webpush.sendNotification(sub.subscription, JSON.stringify({
-                //     title: params.title || params.subject,
-                //     body: params.text || "Open Vouch to see details",
-                //     data: params.data
-                //   }));
-                // });
-            }
-
-            results.push = {
-                success: true,
-                mocked: true,
-                webSubscriptionsCount: webSubscriptions?.length || 0
-            };
+            const pushPayload = resolvePushPayload(params);
+            results.push = await sendPushToUser(params.userId, pushPayload);
         } catch (error) {
             console.error("Failed to send push:", error);
         }
