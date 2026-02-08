@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { authorizeRectify, getVouchHistoryPage, voucherAccept, voucherDeny } from "@/actions/voucher";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ type HistoryTask = TaskWithRelations & { rectify_passes_used?: number };
 
 const HISTORY_PAGE_SIZE = 10;
 const RECTIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const VOUCH_HISTORY_OPEN_SESSION_KEY = "voucher.history.open";
 
 function mergeTasksById(
     existing: HistoryTask[],
@@ -52,7 +53,10 @@ export default function VoucherDashboardClient({
     const [historyState, setHistoryState] = useState<HistoryTask[]>([]);
     const [inFlightIds, setInFlightIds] = useState<Set<string>>(new Set());
 
-    const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+    const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(() => {
+        if (typeof window === "undefined") return false;
+        return window.sessionStorage.getItem(VOUCH_HISTORY_OPEN_SESSION_KEY) === "1";
+    });
     const [historyLoaded, setHistoryLoaded] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyOffset, setHistoryOffset] = useState(0);
@@ -97,13 +101,24 @@ export default function VoucherDashboardClient({
         }
     };
 
-    const handleHistoryToggle = () => {
-        const nextOpen = !isHistoryOpen;
-        setIsHistoryOpen(nextOpen);
-
-        if (nextOpen && !historyLoaded && !historyLoading) {
+    useEffect(() => {
+        if (isHistoryOpen && !historyLoaded && !historyLoading) {
             void loadHistoryPage(0, true);
         }
+    }, [historyLoaded, historyLoading, isHistoryOpen]);
+
+    const handleHistoryToggle = () => {
+        setIsHistoryOpen((prev) => {
+            const next = !prev;
+            if (typeof window !== "undefined") {
+                if (next) {
+                    window.sessionStorage.setItem(VOUCH_HISTORY_OPEN_SESSION_KEY, "1");
+                } else {
+                    window.sessionStorage.removeItem(VOUCH_HISTORY_OPEN_SESSION_KEY);
+                }
+            }
+            return next;
+        });
     };
 
     const handleLoadMore = () => {
