@@ -694,20 +694,7 @@ export default function TaskDetailClient({
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                        {subtasks.length === 0 ? (
-                            <button
-                                type="button"
-                                disabled={!canManageSubtasks}
-                                onClick={() => setSubtaskInputOpen(true)}
-                                className={cn(
-                                    "w-full rounded-lg border border-slate-700/70 bg-slate-800/30 px-4 py-4 text-left",
-                                    "text-sm text-slate-400 transition-colors",
-                                    canManageSubtasks ? "hover:bg-slate-800/50" : "cursor-not-allowed opacity-70"
-                                )}
-                            >
-                                <span className="ml-4 block border-l border-slate-700/80 pl-3">Tap to add your first child task</span>
-                            </button>
-                        ) : (
+                        {subtasks.length > 0 && (
                             <div className="ml-3 border-l border-slate-800/80 pl-3 space-y-2">
                                 {subtasks.map((subtask) => {
                                     const isPending = pendingSubtaskIds.has(subtask.id);
