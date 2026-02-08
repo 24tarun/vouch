@@ -42,6 +42,7 @@ export default async function TaskPage({ params }: TaskPageProps) {
             events={events}
             pomoSummary={pomoSummary}
             defaultPomoDurationMinutes={defaultPomoDurationMinutes}
+            viewerId={user?.id || ""}
         />
     );
 }

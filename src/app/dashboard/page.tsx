@@ -54,12 +54,34 @@ export default async function DashboardPage() {
         (task) => !completedTaskIds.has(task.id)
     ));
     const initialTasks = [...dedupedActiveTasks, ...completedTasks];
+    const initialTaskIds = initialTasks.map((task) => task.id);
+
+    const subtasksByParent = new Map<string, NonNullable<Task["subtasks"]>>();
+    if (initialTaskIds.length > 0) {
+        const { data: subtasksResult } = await supabase
+            .from("task_subtasks")
+            .select("*")
+            .in("parent_task_id", initialTaskIds);
+
+        for (const row of (subtasksResult as NonNullable<Task["subtasks"]>) || []) {
+            const list = subtasksByParent.get(row.parent_task_id) || [];
+            list.push(row);
+            subtasksByParent.set(row.parent_task_id, list);
+        }
+    }
+
+    const initialTasksWithSubtasks = initialTasks.map((task) => ({
+        ...task,
+        subtasks: (subtasksByParent.get(task.id) || []).slice().sort((a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        ),
+    }));
 
     return (
         <div className="flex min-h-[calc(100dvh-8rem)] flex-col">
             <div className="flex-1">
                 <DashboardClient
-                    initialTasks={initialTasks}
+                    initialTasks={initialTasksWithSubtasks}
                     friends={friends}
                     defaultFailureCostEuros={defaultFailureCostEuros}
                     defaultVoucherId={defaultVoucherId}

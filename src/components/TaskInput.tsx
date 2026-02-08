@@ -45,6 +45,7 @@ interface TaskInputProps {
 
 export interface TaskInputCreatePayload {
     title: string;
+    subtasks: string[];
     deadlineIso: string;
     voucherId: string;
     failureCost: string;
@@ -260,12 +261,21 @@ export function TaskInput({
             .trim();
     };
 
+    const parseTaskTitleAndSubtasks = (text: string) => {
+        const cleaned = stripMetadata(text);
+        const segments = cleaned.split("/").map((segment) => segment.trim());
+        const taskTitle = segments[0] || "";
+        const subtasks = segments.slice(1).filter(Boolean);
+
+        return { taskTitle, subtasks };
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        const cleanTitle = stripMetadata(title);
+        const { taskTitle, subtasks } = parseTaskTitleAndSubtasks(title);
 
-        if (!cleanTitle || isLoading) return;
+        if (!taskTitle || isLoading) return;
 
         if (!selectedVoucherId) {
             setShowShake(true);
@@ -286,7 +296,8 @@ export function TaskInput({
                 : [];
 
         const payload: TaskInputCreatePayload = {
-            title: cleanTitle,
+            title: taskTitle,
+            subtasks,
             deadlineIso: deadlineToSubmit.toISOString(),
             voucherId: selectedVoucherId,
             failureCost,
@@ -311,6 +322,9 @@ export function TaskInput({
             formData.append("deadline", payload.deadlineIso);
             formData.append("voucherId", payload.voucherId);
             formData.append("failureCost", payload.failureCost);
+            if (payload.subtasks.length > 0) {
+                formData.append("subtasks", JSON.stringify(payload.subtasks));
+            }
 
             if (payload.recurrenceType) {
                 formData.append("recurrenceType", payload.recurrenceType);
@@ -347,7 +361,7 @@ export function TaskInput({
                     onChange={(e) => setTitle(e.target.value)}
                     onKeyDown={handleTitleKeyDown}
                     enterKeyHint="done"
-                    placeholder="study for exam @16 vouch bob"
+                    placeholder="study for exam /solve questions @16 vouch bob"
                     className="w-full bg-transparent border-none py-4 px-5 text-white placeholder:text-slate-500/70 focus:outline-none transition-all font-medium text-lg"
                     disabled={isLoading}
                 />

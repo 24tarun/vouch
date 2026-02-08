@@ -13,6 +13,7 @@ export type TaskRow = TableRow<"tasks">;
 export type ProfileRow = TableRow<"profiles">;
 export type FriendshipRow = TableRow<"friendships">;
 export type TaskEventRow = TableRow<"task_events">;
+export type TaskSubtaskRow = TableRow<"task_subtasks">;
 export type LedgerEntryRow = TableRow<"ledger_entries">;
 export type RectifyPassRow = TableRow<"rectify_passes">;
 export type ForceMajeureRow = TableRow<"force_majeure">;

@@ -33,6 +33,18 @@ export interface Task {
     recurrence_rule_id: string | null;
     created_at: string;
     updated_at: string;
+    subtasks?: TaskSubtask[];
+}
+
+export interface TaskSubtask {
+    id: string;
+    parent_task_id: string;
+    user_id: string;
+    title: string;
+    is_completed: boolean;
+    completed_at: string | null;
+    created_at: string;
+    updated_at: string;
 }
 
 
@@ -135,6 +147,7 @@ export interface TaskWithRelations extends Task {
     events?: TaskEvent[];
     recurrence_rule?: RecurrenceRule;
     pomo_total_seconds?: number;
+    subtasks?: TaskSubtask[];
 }
 
 export interface ProfileWithFriends extends Profile {
@@ -177,6 +190,11 @@ export interface Database {
                 Row: RecurrenceRule
                 Insert: Omit<RecurrenceRule, "id" | "created_at" | "updated_at">
                 Update: Partial<RecurrenceRule>
+            }
+            task_subtasks: {
+                Row: TaskSubtask
+                Insert: Omit<TaskSubtask, "id" | "created_at" | "updated_at">
+                Update: Partial<TaskSubtask>
             }
             task_events: {
                 Row: TaskEvent

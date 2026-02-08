@@ -1,10 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { markTaskComplete, postponeTask, forceMajeureTask, cancelRepetition, ownerTempDeleteTask } from "@/actions/tasks";
+import {
+    addTaskSubtask,
+    cancelRepetition,
+    deleteTaskSubtask,
+    forceMajeureTask,
+    markTaskComplete,
+    ownerTempDeleteTask,
+    postponeTask,
+    toggleTaskSubtask,
+} from "@/actions/tasks";
 import { Button } from "@/components/ui/button";
-import { Repeat, Trash2 } from "lucide-react";
+import { Check, PenLine, Plus, Repeat, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -40,6 +49,8 @@ import {
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
 import { canOwnerTemporarilyDelete } from "@/lib/task-delete-window";
+import { MAX_SUBTASKS_PER_TASK } from "@/lib/constants";
+import { cn } from "@/lib/utils";
 
 interface TaskDetailClientProps {
     task: TaskWithRelations;
@@ -51,6 +62,7 @@ interface TaskDetailClientProps {
         lastCompletedAt: string | null;
     } | null;
     defaultPomoDurationMinutes: number;
+    viewerId: string;
 }
 
 function getVoucherResponseDeadlineLocal(baseDate: Date = new Date()): Date {
@@ -65,6 +77,7 @@ export default function TaskDetailClient({
     events,
     pomoSummary,
     defaultPomoDurationMinutes,
+    viewerId,
 }: TaskDetailClientProps) {
     const router = useRouter();
     const [, startRefreshTransition] = useTransition();
@@ -74,6 +87,13 @@ export default function TaskDetailClient({
     const [isRepetitionStopped, setIsRepetitionStopped] = useState(task.recurrence_rule?.active === false);
     const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
     const [nowMs, setNowMs] = useState(() => Date.now());
+    const [subtasks, setSubtasks] = useState(task.subtasks || []);
+    const [subtaskInputOpen, setSubtaskInputOpen] = useState((task.subtasks || []).length === 0);
+    const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+    const [subtaskError, setSubtaskError] = useState<string | null>(null);
+    const [pendingSubtaskIds, setPendingSubtaskIds] = useState<Set<string>>(new Set());
+    const [isAddingSubtask, setIsAddingSubtask] = useState(false);
+    const newSubtaskInputRef = useRef<HTMLInputElement>(null);
 
     const deadline = new Date(taskState.deadline);
     const isOverdue =
@@ -91,6 +111,11 @@ export default function TaskDetailClient({
     const hasPomoData = (pomoSummary?.sessionCount || 0) > 0;
     const userTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
     const canTempDelete = canOwnerTemporarilyDelete(taskState, nowMs);
+    const isOwner = taskState.user_id === viewerId;
+    const isActiveParentTask = taskState.status === "CREATED" || taskState.status === "POSTPONED";
+    const completedSubtasksCount = subtasks.filter((subtask) => subtask.is_completed).length;
+    const incompleteSubtasksCount = subtasks.length - completedSubtasksCount;
+    const canManageSubtasks = isOwner && isActiveParentTask;
 
     const formatDateDdMmYy = (value: Date | string) =>
         new Date(value).toLocaleDateString("en-GB", {
@@ -141,6 +166,24 @@ export default function TaskDetailClient({
 
     const isActionPending = (action: string) => pendingActions.has(action);
 
+    const setSubtaskPending = (subtaskId: string, pending: boolean) => {
+        setPendingSubtaskIds((prev) => {
+            const next = new Set(prev);
+            if (pending) {
+                next.add(subtaskId);
+            } else {
+                next.delete(subtaskId);
+            }
+            return next;
+        });
+    };
+
+    const focusNewSubtaskInput = () => {
+        window.requestAnimationFrame(() => {
+            newSubtaskInputRef.current?.focus();
+        });
+    };
+
     useEffect(() => {
         const id = window.setInterval(() => {
             setNowMs(Date.now());
@@ -150,6 +193,10 @@ export default function TaskDetailClient({
             window.clearInterval(id);
         };
     }, []);
+
+    useEffect(() => {
+        setSubtasks(task.subtasks || []);
+    }, [task.subtasks]);
 
     const resetPostponeDraft = () => {
         const latestDeadline = new Date(taskState.deadline);
@@ -197,6 +244,10 @@ export default function TaskDetailClient({
 
     async function handleMarkComplete() {
         if (isActionPending("markComplete")) return;
+        if (incompleteSubtasksCount > 0) {
+            toast.error("Complete all subtasks before marking this task complete.");
+            return;
+        }
         setActionPending("markComplete", true);
 
         const now = new Date();
@@ -284,6 +335,144 @@ export default function TaskDetailClient({
         });
 
         setActionPending("postpone", false);
+    }
+
+    async function handleAddSubtask(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+        if (!canManageSubtasks || isAddingSubtask) return;
+
+        const normalizedTitle = newSubtaskTitle.trim();
+        if (!normalizedTitle) {
+            setSubtaskError("Subtask title cannot be empty.");
+            return;
+        }
+
+        if (subtasks.length >= MAX_SUBTASKS_PER_TASK) {
+            setSubtaskError(`You can add up to ${MAX_SUBTASKS_PER_TASK} subtasks.`);
+            return;
+        }
+
+        setSubtaskError(null);
+        setIsAddingSubtask(true);
+
+        const nowIso = new Date().toISOString();
+        const optimisticId = `temp-subtask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const optimisticSubtask = {
+            id: optimisticId,
+            parent_task_id: taskState.id,
+            user_id: taskState.user_id,
+            title: normalizedTitle,
+            is_completed: false,
+            completed_at: null,
+            created_at: nowIso,
+            updated_at: nowIso,
+        };
+
+        const result = await runOptimisticMutation({
+            captureSnapshot: () => ({ subtasks, newSubtaskTitle, subtaskInputOpen }),
+            applyOptimistic: () => {
+                setSubtasks((prev) => [...prev, optimisticSubtask]);
+                setNewSubtaskTitle("");
+                setSubtaskInputOpen(true);
+            },
+            runMutation: () => addTaskSubtask(taskState.id, normalizedTitle),
+            rollback: (snapshot) => {
+                setSubtasks(snapshot.subtasks);
+                setNewSubtaskTitle(snapshot.newSubtaskTitle);
+                setSubtaskInputOpen(snapshot.subtaskInputOpen);
+            },
+            onSuccess: (mutationResult) => {
+                if (mutationResult && "subtask" in mutationResult && mutationResult.subtask) {
+                    setSubtasks((prev) =>
+                        prev.map((subtask) =>
+                            subtask.id === optimisticId
+                                ? (mutationResult.subtask as typeof optimisticSubtask)
+                                : subtask
+                        )
+                    );
+                }
+                refreshInBackground();
+            },
+        });
+
+        if (!result.ok && result.error) {
+            setSubtaskError(result.error);
+        } else if (!result.ok) {
+            setSubtaskError("Could not add subtask.");
+        } else if (subtasks.length + 1 < MAX_SUBTASKS_PER_TASK) {
+            focusNewSubtaskInput();
+        }
+
+        setIsAddingSubtask(false);
+    }
+
+    async function handleToggleSubtask(subtaskId: string) {
+        if (!canManageSubtasks || pendingSubtaskIds.has(subtaskId)) return;
+
+        const current = subtasks.find((subtask) => subtask.id === subtaskId);
+        if (!current) return;
+
+        const nextCompleted = !current.is_completed;
+        setSubtaskPending(subtaskId, true);
+        setSubtaskError(null);
+
+        const result = await runOptimisticMutation({
+            captureSnapshot: () => ({ subtasks }),
+            applyOptimistic: () => {
+                setSubtasks((prev) =>
+                    prev.map((subtask) =>
+                        subtask.id === subtaskId
+                            ? {
+                                ...subtask,
+                                is_completed: nextCompleted,
+                                completed_at: nextCompleted ? new Date().toISOString() : null,
+                                updated_at: new Date().toISOString(),
+                            }
+                            : subtask
+                    )
+                );
+            },
+            runMutation: () => toggleTaskSubtask(taskState.id, subtaskId, nextCompleted),
+            rollback: (snapshot) => {
+                setSubtasks(snapshot.subtasks);
+            },
+            onSuccess: () => {
+                refreshInBackground();
+            },
+        });
+
+        if (!result.ok && result.error) {
+            setSubtaskError(result.error);
+        }
+
+        setSubtaskPending(subtaskId, false);
+    }
+
+    async function handleDeleteSubtask(subtaskId: string) {
+        if (!canManageSubtasks || pendingSubtaskIds.has(subtaskId)) return;
+
+        setSubtaskPending(subtaskId, true);
+        setSubtaskError(null);
+
+        const result = await runOptimisticMutation({
+            captureSnapshot: () => ({ subtasks }),
+            applyOptimistic: () => {
+                setSubtasks((prev) => prev.filter((subtask) => subtask.id !== subtaskId));
+            },
+            runMutation: () => deleteTaskSubtask(taskState.id, subtaskId),
+            rollback: (snapshot) => {
+                setSubtasks(snapshot.subtasks);
+            },
+            onSuccess: () => {
+                refreshInBackground();
+            },
+        });
+
+        if (!result.ok && result.error) {
+            setSubtaskError(result.error);
+        }
+
+        setSubtaskPending(subtaskId, false);
     }
 
     async function handleForceMajeure() {
@@ -474,6 +663,132 @@ export default function TaskDetailClient({
                 </CardContent>
             </Card>
 
+            {isOwner && (
+                <Card className="bg-slate-900/40 border-slate-800">
+                    <CardHeader>
+                        <CardTitle className="text-white">Subtasks</CardTitle>
+                        <CardDescription className="text-slate-400">
+                            {completedSubtasksCount}/{subtasks.length} completed . max {MAX_SUBTASKS_PER_TASK}
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        {subtasks.length === 0 ? (
+                            <button
+                                type="button"
+                                disabled={!canManageSubtasks}
+                                onClick={() => setSubtaskInputOpen(true)}
+                                className={cn(
+                                    "w-full rounded-lg border border-slate-700/70 bg-slate-800/30 px-4 py-4 text-left",
+                                    "text-sm text-slate-400 transition-colors",
+                                    canManageSubtasks ? "hover:bg-slate-800/50" : "cursor-not-allowed opacity-70"
+                                )}
+                            >
+                                <span className="ml-4 block border-l border-slate-700/80 pl-3">Tap to add your first child task</span>
+                            </button>
+                        ) : (
+                            <div className="ml-3 border-l border-slate-800/80 pl-3 space-y-2">
+                                {subtasks.map((subtask) => {
+                                    const isPending = pendingSubtaskIds.has(subtask.id);
+                                    return (
+                                        <div key={subtask.id} className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                disabled={!canManageSubtasks || isPending}
+                                                onClick={() => handleToggleSubtask(subtask.id)}
+                                                className={cn(
+                                                    "h-5 w-5 rounded-full border flex items-center justify-center",
+                                                    subtask.is_completed
+                                                        ? "bg-emerald-600/20 border-emerald-500/40 text-emerald-300"
+                                                        : "border-slate-600 text-transparent",
+                                                    (!canManageSubtasks || isPending) && "cursor-not-allowed opacity-60"
+                                                )}
+                                                title={canManageSubtasks ? "Toggle subtask" : "Subtasks are locked in this status"}
+                                            >
+                                                {subtask.is_completed && <Check className="h-3 w-3" strokeWidth={3} />}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={!canManageSubtasks || isPending}
+                                                onClick={() => handleToggleSubtask(subtask.id)}
+                                                className={cn(
+                                                    "flex-1 min-w-0 text-left text-sm",
+                                                    subtask.is_completed ? "text-slate-500 line-through" : "text-slate-200",
+                                                    (!canManageSubtasks || isPending) && "cursor-not-allowed"
+                                                )}
+                                                title={subtask.title}
+                                            >
+                                                <span className="truncate block">{subtask.title}</span>
+                                            </button>
+                                            {canManageSubtasks && (
+                                                <button
+                                                    type="button"
+                                                    disabled={isPending}
+                                                    onClick={() => handleDeleteSubtask(subtask.id)}
+                                                    className={cn(
+                                                        "h-7 w-7 rounded border border-red-500/30 text-red-400 flex items-center justify-center",
+                                                        "hover:bg-red-500/10",
+                                                        isPending && "cursor-not-allowed opacity-60"
+                                                    )}
+                                                    title="Delete subtask"
+                                                    aria-label="Delete subtask"
+                                                >
+                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {canManageSubtasks && (
+                            <div className="rounded-lg border border-slate-700/70 bg-slate-800/35 p-3">
+                                {!subtaskInputOpen ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSubtaskInputOpen(true)}
+                                        className="inline-flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-slate-300 hover:text-white"
+                                    >
+                                        <PenLine className="h-3.5 w-3.5" />
+                                        Add Child Task
+                                    </button>
+                                ) : (
+                                    <form onSubmit={handleAddSubtask} className="space-y-2">
+                                        <div className="flex items-center gap-2">
+                                            <Input
+                                                ref={newSubtaskInputRef}
+                                                value={newSubtaskTitle}
+                                                onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                                                placeholder="e.g., draft intro paragraph"
+                                                maxLength={120}
+                                                className="bg-slate-900/60 border-slate-700 text-slate-200"
+                                                disabled={isAddingSubtask || subtasks.length >= MAX_SUBTASKS_PER_TASK}
+                                                autoFocus
+                                            />
+                                            <Button
+                                                type="submit"
+                                                size="sm"
+                                                disabled={isAddingSubtask || subtasks.length >= MAX_SUBTASKS_PER_TASK}
+                                                className="bg-slate-200/10 border border-slate-600 text-slate-200 hover:bg-slate-200/20"
+                                            >
+                                                <Plus className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                        <p className="text-[11px] text-slate-500">
+                                            Add up to {MAX_SUBTASKS_PER_TASK} subtasks per parent task.
+                                        </p>
+                                    </form>
+                                )}
+                            </div>
+                        )}
+
+                        {subtaskError && (
+                            <p className="text-xs text-red-400">{subtaskError}</p>
+                        )}
+                    </CardContent>
+                </Card>
+            )}
+
             <Card className="bg-slate-900/40 border-slate-800">
                 <CardHeader>
                     <CardTitle className="text-white">Actions</CardTitle>
@@ -492,8 +807,13 @@ export default function TaskDetailClient({
                             />
                             <Button
                                 onClick={handleMarkComplete}
-                                disabled={isActionPending("markComplete") || isOverdue}
-                                className="bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300"
+                                disabled={isActionPending("markComplete") || isOverdue || incompleteSubtasksCount > 0}
+                                className={cn(
+                                    "border text-emerald-300",
+                                    incompleteSubtasksCount > 0
+                                        ? "bg-slate-800/50 border-slate-700/60 text-slate-500 cursor-not-allowed"
+                                        : "bg-emerald-600/20 hover:bg-emerald-600/30 border-emerald-500/40"
+                                )}
                             >
                                 Mark Complete
                             </Button>
@@ -586,6 +906,14 @@ export default function TaskDetailClient({
                                 <Trash2 className="h-4 w-4" />
                             </Button>
                         </>
+                    )}
+
+                    {(taskState.status === "CREATED" || taskState.status === "POSTPONED") && incompleteSubtasksCount > 0 && (
+                        <div className="w-full p-3 rounded-lg bg-slate-800/40 border border-slate-700/70">
+                            <p className="text-sm text-slate-300">
+                                Complete all subtasks to enable parent completion ({completedSubtasksCount}/{subtasks.length}).
+                            </p>
+                        </div>
                     )}
 
                     {taskState.status === "FAILED" && (

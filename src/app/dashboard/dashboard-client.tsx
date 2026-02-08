@@ -44,6 +44,9 @@ function buildCreateTaskFormData(payload: TaskInputCreatePayload): FormData {
     formData.append("deadline", payload.deadlineIso);
     formData.append("voucherId", payload.voucherId);
     formData.append("failureCost", payload.failureCost);
+    if (payload.subtasks.length > 0) {
+        formData.append("subtasks", JSON.stringify(payload.subtasks));
+    }
 
     if (payload.recurrenceType) {
         formData.append("recurrenceType", payload.recurrenceType);
@@ -140,6 +143,16 @@ export default function DashboardClient({
             recurrence_rule_id: payload.recurrenceType ? "optimistic" : null,
             created_at: nowIso,
             updated_at: nowIso,
+            subtasks: payload.subtasks.map((subtaskTitle, index) => ({
+                id: `temp-subtask-${index}-${Math.random().toString(36).slice(2, 8)}`,
+                parent_task_id: tempTaskId,
+                user_id: userId,
+                title: subtaskTitle,
+                is_completed: false,
+                completed_at: null,
+                created_at: nowIso,
+                updated_at: nowIso,
+            })),
         };
 
         void runOptimisticMutation({
@@ -160,7 +173,15 @@ export default function DashboardClient({
                     setActiveTasks((prev) =>
                         prev.map((task) =>
                             task.id === tempTaskId
-                                ? { ...task, id: result.taskId as string, recurrence_rule_id: payload.recurrenceType ? task.recurrence_rule_id : null }
+                                ? {
+                                    ...task,
+                                    id: result.taskId as string,
+                                    recurrence_rule_id: payload.recurrenceType ? task.recurrence_rule_id : null,
+                                    subtasks: (task.subtasks || []).map((subtask) => ({
+                                        ...subtask,
+                                        parent_task_id: result.taskId as string,
+                                    })),
+                                }
                                 : task
                         )
                     );

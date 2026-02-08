@@ -7,13 +7,16 @@ import { canTransition, type TaskStatus } from "@/lib/xstate/task-machine";
 import { type Database } from "@/lib/types";
 import { type SupabaseClient } from "@supabase/supabase-js";
 import { sendNotification } from "@/lib/notifications";
-import { DEFAULT_FAILURE_COST_CENTS } from "@/lib/constants";
+import { DEFAULT_FAILURE_COST_CENTS, MAX_SUBTASKS_PER_TASK } from "@/lib/constants";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
 import { getOwnerDeleteRemainingMs, isOwnerTempDeletableStatus } from "@/lib/task-delete-window";
 
 const INVALID_DEADLINE_ERROR = "Deadline is invalid.";
 const PAST_DEADLINE_ERROR = "Deadline must be in the future.";
+const ACTIVE_PARENT_TASK_STATUSES: TaskStatus[] = ["CREATED", "POSTPONED"];
+const SUBTASK_LIMIT_ERROR = `A task can have at most ${MAX_SUBTASKS_PER_TASK} subtasks.`;
+const INCOMPLETE_SUBTASKS_ERROR = "Complete all subtasks before marking this task complete.";
 
 function isValidTimeZone(timeZone: string): boolean {
     try {
@@ -113,12 +116,110 @@ function getDefaultTaskDeadline(): Date {
     return defaultDeadline;
 }
 
+function normalizeSubtaskTitles(rawTitles: unknown): { titles: string[]; error?: string } {
+    if (rawTitles == null || rawTitles === "") {
+        return { titles: [] };
+    }
+
+    if (!Array.isArray(rawTitles)) {
+        return { titles: [], error: "Subtasks payload must be an array of strings." };
+    }
+
+    const titles: string[] = [];
+    for (const item of rawTitles) {
+        if (typeof item !== "string") {
+            return { titles: [], error: "Subtasks payload must be an array of strings." };
+        }
+
+        const normalized = item.trim();
+        if (!normalized) continue;
+        titles.push(normalized);
+    }
+
+    if (titles.length > MAX_SUBTASKS_PER_TASK) {
+        return { titles: [], error: SUBTASK_LIMIT_ERROR };
+    }
+
+    return { titles };
+}
+
+function normalizeSubtasksFromFormData(formValue: FormDataEntryValue | null): { titles: string[]; error?: string } {
+    if (!formValue) return { titles: [] };
+    if (typeof formValue !== "string") {
+        return { titles: [], error: "Invalid subtasks payload." };
+    }
+
+    if (!formValue.trim()) {
+        return { titles: [] };
+    }
+
+    try {
+        const parsed = JSON.parse(formValue);
+        return normalizeSubtaskTitles(parsed);
+    } catch {
+        return { titles: [], error: "Subtasks payload must be valid JSON." };
+    }
+}
+
+async function insertTaskSubtasks(
+    supabase: SupabaseClient<Database>,
+    userId: string,
+    parentTaskId: string,
+    titles: string[]
+): Promise<{ error?: string }> {
+    if (titles.length === 0) return {};
+
+    // @ts-ignore
+    const { error } = await (supabase.from("task_subtasks") as any).insert(
+        titles.map((title) => ({
+            parent_task_id: parentTaskId,
+            user_id: userId,
+            title,
+            is_completed: false,
+            completed_at: null,
+        }))
+    );
+
+    if (error) {
+        return { error: error.message };
+    }
+
+    return {};
+}
+
+function revalidateTaskSurfaces(taskId: string, userId: string) {
+    invalidateActiveTasksCache(userId);
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/stats");
+    revalidatePath(`/dashboard/tasks/${taskId}`);
+}
+
+async function getOwnedParentTask(
+    supabase: SupabaseClient<Database>,
+    parentTaskId: string,
+    userId: string
+) {
+    // @ts-ignore
+    const { data: task } = await (supabase.from("tasks") as any)
+        .select("id, user_id, status")
+        .eq("id", parentTaskId as any)
+        .eq("user_id", userId as any)
+        .single();
+
+    return task as { id: string; user_id: string; status: TaskStatus } | null;
+}
+
 // Wrapper for simple task creation (inline)
-export async function createTaskSimple(title: string) {
+export async function createTaskSimple(title: string, subtasksInput?: string[]) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) return { error: "Not authenticated" };
+
+    const normalizedSubtasks = normalizeSubtaskTitles(subtasksInput ?? []);
+    if (normalizedSubtasks.error) {
+        return { error: normalizedSubtasks.error };
+    }
 
     // Load user defaults.
     // @ts-ignore
@@ -170,6 +271,16 @@ export async function createTaskSimple(title: string) {
 
     if (error) throw new Error(error.message);
 
+    const subtaskInsert = await insertTaskSubtasks(
+        supabase,
+        user.id,
+        (task as any).id,
+        normalizedSubtasks.titles
+    );
+    if (subtaskInsert.error) {
+        return { error: subtaskInsert.error };
+    }
+
     // Event
     // @ts-ignore
     await supabase.from("task_events").insert({
@@ -181,8 +292,7 @@ export async function createTaskSimple(title: string) {
         metadata: { title, type: "simple" },
     });
 
-    invalidateActiveTasksCache(user.id);
-    revalidatePath("/dashboard");
+    revalidateTaskSurfaces((task as any).id, user.id);
     return { success: true, taskId: (task as any).id };
 }
 
@@ -233,9 +343,13 @@ export async function createTask(formData: FormData) {
     const failureCostEuros = parseFloat(formData.get("failureCost") as string);
     const deadline = formData.get("deadline") as string;
     const voucherId = formData.get("voucherId") as string;
+    const subtasksInput = normalizeSubtasksFromFormData(formData.get("subtasks"));
 
     if (!title || !deadline || !voucherId || isNaN(failureCostEuros)) {
         return { error: "Missing required fields" };
+    }
+    if (subtasksInput.error) {
+        return { error: subtasksInput.error };
     }
 
     const deadlineValidation = parseAndValidateFutureDeadline(deadline);
@@ -343,6 +457,16 @@ export async function createTask(formData: FormData) {
         return { error: error.message };
     }
 
+    const subtaskInsert = await insertTaskSubtasks(
+        supabase,
+        (user as any).id,
+        (task as any).id,
+        subtasksInput.titles
+    );
+    if (subtaskInsert.error) {
+        return { error: subtaskInsert.error };
+    }
+
     // Log the creation event
     // @ts-ignore
     await supabase.from("task_events").insert({
@@ -359,8 +483,7 @@ export async function createTask(formData: FormData) {
         },
     });
 
-    invalidateActiveTasksCache((user as any).id);
-    revalidatePath("/dashboard");
+    revalidateTaskSurfaces((task as any).id, (user as any).id);
     return { success: true, taskId: (task as any).id };
 }
 
@@ -430,6 +553,16 @@ export async function markTaskComplete(taskId: string, userTimeZone?: string) {
         return { error: "Deadline has passed" };
     }
 
+    const { count: incompleteSubtasksCount } = await (supabase.from("task_subtasks") as any)
+        .select("id", { count: "exact", head: true })
+        .eq("parent_task_id", taskId as any)
+        .eq("user_id", (user as any).id as any)
+        .eq("is_completed", false as any);
+
+    if ((incompleteSubtasksCount || 0) > 0) {
+        return { error: INCOMPLETE_SUBTASKS_ERROR };
+    }
+
     const voucherResponseDeadline = getVoucherResponseDeadlineUtc(new Date(), userTimeZone);
     const nowIso = new Date().toISOString();
 
@@ -468,6 +601,142 @@ export async function markTaskComplete(taskId: string, userTimeZone?: string) {
     // Mirror accept/deny behavior so voucher list cache is invalidated on new request.
     revalidatePath("/dashboard/voucher");
     revalidatePath(`/dashboard/tasks/${taskId}`);
+    return { success: true };
+}
+
+export async function addTaskSubtask(parentTaskId: string, title: string) {
+    const supabase = await createClient();
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: "Not authenticated" };
+    }
+
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle) {
+        return { error: "Subtask title cannot be empty." };
+    }
+
+    const parentTask = await getOwnedParentTask(supabase, parentTaskId, user.id);
+    if (!parentTask) {
+        return { error: "Task not found" };
+    }
+
+    if (!ACTIVE_PARENT_TASK_STATUSES.includes(parentTask.status)) {
+        return { error: `Cannot edit subtasks in ${parentTask.status} status` };
+    }
+
+    const { count: subtaskCount } = await (supabase.from("task_subtasks") as any)
+        .select("id", { count: "exact", head: true })
+        .eq("parent_task_id", parentTaskId as any)
+        .eq("user_id", user.id as any);
+
+    if ((subtaskCount || 0) >= MAX_SUBTASKS_PER_TASK) {
+        return { error: SUBTASK_LIMIT_ERROR };
+    }
+
+    // @ts-ignore
+    const { data: subtask, error } = await (supabase.from("task_subtasks") as any)
+        .insert({
+            parent_task_id: parentTaskId,
+            user_id: user.id,
+            title: normalizedTitle,
+            is_completed: false,
+            completed_at: null,
+        })
+        .select("*")
+        .single();
+
+    if (error) {
+        return { error: error.message };
+    }
+
+    revalidateTaskSurfaces(parentTaskId, user.id);
+    return { success: true, subtask };
+}
+
+export async function toggleTaskSubtask(parentTaskId: string, subtaskId: string, completed: boolean) {
+    const supabase = await createClient();
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: "Not authenticated" };
+    }
+
+    const parentTask = await getOwnedParentTask(supabase, parentTaskId, user.id);
+    if (!parentTask) {
+        return { error: "Task not found" };
+    }
+
+    if (!ACTIVE_PARENT_TASK_STATUSES.includes(parentTask.status)) {
+        return { error: `Cannot edit subtasks in ${parentTask.status} status` };
+    }
+
+    const nowIso = new Date().toISOString();
+
+    // @ts-ignore
+    const { data: updatedSubtask, error } = await (supabase.from("task_subtasks") as any)
+        .update({
+            is_completed: completed,
+            completed_at: completed ? nowIso : null,
+        })
+        .eq("id", subtaskId as any)
+        .eq("parent_task_id", parentTaskId as any)
+        .eq("user_id", user.id as any)
+        .select("*")
+        .single();
+
+    if (error) {
+        return { error: error.message };
+    }
+
+    if (!updatedSubtask) {
+        return { error: "Subtask not found" };
+    }
+
+    revalidateTaskSurfaces(parentTaskId, user.id);
+    return { success: true, subtask: updatedSubtask };
+}
+
+export async function deleteTaskSubtask(parentTaskId: string, subtaskId: string) {
+    const supabase = await createClient();
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: "Not authenticated" };
+    }
+
+    const parentTask = await getOwnedParentTask(supabase, parentTaskId, user.id);
+    if (!parentTask) {
+        return { error: "Task not found" };
+    }
+
+    if (!ACTIVE_PARENT_TASK_STATUSES.includes(parentTask.status)) {
+        return { error: `Cannot edit subtasks in ${parentTask.status} status` };
+    }
+
+    const { data: deletedRows, error } = await (supabase.from("task_subtasks") as any)
+        .delete()
+        .eq("id", subtaskId as any)
+        .eq("parent_task_id", parentTaskId as any)
+        .eq("user_id", user.id as any)
+        .select("id");
+
+    if (error) {
+        return { error: error.message };
+    }
+
+    if (!deletedRows || deletedRows.length === 0) {
+        return { error: "Subtask not found" };
+    }
+
+    revalidateTaskSurfaces(parentTaskId, user.id);
     return { success: true };
 }
 
@@ -721,6 +990,17 @@ export async function getTask(taskId: string) {
                 invalidateActiveTasksCache((task as any).user_id);
                 revalidatePath(`/dashboard/tasks/${taskId}`);
             }
+        }
+
+        if (isOwner) {
+            // @ts-ignore
+            const { data: subtasks } = await (supabase.from("task_subtasks") as any)
+                .select("*")
+                .eq("parent_task_id", taskId as any)
+                .eq("user_id", user.id as any)
+                .order("created_at", { ascending: true });
+
+            (task as any).subtasks = (subtasks as any[]) || [];
         }
 
         if (isOwner || isVoucher) {

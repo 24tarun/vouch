@@ -1,3 +1,4 @@
 export const DEFAULT_POMO_DURATION_MINUTES = 25;
 export const DEFAULT_FAILURE_COST_CENTS = 50;
 export const DEFAULT_FAILURE_COST_EUROS = "0.50";
+export const MAX_SUBTASKS_PER_TASK = 20;
