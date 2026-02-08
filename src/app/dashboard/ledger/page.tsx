@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import type { LedgerEntry } from "@/lib/types";
 import { LedgerReportButton } from "@/components/LedgerReportButton";
+import { HardRefreshButton } from "@/components/HardRefreshButton";
 
 export default async function LedgerPage() {
     const supabase = await createClient();
@@ -51,11 +52,14 @@ export default async function LedgerPage() {
 
     return (
         <div className="max-w-4xl mx-auto space-y-12 pb-20 mt-12 px-4 md:px-0">
-            <div>
-                <h1 className="text-3xl font-bold text-white">Ledger</h1>
-                <p className="text-slate-400 mt-1">
-                    Track your accountability and commitment to change.
-                </p>
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <h1 className="text-3xl font-bold text-white">Ledger</h1>
+                    <p className="text-slate-400 mt-1">
+                        Track your accountability and commitment to change.
+                    </p>
+                </div>
+                <HardRefreshButton />
             </div>
 
             {/* High-Contrast Summary Grid */}

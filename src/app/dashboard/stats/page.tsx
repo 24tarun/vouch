@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { Task } from "@/lib/types";
 import { CompactStatsItem } from "@/components/CompactStatsItem";
+import { HardRefreshButton } from "@/components/HardRefreshButton";
 
 export default async function OverviewPage() {
     const supabase = await createClient();
@@ -73,11 +74,14 @@ export default async function OverviewPage() {
 
     return (
         <div className="max-w-4xl mx-auto space-y-12 pb-20 mt-12 px-4 md:px-0">
-            <div>
-                <h1 className="text-3xl font-bold text-white">Overview</h1>
-                <p className="text-slate-400 mt-1">
-                    Your performance and habit reliability
-                </p>
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <h1 className="text-3xl font-bold text-white">Overview</h1>
+                    <p className="text-slate-400 mt-1">
+                        Your performance and habit reliability
+                    </p>
+                </div>
+                <HardRefreshButton />
             </div>
 
             {/* Quick Stats Grid - High Contrast, No Frames */}

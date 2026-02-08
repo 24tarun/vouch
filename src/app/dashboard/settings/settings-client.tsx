@@ -20,6 +20,7 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { PushInitializer } from "@/components/PushInitializer";
+import { HardRefreshButton } from "@/components/HardRefreshButton";
 import type { Profile } from "@/lib/types";
 import {
     DEFAULT_FAILURE_COST_CENTS,
@@ -99,12 +100,15 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
 
     return (
         <div className="max-w-3xl mx-auto space-y-8 pb-20 mt-12 px-4 md:px-0">
-            <div>
-                <h1 className="text-3xl font-bold text-white">Settings</h1>
-                <p className="text-slate-400 mt-1">Manage your profile and task defaults</p>
-                <p className="text-xs text-slate-500 font-mono mt-2">
-                    Signed in as <span className="text-slate-300">{profile.email}</span>
-                </p>
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <h1 className="text-3xl font-bold text-white">Settings</h1>
+                    <p className="text-slate-400 mt-1">Manage your profile and task defaults</p>
+                    <p className="text-xs text-slate-500 font-mono mt-2">
+                        Signed in as <span className="text-slate-300">{profile.email}</span>
+                    </p>
+                </div>
+                <HardRefreshButton />
             </div>
 
             <PushInitializer />

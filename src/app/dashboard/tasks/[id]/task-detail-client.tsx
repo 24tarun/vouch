@@ -38,6 +38,7 @@ import {
     toDateTimeLocalValue,
 } from "@/lib/datetime-local";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
+import { HardRefreshButton } from "@/components/HardRefreshButton";
 
 interface TaskDetailClientProps {
     task: TaskWithRelations;
@@ -104,6 +105,18 @@ export default function TaskDetailClient({
 
     const formatDateTimeDdMmYy = (value: Date | string) =>
         `${formatDateDdMmYy(value)} ${formatTime24h(value)}`;
+    const voucherDeadlineForDisplay = useMemo(() => {
+        if (taskState.marked_completed_at) {
+            const derived = new Date(taskState.marked_completed_at);
+            derived.setDate(derived.getDate() + 2);
+            derived.setHours(23, 59, 59, 999);
+            return derived;
+        }
+        if (taskState.voucher_response_deadline) {
+            return new Date(taskState.voucher_response_deadline);
+        }
+        return null;
+    }, [taskState.marked_completed_at, taskState.voucher_response_deadline]);
 
     const refreshInBackground = () => {
         startRefreshTransition(() => {
@@ -373,6 +386,7 @@ export default function TaskDetailClient({
                         </span>
                     </div>
                 </div>
+                <HardRefreshButton />
             </div>
 
             <Card className="bg-slate-900/40 border-slate-800">
@@ -424,7 +438,7 @@ export default function TaskDetailClient({
                     {taskState.voucher_response_deadline && (taskState.status === "AWAITING_VOUCHER" || taskState.status === "MARKED_COMPLETED") && (
                         <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
                             <p className="text-sm text-purple-300">
-                                Voucher must respond before {formatDateTimeDdMmYy(taskState.voucher_response_deadline)}
+                                Voucher must respond before {voucherDeadlineForDisplay ? formatDateTimeDdMmYy(voucherDeadlineForDisplay) : formatDateTimeDdMmYy(taskState.voucher_response_deadline)}
                             </p>
                         </div>
                     )}

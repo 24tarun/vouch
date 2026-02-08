@@ -9,6 +9,7 @@ import type { TaskWithRelations } from "@/lib/types";
 import { Check, ChevronDown, ChevronRight, Loader2, Timer, X } from "lucide-react";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import { toast } from "sonner";
+import { HardRefreshButton } from "@/components/HardRefreshButton";
 
 interface VoucherDashboardClientProps {
     pendingTasks: TaskWithRelations[];
@@ -224,11 +225,14 @@ export default function VoucherDashboardClient({
 
     return (
         <div className="max-w-3xl mx-auto space-y-12 pb-20 mt-12 px-4 md:px-0">
-            <div>
-                <h1 className="text-3xl font-bold text-white">Vouch Requests</h1>
-                <p className="text-slate-400 mt-1">
-                    Review and verify task completions for your friends
-                </p>
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <h1 className="text-3xl font-bold text-white">Vouch Requests</h1>
+                    <p className="text-slate-400 mt-1">
+                        Review and verify task completions for your friends
+                    </p>
+                </div>
+                <HardRefreshButton />
             </div>
 
             <section className="space-y-4">
@@ -337,7 +341,25 @@ function CompactPendingItem({
         return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
     };
 
-    const deadline = new Date(task.voucher_response_deadline || "");
+    const deadline = (() => {
+        if (task.marked_completed_at) {
+            const derived = new Date(task.marked_completed_at);
+            derived.setDate(derived.getDate() + 2);
+            derived.setHours(23, 59, 59, 999);
+            return derived;
+        }
+        return new Date(task.voucher_response_deadline || "");
+    })();
+    const deadlineLabel = Number.isNaN(deadline.getTime())
+        ? "No deadline"
+        : deadline.toLocaleString("en-GB", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        });
     const hoursLeft = Math.max(
         0,
         Math.floor((deadline.getTime() - renderTimestamp) / (1000 * 60 * 60))
@@ -358,7 +380,7 @@ function CompactPendingItem({
                         {task.title}
                     </button>
                     <Badge variant="outline" className={hoursLeft < 6 ? "bg-red-500/10 text-red-500 border-red-500/30 text-[10px]" : "bg-purple-500/10 text-purple-400 border-purple-500/30 text-[10px]"}>
-                        {hoursLeft}h left
+                        {deadlineLabel}
                     </Badge>
                     {pomoTotalSeconds > 0 && (
                         <Badge variant="outline" className="bg-emerald-500/10 text-emerald-300 border-emerald-500/30 text-[10px]">

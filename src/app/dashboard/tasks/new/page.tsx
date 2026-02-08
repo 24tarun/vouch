@@ -35,6 +35,7 @@ import {
     localDateTimeToIso,
     toDateTimeLocalValue,
 } from "@/lib/datetime-local";
+import { HardRefreshButton } from "@/components/HardRefreshButton";
 
 export default function NewTaskPage() {
     const router = useRouter();
@@ -126,7 +127,14 @@ export default function NewTaskPage() {
     }
 
     return (
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-2xl mx-auto space-y-6">
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <h1 className="text-3xl font-bold text-white">Create Task</h1>
+                    <p className="text-slate-400 mt-1">Set a commitment with financial consequences</p>
+                </div>
+                <HardRefreshButton />
+            </div>
             <Card className="bg-slate-800/50 border-slate-700">
                 <CardHeader>
                     <CardTitle className="text-2xl text-white">Create New Task</CardTitle>

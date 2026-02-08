@@ -15,6 +15,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import type { Profile } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
+import { HardRefreshButton } from "@/components/HardRefreshButton";
 
 export default function FriendsPage() {
     const [friends, setFriends] = useState<Profile[]>([]);
@@ -116,11 +117,14 @@ export default function FriendsPage() {
 
     return (
         <div className="max-w-2xl mx-auto space-y-10 px-4 md:px-0">
-            <div>
-                <h1 className="text-3xl font-bold text-white tracking-tight">Network</h1>
-                <p className="text-slate-500 mt-2 text-sm leading-relaxed">
-                    Connect with friends to assign them as vouchers for your tasks.
-                </p>
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <h1 className="text-3xl font-bold text-white tracking-tight">Network</h1>
+                    <p className="text-slate-500 mt-2 text-sm leading-relaxed">
+                        Connect with friends to assign them as vouchers for your tasks.
+                    </p>
+                </div>
+                <HardRefreshButton />
             </div>
 
             {/* Add Friend Form */}
