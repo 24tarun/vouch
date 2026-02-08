@@ -58,6 +58,8 @@ export function CompactStatsItem({ task }: { task: StatsTask }) {
     };
 
     const pomoTotalSeconds = task.pomo_total_seconds || 0;
+    const statusColorClass = statusColors[task.status] || "text-slate-500";
+    const amountColorClass = task.status === "FAILED" ? "text-red-500" : "text-slate-400";
 
     if (!mounted) {
         return (
@@ -80,7 +82,7 @@ export function CompactStatsItem({ task }: { task: StatsTask }) {
                     <p className="text-lg font-medium text-white group-hover:text-blue-400 transition-colors truncate">
                         {task.title}
                     </p>
-                    <Badge variant="outline" className={`text-[9px] h-4 py-0 px-1 border-slate-900 uppercase tracking-tighter ${statusColors[task.status] || "text-slate-500"}`}>
+                    <Badge variant="outline" className={`text-[9px] h-4 py-0 px-1 border-slate-900 uppercase tracking-tighter ${statusColorClass}`}>
                         {task.status === "FAILED"
                             ? (task.marked_completed_at ? "DENIED" : "FAILED")
                             : (statusLabels[task.status] || task.status)}
@@ -100,7 +102,7 @@ export function CompactStatsItem({ task }: { task: StatsTask }) {
             </div>
 
             <div className="flex flex-col items-end z-10 pointer-events-none gap-2">
-                <span className={`text-base font-mono ${task.status === 'FAILED' ? 'text-red-500' : 'text-slate-400'}`}>
+                <span className={`text-base font-mono ${amountColorClass}`}>
                     {task.status === 'FAILED' ? '-' : ''}€{(task.failure_cost_cents / 100).toFixed(2)}
                 </span>
             </div>

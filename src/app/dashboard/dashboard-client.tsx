@@ -12,7 +12,13 @@ import type { Profile, Task } from "@/lib/types";
 import { Lightbulb } from "lucide-react";
 
 const MAX_COMPLETED_TASKS = 10;
-const VOUCHER_RESPONSE_WINDOW_HOURS = 48;
+
+function getVoucherResponseDeadlineLocal(baseDate: Date = new Date()): Date {
+    const deadline = new Date(baseDate);
+    deadline.setDate(deadline.getDate() + 2);
+    deadline.setHours(23, 59, 59, 999);
+    return deadline;
+}
 
 interface DashboardClientProps {
     initialTasks: Task[];
@@ -150,7 +156,8 @@ export default function DashboardClient({
         setTaskCompleting(task.id, true);
 
         const now = new Date();
-        const voucherResponseDeadline = new Date(now.getTime() + VOUCHER_RESPONSE_WINDOW_HOURS * 60 * 60 * 1000);
+        const voucherResponseDeadline = getVoucherResponseDeadlineLocal(now);
+        const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
         const nowIso = now.toISOString();
         const optimisticTask: Task = {
             ...task,
@@ -171,7 +178,7 @@ export default function DashboardClient({
                     [optimisticTask, ...prev.filter((currentTask) => currentTask.id !== task.id)].slice(0, MAX_COMPLETED_TASKS)
                 );
             },
-            runMutation: () => markTaskCompleted(task.id),
+            runMutation: () => markTaskCompleted(task.id, userTimeZone),
             rollback: (snapshot) => {
                 setActiveTasks(snapshot.activeTasks);
                 setCompletedTasks(snapshot.completedTasks);

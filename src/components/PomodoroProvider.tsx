@@ -118,17 +118,11 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
             tryAutoEndOnUnload();
         };
 
-        const handleUnload = () => {
-            tryAutoEndOnUnload();
-        };
-
         window.addEventListener("beforeunload", handleBeforeUnload);
         window.addEventListener("pagehide", handlePageHide);
-        window.addEventListener("unload", handleUnload);
         return () => {
             window.removeEventListener("beforeunload", handleBeforeUnload);
             window.removeEventListener("pagehide", handlePageHide);
-            window.removeEventListener("unload", handleUnload);
         };
     }, [session]);
 

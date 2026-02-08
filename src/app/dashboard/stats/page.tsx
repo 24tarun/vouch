@@ -7,49 +7,30 @@ export default async function OverviewPage() {
     const {
         data: { user },
     } = await supabase.auth.getUser();
-    const userId = user?.id as any;
-    const currentPeriod = new Date().toISOString().slice(0, 7);
+    const userId = user?.id ?? "";
 
-    const [tasksResult, vouchRequestsResult, ledgerEntriesResult, pomoSessionsResult] = await Promise.all([
-        // @ts-ignore
+    const [tasksResult, pomoSessionsResult] = await Promise.all([
         supabase
             .from("tasks")
             .select("*")
             .eq("user_id", userId)
             .order("updated_at", { ascending: false }),
-        // @ts-ignore
-        supabase
-            .from("tasks")
-            .select("*", { count: "exact", head: true })
-            .eq("voucher_id", userId)
-            .eq("status", "AWAITING_VOUCHER"),
-        // @ts-ignore
-        supabase
-            .from("ledger_entries")
-            .select("amount_cents")
-            .eq("user_id", userId)
-            .eq("period", currentPeriod),
-        // @ts-ignore
         supabase
             .from("pomo_sessions")
-            .select("task_id, elapsed_seconds, task:tasks!inner(status)")
+            .select("task_id, elapsed_seconds")
             .eq("user_id", userId)
             .neq("status", "DELETED"),
     ]);
 
     const tasks = (tasksResult.data as Task[] | null) || [];
-    const pendingVouchCount = vouchRequestsResult.count || 0;
-    const ledgerEntries = (ledgerEntriesResult.data as Array<{ amount_cents: number }> | null) || [];
     const allSessions = (pomoSessionsResult.data as Array<{
         task_id: string;
         elapsed_seconds: number;
-        task: { status: string } | null;
     }> | null) || [];
 
-    const totalFailureCost = ledgerEntries.reduce((sum, entry) => sum + (entry.amount_cents || 0), 0);
-
+    const taskStatusById = new Map(tasks.map((task) => [task.id, task.status]));
     const validSessions = allSessions.filter((session) => {
-        const status = session.task?.status;
+        const status = taskStatusById.get(session.task_id);
         return status !== "FAILED" && status !== "DELETED";
     });
 
@@ -57,17 +38,21 @@ export default async function OverviewPage() {
     const totalHours = Math.floor(totalSeconds / 3600);
     const totalMinutes = Math.floor((totalSeconds % 3600) / 60);
 
-    const activeTasks =
-        tasks.filter((t) =>
-            ["CREATED", "POSTPONED", "AWAITING_VOUCHER", "MARKED_COMPLETED"].includes(t.status)
-        );
+    const activeTasks = tasks.filter((t) => ["CREATED", "POSTPONED"].includes(t.status));
 
     const activeTasksCount = activeTasks.length;
+    const pendingVouchCount = tasks.filter((t) =>
+        ["AWAITING_VOUCHER", "MARKED_COMPLETED"].includes(t.status)
+    ).length;
+    const acceptedCount = tasks.filter((t) => t.status === "COMPLETED").length;
+    const failedCount = tasks.filter((t) => t.status === "FAILED" && !t.marked_completed_at).length;
+    const deniedCount = tasks.filter((t) => t.status === "FAILED" && Boolean(t.marked_completed_at)).length;
 
-    const historyTasks =
-        tasks.filter((t) =>
-            ["COMPLETED", "FAILED", "RECTIFIED", "SETTLED", "DELETED"].includes(t.status)
-        );
+    const historyTasks = tasks.filter((t) =>
+        ["AWAITING_VOUCHER", "MARKED_COMPLETED", "COMPLETED", "FAILED", "RECTIFIED", "SETTLED", "DELETED"].includes(
+            t.status
+        )
+    );
 
     const taskPomoTotals = allSessions.reduce((map, row) => {
         if (!row.task_id) return map;
@@ -96,24 +81,35 @@ export default async function OverviewPage() {
             </div>
 
             {/* Quick Stats Grid - High Contrast, No Frames */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-                <div className="space-y-1">
+            <div className="grid grid-cols-3 gap-4 md:flex md:items-baseline md:justify-between md:gap-8">
+                <div className="space-y-1 md:whitespace-nowrap">
                     <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Active</p>
-                    <p className="text-4xl font-light text-white">{activeTasksCount}</p>
+                    <p className="text-2xl sm:text-3xl md:text-4xl font-light text-white">{activeTasksCount}</p>
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-1 md:whitespace-nowrap">
                     <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Time Focused</p>
-                    <p className="text-4xl font-light text-white">
-                        {totalHours}<span className="text-xl text-slate-500 ml-1">h</span> {totalMinutes}<span className="text-xl text-slate-500 ml-1">m</span>
+                    <p className="text-2xl sm:text-3xl md:text-4xl font-light text-white whitespace-nowrap">
+                        {totalHours}
+                        <span className="text-base sm:text-lg md:text-xl text-slate-500 ml-1">h</span>{" "}
+                        {totalMinutes}
+                        <span className="text-base sm:text-lg md:text-xl text-slate-500 ml-1">m</span>
                     </p>
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-1 md:whitespace-nowrap">
                     <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Pending Vouches</p>
-                    <p className="text-4xl font-light text-purple-400">{pendingVouchCount}</p>
+                    <p className="text-2xl sm:text-3xl md:text-4xl font-light text-purple-400">{pendingVouchCount}</p>
                 </div>
-                <div className="space-y-1">
-                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Monthly Loss</p>
-                    <p className="text-4xl font-light text-red-500">€{(totalFailureCost / 100).toFixed(2)}</p>
+                <div className="space-y-1 md:whitespace-nowrap">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Accepted</p>
+                    <p className="text-2xl sm:text-3xl md:text-4xl font-light text-lime-300">{acceptedCount}</p>
+                </div>
+                <div className="space-y-1 md:whitespace-nowrap">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Failed</p>
+                    <p className="text-2xl sm:text-3xl md:text-4xl font-light text-red-500">{failedCount}</p>
+                </div>
+                <div className="space-y-1 md:whitespace-nowrap">
+                    <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Denied</p>
+                    <p className="text-2xl sm:text-3xl md:text-4xl font-light text-red-500">{deniedCount}</p>
                 </div>
             </div>
 
@@ -155,5 +151,3 @@ export default async function OverviewPage() {
         </div>
     );
 }
-
-

@@ -51,7 +51,12 @@ interface TaskDetailClientProps {
     defaultPomoDurationMinutes: number;
 }
 
-const VOUCHER_RESPONSE_WINDOW_HOURS = 48;
+function getVoucherResponseDeadlineLocal(baseDate: Date = new Date()): Date {
+    const deadline = new Date(baseDate);
+    deadline.setDate(deadline.getDate() + 2);
+    deadline.setHours(23, 59, 59, 999);
+    return deadline;
+}
 
 export default function TaskDetailClient({
     task,
@@ -81,6 +86,24 @@ export default function TaskDetailClient({
     const [postponeDate, setPostponeDate] = useState(() => getDatePartFromLocalDateTime(maxPostponeLocal));
     const [postponeTime, setPostponeTime] = useState(() => getTimePartFromLocalDateTime(maxPostponeLocal));
     const hasPomoData = (pomoSummary?.sessionCount || 0) > 0;
+    const userTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
+
+    const formatDateDdMmYy = (value: Date | string) =>
+        new Date(value).toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "2-digit",
+        });
+
+    const formatTime24h = (value: Date | string) =>
+        new Date(value).toLocaleTimeString("en-GB", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        });
+
+    const formatDateTimeDdMmYy = (value: Date | string) =>
+        `${formatDateDdMmYy(value)} ${formatTime24h(value)}`;
 
     const refreshInBackground = () => {
         startRefreshTransition(() => {
@@ -151,7 +174,7 @@ export default function TaskDetailClient({
         setActionPending("markComplete", true);
 
         const now = new Date();
-        const voucherResponseDeadline = new Date(now.getTime() + VOUCHER_RESPONSE_WINDOW_HOURS * 60 * 60 * 1000);
+        const voucherResponseDeadline = getVoucherResponseDeadlineLocal(now);
 
         await runOptimisticMutation({
             captureSnapshot: () => ({ taskState }),
@@ -164,7 +187,7 @@ export default function TaskDetailClient({
                     updated_at: now.toISOString(),
                 }));
             },
-            runMutation: () => markTaskComplete(taskState.id),
+            runMutation: () => markTaskComplete(taskState.id, userTimeZone),
             rollback: (snapshot) => {
                 setTaskState(snapshot.taskState);
             },
@@ -368,11 +391,7 @@ export default function TaskDetailClient({
                         <div>
                             <p className="text-sm text-slate-400">Deadline</p>
                             <p className={`text-lg font-medium ${isOverdue ? "text-red-400" : "text-white"}`}>
-                                {deadline.toLocaleDateString()} {" "}
-                                {deadline.toLocaleTimeString([], {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                })}
+                                {formatDateTimeDdMmYy(deadline)}
                             </p>
                         </div>
                         <div>
@@ -397,7 +416,7 @@ export default function TaskDetailClient({
                     {taskState.postponed_at && (
                         <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
                             <p className="text-sm text-amber-300">
-                                Postponed once on {new Date(taskState.postponed_at).toLocaleString()}
+                                Postponed once on {formatDateTimeDdMmYy(taskState.postponed_at)}
                             </p>
                         </div>
                     )}
@@ -405,7 +424,7 @@ export default function TaskDetailClient({
                     {taskState.voucher_response_deadline && (taskState.status === "AWAITING_VOUCHER" || taskState.status === "MARKED_COMPLETED") && (
                         <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
                             <p className="text-sm text-purple-300">
-                                Voucher must respond by {new Date(taskState.voucher_response_deadline).toLocaleString()}
+                                Voucher must respond before {formatDateTimeDdMmYy(taskState.voucher_response_deadline)}
                             </p>
                         </div>
                     )}
@@ -576,7 +595,7 @@ export default function TaskDetailClient({
                                             {formatEventLabel(event)}
                                         </p>
                                         <p className="text-xs text-slate-500">
-                                            {new Date(event.created_at).toLocaleString()}
+                                            {formatDateTimeDdMmYy(event.created_at)}
                                         </p>
                                     </div>
                                 </div>

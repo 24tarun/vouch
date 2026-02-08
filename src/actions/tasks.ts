@@ -13,7 +13,71 @@ import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
 
 const INVALID_DEADLINE_ERROR = "Deadline is invalid.";
 const PAST_DEADLINE_ERROR = "Deadline must be in the future.";
-const VOUCHER_RESPONSE_WINDOW_HOURS = 48;
+
+function isValidTimeZone(timeZone: string): boolean {
+    try {
+        new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function getDatePartsInTimeZone(date: Date, timeZone: string): { year: number; month: number; day: number } {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(date);
+
+    const map: Record<string, string> = {};
+    for (const part of parts) {
+        if (part.type !== "literal") {
+            map[part.type] = part.value;
+        }
+    }
+
+    return {
+        year: Number(map.year),
+        month: Number(map.month),
+        day: Number(map.day),
+    };
+}
+
+function getOffsetIsoForTimeZone(date: Date, timeZone: string): string {
+    const offsetPart = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        timeZoneName: "longOffset",
+    })
+        .formatToParts(date)
+        .find((part) => part.type === "timeZoneName")?.value;
+
+    if (!offsetPart || offsetPart === "GMT") {
+        return "Z";
+    }
+
+    return offsetPart.replace("GMT", "");
+}
+
+function getVoucherResponseDeadlineUtc(baseDate: Date = new Date(), userTimeZone?: string): Date {
+    const timeZone = userTimeZone && isValidTimeZone(userTimeZone) ? userTimeZone : "UTC";
+
+    const baseLocal = getDatePartsInTimeZone(baseDate, timeZone);
+    const targetNoonUtc = new Date(Date.UTC(baseLocal.year, baseLocal.month - 1, baseLocal.day + 2, 12, 0, 0, 0));
+    const targetLocal = getDatePartsInTimeZone(targetNoonUtc, timeZone);
+    const offsetIso = getOffsetIsoForTimeZone(
+        new Date(Date.UTC(targetLocal.year, targetLocal.month - 1, targetLocal.day, 12, 0, 0, 0)),
+        timeZone
+    );
+
+    const month = String(targetLocal.month).padStart(2, "0");
+    const day = String(targetLocal.day).padStart(2, "0");
+    const tzSuffix = offsetIso === "Z" ? "Z" : offsetIso;
+    const targetIso = `${targetLocal.year}-${month}-${day}T23:59:59.999${tzSuffix}`;
+
+    return new Date(targetIso);
+}
 
 function invalidateActiveTasksCache(userId: string) {
     revalidateTag(activeTasksTag(userId), "max");
@@ -337,7 +401,7 @@ export async function cancelRepetition(taskId: string) {
 }
 
 
-export async function markTaskComplete(taskId: string) {
+export async function markTaskComplete(taskId: string, userTimeZone?: string) {
     const supabase = await createClient();
     const {
         data: { user },
@@ -365,7 +429,7 @@ export async function markTaskComplete(taskId: string) {
         return { error: "Deadline has passed" };
     }
 
-    const voucherResponseDeadline = new Date(Date.now() + VOUCHER_RESPONSE_WINDOW_HOURS * 60 * 60 * 1000);
+    const voucherResponseDeadline = getVoucherResponseDeadlineUtc(new Date(), userTimeZone);
     const nowIso = new Date().toISOString();
 
     // @ts-ignore
