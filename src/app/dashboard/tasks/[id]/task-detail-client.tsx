@@ -94,6 +94,7 @@ export default function TaskDetailClient({
     const [pendingSubtaskIds, setPendingSubtaskIds] = useState<Set<string>>(new Set());
     const [isAddingSubtask, setIsAddingSubtask] = useState(false);
     const newSubtaskInputRef = useRef<HTMLInputElement>(null);
+    const shouldRestoreSubtaskInputFocusRef = useRef(false);
 
     const deadline = new Date(taskState.deadline);
     const isOverdue =
@@ -180,7 +181,15 @@ export default function TaskDetailClient({
 
     const focusNewSubtaskInput = () => {
         window.requestAnimationFrame(() => {
-            newSubtaskInputRef.current?.focus();
+            const input = newSubtaskInputRef.current;
+            if (!input) return;
+            input.focus();
+            const cursorPosition = input.value.length;
+            try {
+                input.setSelectionRange(cursorPosition, cursorPosition);
+            } catch {
+                // Some input types/platforms may not support selection range.
+            }
         });
     };
 
@@ -204,6 +213,13 @@ export default function TaskDetailClient({
             subtasks,
         }));
     }, [subtasks]);
+
+    useEffect(() => {
+        if (!isAddingSubtask && shouldRestoreSubtaskInputFocusRef.current) {
+            shouldRestoreSubtaskInputFocusRef.current = false;
+            focusNewSubtaskInput();
+        }
+    }, [isAddingSubtask]);
 
     const resetPostponeDraft = () => {
         const latestDeadline = new Date(taskState.deadline);
@@ -406,7 +422,7 @@ export default function TaskDetailClient({
         } else if (!result.ok) {
             setSubtaskError("Could not add subtask.");
         } else if (subtasks.length + 1 < MAX_SUBTASKS_PER_TASK) {
-            focusNewSubtaskInput();
+            shouldRestoreSubtaskInputFocusRef.current = true;
         }
 
         setIsAddingSubtask(false);
@@ -768,12 +784,14 @@ export default function TaskDetailClient({
                                                 placeholder="e.g., draft intro paragraph"
                                                 maxLength={120}
                                                 className="bg-slate-900/60 border-slate-700 text-slate-200"
-                                                disabled={isAddingSubtask || subtasks.length >= MAX_SUBTASKS_PER_TASK}
+                                                disabled={subtasks.length >= MAX_SUBTASKS_PER_TASK}
                                                 autoFocus
                                             />
                                             <Button
                                                 type="submit"
                                                 size="sm"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onPointerDown={(e) => e.preventDefault()}
                                                 disabled={isAddingSubtask || subtasks.length >= MAX_SUBTASKS_PER_TASK}
                                                 className="bg-slate-200/10 border border-slate-600 text-slate-200 hover:bg-slate-200/20"
                                             >
