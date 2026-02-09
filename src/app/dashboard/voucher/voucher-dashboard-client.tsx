@@ -107,6 +107,10 @@ export default function VoucherDashboardClient({
         }
     }, [historyLoaded, historyLoading, isHistoryOpen]);
 
+    useEffect(() => {
+        setPendingState(pendingTasks);
+    }, [pendingTasks]);
+
     const handleHistoryToggle = () => {
         setIsHistoryOpen((prev) => {
             const next = !prev;
