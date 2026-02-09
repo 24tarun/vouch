@@ -604,6 +604,76 @@ export async function markTaskComplete(taskId: string, userTimeZone?: string) {
     return { success: true };
 }
 
+export async function undoTaskComplete(taskId: string) {
+    const supabase = await createClient();
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: "Not authenticated" };
+    }
+
+    const { data: task } = await (supabase.from("tasks") as any)
+        .select("id, status, deadline, postponed_at, voucher_id")
+        .eq("id", taskId as any)
+        .eq("user_id", user.id as any)
+        .single();
+
+    if (!task) {
+        return { error: "Task not found" };
+    }
+
+    if ((task as any).status !== "AWAITING_VOUCHER") {
+        return { error: `Cannot undo completion from ${(task as any).status} status` };
+    }
+
+    const nowIso = new Date().toISOString();
+    if (new Date(nowIso) >= new Date((task as any).deadline)) {
+        return { error: "Deadline has passed" };
+    }
+
+    const restoredStatus: "CREATED" | "POSTPONED" = (task as any).postponed_at ? "POSTPONED" : "CREATED";
+
+    // @ts-ignore
+    const { data: updatedRows, error } = await (supabase.from("tasks") as any)
+        .update({
+            status: restoredStatus,
+            marked_completed_at: null,
+            voucher_response_deadline: null,
+            updated_at: nowIso,
+        } as any)
+        .eq("id", taskId as any)
+        .eq("user_id", user.id as any)
+        .eq("status", "AWAITING_VOUCHER")
+        .gt("deadline", nowIso)
+        .select("id");
+
+    if (error) {
+        return { error: error.message };
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+        return { error: "Task can no longer be reverted. Please refresh." };
+    }
+
+    await (supabase.from("task_events") as any).insert({
+        task_id: taskId as any,
+        event_type: "UNDO_COMPLETE",
+        actor_id: user.id,
+        from_status: "AWAITING_VOUCHER",
+        to_status: restoredStatus,
+    });
+
+    invalidateActiveTasksCache(user.id);
+    invalidatePendingVoucherRequestsCache((task as any).voucher_id);
+    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/voucher");
+    revalidatePath(`/dashboard/tasks/${taskId}`);
+
+    return { success: true, status: restoredStatus };
+}
+
 export async function addTaskSubtask(parentTaskId: string, title: string) {
     const supabase = await createClient();
     const {
@@ -799,8 +869,7 @@ export async function postponeTask(taskId: string, newDeadline?: string) {
         metadata: { new_deadline: newDeadlineDate.toISOString() },
     });
 
-    invalidateActiveTasksCache((user as any).id);
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidateTaskSurfaces(taskId, user.id);
     return { success: true };
 }
 

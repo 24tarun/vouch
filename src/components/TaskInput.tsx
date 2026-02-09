@@ -312,6 +312,7 @@ export function TaskInput({
             setRecurrenceType("");
             setRecurrenceLabel("");
             setShowCustomRecurrenceInline(false);
+            resetDeadlineToDefault();
             return;
         }
 
@@ -344,6 +345,7 @@ export function TaskInput({
                 setRecurrenceType("");
                 setRecurrenceLabel("");
                 setShowCustomRecurrenceInline(false);
+                resetDeadlineToDefault();
             }
         } catch (error) {
             console.error("Failed to create task", error);

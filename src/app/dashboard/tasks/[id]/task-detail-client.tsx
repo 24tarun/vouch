@@ -10,6 +10,7 @@ import {
     markTaskComplete,
     ownerTempDeleteTask,
     postponeTask,
+    undoTaskComplete,
     toggleTaskSubtask,
 } from "@/actions/tasks";
 import { Button } from "@/components/ui/button";
@@ -297,6 +298,41 @@ export default function TaskDetailClient({
         });
 
         setActionPending("markComplete", false);
+    }
+
+    async function handleUndoComplete() {
+        if (isActionPending("undoComplete")) return;
+        if (!isOwner || taskState.status !== "AWAITING_VOUCHER") return;
+        if (new Date() >= new Date(taskState.deadline)) {
+            toast.error("Cannot undo completion after the deadline.");
+            return;
+        }
+
+        setActionPending("undoComplete", true);
+        const restoredStatus: "CREATED" | "POSTPONED" = taskState.postponed_at ? "POSTPONED" : "CREATED";
+        const nowIso = new Date().toISOString();
+
+        await runOptimisticMutation({
+            captureSnapshot: () => ({ taskState }),
+            applyOptimistic: () => {
+                setTaskState((prev) => ({
+                    ...prev,
+                    status: restoredStatus,
+                    marked_completed_at: null,
+                    voucher_response_deadline: null,
+                    updated_at: nowIso,
+                }));
+            },
+            runMutation: () => undoTaskComplete(taskState.id),
+            rollback: (snapshot) => {
+                setTaskState(snapshot.taskState);
+            },
+            onSuccess: () => {
+                refreshInBackground();
+            },
+        });
+
+        setActionPending("undoComplete", false);
     }
 
     async function handlePostpone(e: React.FormEvent<HTMLFormElement>) {
@@ -950,9 +986,22 @@ export default function TaskDetailClient({
                     )}
 
                     {taskState.status === "AWAITING_VOUCHER" && (
-                        <p className="text-slate-400">
-                            Waiting for voucher response...
-                        </p>
+                        <div className="w-full p-3 rounded-lg bg-purple-500/10 border border-purple-500/30 flex flex-wrap items-center gap-3">
+                            <p className="text-slate-300">
+                                Waiting for voucher response...
+                            </p>
+                            {isOwner && !isOverdue && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={handleUndoComplete}
+                                    disabled={isActionPending("undoComplete")}
+                                    className="bg-slate-800/60 border-slate-600 text-slate-200 hover:bg-slate-700/60"
+                                >
+                                    Undo Complete
+                                </Button>
+                            )}
+                        </div>
                     )}
 
                     {taskState.status === "COMPLETED" && (
