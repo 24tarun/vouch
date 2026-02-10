@@ -34,6 +34,7 @@ export interface Task {
     recurrence_rule_id: string | null;
     created_at: string;
     updated_at: string;
+    voucher_timeout_auto_accepted?: boolean;
     subtasks?: TaskSubtask[];
     completion_proof?: TaskCompletionProof | null;
 }

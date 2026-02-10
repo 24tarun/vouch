@@ -13,6 +13,13 @@ const config: CapacitorConfig = {
       : 'http://192.168.178.180:3000',
     cleartext: true, // Allow http for dev
     androidScheme: 'https'
+  },
+  plugins: {
+    StatusBar: {
+      overlaysWebView: true,
+      style: 'LIGHT',
+      backgroundColor: '#000000'
+    }
   }
 };
 

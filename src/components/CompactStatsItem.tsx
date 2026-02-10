@@ -70,7 +70,6 @@ export function CompactStatsItem({
         POSTPONED: "POSTPONED",
         MARKED_COMPLETED: "AWAITING VOUCHER",
         AWAITING_VOUCHER: "AWAITING VOUCHER",
-        COMPLETED: "ACCEPTED",
         FAILED: "FAILED",
         RECTIFIED: "RECTIFIED",
         SETTLED: "FORCE MAJEURE",
@@ -127,6 +126,8 @@ export function CompactStatsItem({
                         <Badge variant="outline" className={`text-[9px] h-4 py-0 px-1 border-slate-900 uppercase tracking-tighter ${statusColorClass}`}>
                             {task.status === "FAILED"
                                 ? (task.marked_completed_at ? "DENIED" : "FAILED")
+                                : task.status === "COMPLETED"
+                                    ? (task.voucher_timeout_auto_accepted ? "VOUCHER DID NOT RESPOND" : "ACCEPTED")
                                 : (statusLabels[task.status] || task.status)}
                         </Badge>
                     )}

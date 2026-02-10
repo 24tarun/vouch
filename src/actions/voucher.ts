@@ -612,6 +612,17 @@ export async function getVouchHistoryPage(offsetInput: number, limitInput: numbe
 
     const currentPeriod = new Date().toISOString().slice(0, 7);
     const ownerIds = [...new Set(visibleRows.map((task) => task.user_id as string).filter(Boolean))];
+    const visibleTaskIds = visibleRows.map((task) => task.id as string).filter(Boolean);
+
+    let timeoutAcceptedTaskIds = new Set<string>();
+    if (visibleTaskIds.length > 0) {
+        // @ts-ignore
+        const { data: timeoutEvents } = await (supabase.from("task_events") as any)
+            .select("task_id")
+            .in("task_id", visibleTaskIds as any)
+            .eq("event_type", "VOUCHER_TIMEOUT");
+        timeoutAcceptedTaskIds = new Set(((timeoutEvents as any[]) || []).map((event) => event.task_id as string));
+    }
 
     const ownerCountEntries = await Promise.all(ownerIds.map(async (ownerId) => {
         const { count } = await supabase
@@ -627,6 +638,7 @@ export async function getVouchHistoryPage(offsetInput: number, limitInput: numbe
     const tasks = visibleRows.map((task) => ({
         ...task,
         rectify_passes_used: countsByOwner.get(task.user_id) || 0,
+        voucher_timeout_auto_accepted: timeoutAcceptedTaskIds.has(task.id),
     }));
 
     return {
@@ -658,6 +670,17 @@ export async function getVouchHistory() {
 
     if (!tasks) return [];
 
+    const taskIds = (tasks as any[]).map((task) => task.id as string).filter(Boolean);
+    let timeoutAcceptedTaskIds = new Set<string>();
+    if (taskIds.length > 0) {
+        // @ts-ignore
+        const { data: timeoutEvents } = await (supabase.from("task_events") as any)
+            .select("task_id")
+            .in("task_id", taskIds as any)
+            .eq("event_type", "VOUCHER_TIMEOUT");
+        timeoutAcceptedTaskIds = new Set(((timeoutEvents as any[]) || []).map((event) => event.task_id as string));
+    }
+
     const tasksWithCounts = await Promise.all(tasks.map(async (task: any) => {
         const { count } = await supabase
             .from("rectify_passes" as any)
@@ -665,7 +688,11 @@ export async function getVouchHistory() {
             .eq("user_id", task.user_id)
             .eq("period", currentPeriod);
 
-        return { ...task, rectify_passes_used: count || 0 };
+        return {
+            ...task,
+            rectify_passes_used: count || 0,
+            voucher_timeout_auto_accepted: timeoutAcceptedTaskIds.has(task.id),
+        };
     }));
 
     return tasksWithCounts;

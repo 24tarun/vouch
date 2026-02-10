@@ -967,7 +967,9 @@ export default function TaskDetailClient({
                         <Badge className={statusColors[taskState.status]}>
                             {taskState.status === "FAILED"
                                 ? (taskState.marked_completed_at ? "DENIED" : "FAILED")
-                                : taskState.status === "SETTLED" ? "FORCE MAJEURE" : taskState.status.replace("_", " ")}
+                                : taskState.status === "COMPLETED"
+                                    ? (taskState.voucher_timeout_auto_accepted ? "VOUCHER DID NOT RESPOND" : "COMPLETED")
+                                    : taskState.status === "SETTLED" ? "FORCE MAJEURE" : taskState.status.replace("_", " ")}
                         </Badge>
                         <span className="text-slate-400">
                             Voucher: {taskState.voucher?.username}

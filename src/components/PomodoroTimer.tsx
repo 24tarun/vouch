@@ -204,11 +204,11 @@ export function PomodoroTimer({ session, taskTitle, minimized, serverClockOffset
 
     return (
         <div className="fixed inset-0 z-50 bg-black text-slate-200 animate-in fade-in duration-200">
-            <div className="absolute top-6 left-6">
+            <div className="absolute left-6 top-[calc(env(safe-area-inset-top)+1rem)]">
                 <h3 className="text-xl font-semibold text-white max-w-[70vw] truncate">{taskTitle}</h3>
             </div>
 
-            <div className="absolute top-6 right-6 flex items-center gap-1">
+            <div className="absolute right-6 top-[calc(env(safe-area-inset-top)+1rem)] flex items-center gap-1">
                 <button
                     type="button"
                     onClick={toggleFullscreen}

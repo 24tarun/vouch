@@ -33,6 +33,16 @@ export function PlatformProvider({ children }: { children: React.ReactNode }) {
             isAndroid: platform === 'android',
             isMobile: platform === 'ios' || platform === 'android',
         });
+
+        // Keep iOS native view edge-to-edge; fallback to black status area if overlay is ignored.
+        if (native && platform === 'ios') {
+            const statusBar = (window as any)?.Capacitor?.Plugins?.StatusBar;
+            if (statusBar) {
+                Promise.resolve(statusBar.setOverlaysWebView?.({ overlay: true })).catch(() => { });
+                Promise.resolve(statusBar.setStyle?.({ style: 'LIGHT' })).catch(() => { });
+                Promise.resolve(statusBar.setBackgroundColor?.({ color: '#000000' })).catch(() => { });
+            }
+        }
     }, []);
 
     return (

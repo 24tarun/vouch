@@ -32,10 +32,24 @@ export default async function OverviewPage() {
             .maybeSingle(),
     ]);
 
-    const tasks = (tasksResult.data as Task[] | null) || [];
+    const rawTasks = (tasksResult.data as Task[] | null) || [];
     const profile = profileResult.data as { default_pomo_duration_minutes: number | null } | null;
     const defaultPomoDurationMinutes =
         profile?.default_pomo_duration_minutes ?? DEFAULT_POMO_DURATION_MINUTES;
+    const taskIds = rawTasks.map((task) => task.id).filter(Boolean);
+    let timeoutAcceptedTaskIds = new Set<string>();
+    if (taskIds.length > 0) {
+        // @ts-ignore
+        const { data: timeoutEvents } = await (supabase.from("task_events") as any)
+            .select("task_id")
+            .in("task_id", taskIds as any)
+            .eq("event_type", "VOUCHER_TIMEOUT");
+        timeoutAcceptedTaskIds = new Set(((timeoutEvents as any[]) || []).map((event) => event.task_id as string));
+    }
+    const tasks = rawTasks.map((task) => ({
+        ...task,
+        voucher_timeout_auto_accepted: timeoutAcceptedTaskIds.has(task.id),
+    }));
     const allSessions = (pomoSessionsResult.data as Array<{
         task_id: string;
         elapsed_seconds: number;

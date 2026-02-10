@@ -1603,12 +1603,21 @@ export async function getTask(taskId: string) {
         }
 
         if (isOwner || isVoucher) {
-            const { data: proof } = await (supabase.from("task_completion_proofs") as any)
-                .select("*")
-                .eq("task_id", taskId as any)
-                .maybeSingle();
+            const [{ data: proof }, { data: timeoutEvent }] = await Promise.all([
+                (supabase.from("task_completion_proofs") as any)
+                    .select("*")
+                    .eq("task_id", taskId as any)
+                    .maybeSingle(),
+                (supabase.from("task_events") as any)
+                    .select("id")
+                    .eq("task_id", taskId as any)
+                    .eq("event_type", "VOUCHER_TIMEOUT")
+                    .limit(1)
+                    .maybeSingle(),
+            ]);
 
             (task as any).completion_proof = proof || null;
+            (task as any).voucher_timeout_auto_accepted = Boolean(timeoutEvent);
         }
 
         if (isOwner || isVoucher) {

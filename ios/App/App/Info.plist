@@ -53,7 +53,9 @@
 	<string>Vouch may save edited proof media before upload when needed.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Vouch needs microphone access when recording proof videos.</string>
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleLightContent</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
-	<true/>
+	<false/>
 </dict>
 </plist>

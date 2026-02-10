@@ -626,7 +626,7 @@ function CompactHistoryItem({
                         {task.status === "FAILED"
                             ? (task.marked_completed_at ? "DENIED" : "FAILED")
                             : task.status === "COMPLETED"
-                                ? "ACCEPTED"
+                                ? (task.voucher_timeout_auto_accepted ? "VOUCHER DID NOT RESPOND" : "ACCEPTED")
                                 : task.status}
                     </Badge>
                 </div>

@@ -7,7 +7,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Keep native status-bar area dark even before the web content is rendered.
+        window?.backgroundColor = .black
+        if let bridgeViewController = window?.rootViewController as? CAPBridgeViewController {
+            bridgeViewController.view.backgroundColor = .black
+        }
         return true
     }
 
