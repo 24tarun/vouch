@@ -17,7 +17,7 @@ import {
     toggleTaskSubtask,
 } from "@/actions/tasks";
 import { Button } from "@/components/ui/button";
-import { Camera, Check, PenLine, Plus, Repeat, Trash2 } from "lucide-react";
+import { Camera, Check, PenLine, Plus, Repeat, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -82,6 +82,22 @@ interface TaskProofDraft {
     previewUrl: string;
 }
 
+type RestoredTaskStatus = "CREATED" | "POSTPONED";
+
+interface ProofUploadTarget {
+    bucket: string;
+    objectPath: string;
+    uploadToken?: string;
+}
+
+function getRestoredStatusFromRevertResult(
+    result: Awaited<ReturnType<typeof revertTaskCompletionAfterProofFailure>>
+): RestoredTaskStatus | null {
+    if (!result || typeof result !== "object" || !("status" in result)) return null;
+    const status = (result as { status?: unknown }).status;
+    return status === "CREATED" || status === "POSTPONED" ? status : null;
+}
+
 function getVoucherResponseDeadlineLocal(baseDate: Date = new Date()): Date {
     const deadline = new Date(baseDate);
     deadline.setDate(deadline.getDate() + 2);
@@ -118,6 +134,7 @@ export default function TaskDetailClient({
     const [isAddingSubtask, setIsAddingSubtask] = useState(false);
     const [proofDraft, setProofDraft] = useState<TaskProofDraft | null>(null);
     const [proofUploadError, setProofUploadError] = useState<string | null>(null);
+    const [isStoredProofFullscreen, setIsStoredProofFullscreen] = useState(false);
     const newSubtaskInputRef = useRef<HTMLInputElement>(null);
     const proofInputRef = useRef<HTMLInputElement>(null);
     const proofPreviewUrlRef = useRef<string | null>(null);
@@ -182,6 +199,18 @@ export default function TaskDetailClient({
         if (!taskState.recurrence_rule) return null;
         return formatRecurrenceSummary(taskState.recurrence_rule, taskState.deadline);
     }, [taskState.recurrence_rule, taskState.deadline]);
+    const canViewStoredProof =
+        taskState.status === "AWAITING_VOUCHER" || taskState.status === "MARKED_COMPLETED";
+    const storedProof = useMemo(() => {
+        if (!canViewStoredProof) return null;
+        const proof = taskState.completion_proof;
+        if (!proof || proof.upload_state !== "UPLOADED") return null;
+        return proof;
+    }, [canViewStoredProof, taskState.completion_proof]);
+    const storedProofSrc = useMemo(() => {
+        if (!storedProof) return null;
+        return `/api/task-proofs/${taskState.id}?v=${encodeURIComponent(storedProof.updated_at || taskState.updated_at)}`;
+    }, [storedProof, taskState.id, taskState.updated_at]);
 
     const refreshInBackground = () => {
         startRefreshTransition(() => {
@@ -290,6 +319,22 @@ export default function TaskDetailClient({
             }
         };
     }, []);
+
+    useEffect(() => {
+        if (storedProof) return;
+        setIsStoredProofFullscreen(false);
+    }, [storedProof]);
+
+    useEffect(() => {
+        if (!isStoredProofFullscreen) return;
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                setIsStoredProofFullscreen(false);
+            }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [isStoredProofFullscreen]);
 
     const resetPostponeDraft = () => {
         const latestDeadline = new Date(taskState.deadline);
@@ -490,7 +535,7 @@ export default function TaskDetailClient({
     const uploadProofInBackground = async (
         taskId: string,
         draft: TaskProofDraft,
-        uploadTarget: { bucket: string; objectPath: string; uploadToken?: string }
+        uploadTarget: ProofUploadTarget
     ) => {
         const supabase = createBrowserSupabaseClient();
         const uploadResponse = uploadTarget.uploadToken
@@ -519,8 +564,8 @@ export default function TaskDetailClient({
             if (reverted?.error) {
                 toast.error(reverted.error);
             }
-            if (reverted?.success) {
-                const restoredStatus = (reverted as any).status as "CREATED" | "POSTPONED";
+            const restoredStatus = getRestoredStatusFromRevertResult(reverted);
+            if (reverted?.success && restoredStatus) {
                 setTaskState((prev) => ({
                     ...prev,
                     status: restoredStatus,
@@ -548,8 +593,8 @@ export default function TaskDetailClient({
             if (reverted?.error) {
                 toast.error(reverted.error);
             }
-            if (reverted?.success) {
-                const restoredStatus = (reverted as any).status as "CREATED" | "POSTPONED";
+            const restoredStatus = getRestoredStatusFromRevertResult(reverted);
+            if (reverted?.success && restoredStatus) {
                 setTaskState((prev) => ({
                     ...prev,
                     status: restoredStatus,
@@ -618,9 +663,8 @@ export default function TaskDetailClient({
         });
 
         if (result.ok && draft) {
-            const uploadTarget = (result.result as any)?.proofUploadTarget as
-                | { bucket: string; objectPath: string; uploadToken?: string }
-                | undefined;
+            const mutationResult = result.result as { proofUploadTarget?: ProofUploadTarget } | undefined;
+            const uploadTarget = mutationResult?.proofUploadTarget;
 
             if (!uploadTarget) {
                 setProofUploadError("Proof upload target missing. Task reverted to active state.");
@@ -1069,6 +1113,37 @@ export default function TaskDetailClient({
                             <p className="text-sm text-purple-300">
                                 Voucher must respond before {voucherDeadlineForDisplay ? formatDateTimeDdMmYy(voucherDeadlineForDisplay) : formatDateTimeDdMmYy(taskState.voucher_response_deadline)}
                             </p>
+                        </div>
+                    )}
+
+                    {storedProof && storedProofSrc && (
+                        <div className="p-3 rounded-lg border border-slate-700 bg-slate-950/40 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs text-slate-300 uppercase tracking-wider font-mono">
+                                    Completion proof ({storedProof.media_kind})
+                                </p>
+                                <p className="text-[11px] text-slate-500">
+                                    Proof is locked while awaiting voucher response.
+                                </p>
+                            </div>
+                            {storedProof.media_kind === "image" ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                    src={storedProofSrc}
+                                    alt="Completion proof"
+                                    className="max-h-64 rounded-md object-cover cursor-zoom-in"
+                                    loading="lazy"
+                                    onClick={() => setIsStoredProofFullscreen(true)}
+                                />
+                            ) : (
+                                <video
+                                    controls
+                                    preload="metadata"
+                                    className="max-h-64 rounded-md cursor-zoom-in"
+                                    src={storedProofSrc}
+                                    onClick={() => setIsStoredProofFullscreen(true)}
+                                />
+                            )}
                         </div>
                     )}
                 </CardContent>
@@ -1575,6 +1650,45 @@ export default function TaskDetailClient({
                     )}
                 </CardContent>
             </Card>
+
+            {isStoredProofFullscreen && storedProof && storedProofSrc && (
+                <div
+                    className="fixed inset-0 z-[100] bg-black/95 p-3 md:p-6 flex items-center justify-center"
+                    onClick={() => setIsStoredProofFullscreen(false)}
+                >
+                    <button
+                        type="button"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            setIsStoredProofFullscreen(false);
+                        }}
+                        className="absolute top-3 right-3 md:top-5 md:right-5 h-9 w-9 rounded-full bg-slate-900/80 border border-slate-700 text-slate-200 hover:text-white"
+                        aria-label="Close fullscreen proof"
+                        title="Close"
+                    >
+                        <X className="h-4 w-4 mx-auto" />
+                    </button>
+
+                    {storedProof.media_kind === "image" ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                            src={storedProofSrc}
+                            alt="Completion proof fullscreen"
+                            className="max-h-[95vh] max-w-[95vw] object-contain rounded-md"
+                            onClick={(event) => event.stopPropagation()}
+                        />
+                    ) : (
+                        <video
+                            controls
+                            autoPlay
+                            preload="auto"
+                            className="max-h-[95vh] max-w-[95vw] rounded-md"
+                            src={storedProofSrc}
+                            onClick={(event) => event.stopPropagation()}
+                        />
+                    )}
+                </div>
+            )}
         </div>
     );
 }
