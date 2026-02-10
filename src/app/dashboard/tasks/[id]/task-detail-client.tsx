@@ -17,7 +17,7 @@ import {
     toggleTaskSubtask,
 } from "@/actions/tasks";
 import { Button } from "@/components/ui/button";
-import { Camera, Check, PenLine, Plus, Repeat, Trash2, X } from "lucide-react";
+import { Camera, Check, ChevronDown, Plus, Repeat, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -124,10 +124,9 @@ export default function TaskDetailClient({
     const [reminders, setReminders] = useState((task.reminders || []).slice().sort((a, b) =>
         new Date(a.reminder_at).getTime() - new Date(b.reminder_at).getTime()
     ));
-    const [remindersOpen, setRemindersOpen] = useState(false);
-    const [reminderDrafts, setReminderDrafts] = useState<string[]>([]);
+    const [remindersSectionOpen, setRemindersSectionOpen] = useState(true);
+    const [subtasksSectionOpen, setSubtasksSectionOpen] = useState(true);
     const [newReminderLocal, setNewReminderLocal] = useState("");
-    const [subtaskInputOpen, setSubtaskInputOpen] = useState((task.subtasks || []).length === 0);
     const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
     const [subtaskError, setSubtaskError] = useState<string | null>(null);
     const [pendingSubtaskIds, setPendingSubtaskIds] = useState<Set<string>>(new Set());
@@ -153,7 +152,6 @@ export default function TaskDetailClient({
     const [postponeValue, setPostponeValue] = useState(maxPostponeLocal);
     const [postponeDate, setPostponeDate] = useState(() => getDatePartFromLocalDateTime(maxPostponeLocal));
     const [postponeTime, setPostponeTime] = useState(() => getTimePartFromLocalDateTime(maxPostponeLocal));
-    const hasPomoData = (pomoSummary?.sessionCount || 0) > 0;
     const userTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
     const canTempDelete = canOwnerTemporarilyDelete(taskState, nowMs);
     const isOwner = taskState.user_id === viewerId;
@@ -165,7 +163,7 @@ export default function TaskDetailClient({
     const remainingRequiredPomoSeconds = Math.max(0, requiredPomoSeconds - totalPomoSeconds);
     const hasIncompletePomoRequirement =
         requiredPomoSeconds > 0 && remainingRequiredPomoSeconds > 0;
-    const canManageSubtasks = isOwner && isActiveParentTask;
+    const canManageActionChildren = isOwner && isActiveParentTask;
 
     const formatDateDdMmYy = (value: Date | string) =>
         new Date(value).toLocaleDateString("en-GB", {
@@ -381,19 +379,82 @@ export default function TaskDetailClient({
         );
     };
 
-    const handleRemindersOpenChange = (open: boolean) => {
-        setRemindersOpen(open);
-        if (open) {
-            setReminderDrafts(
-                (reminders || []).map((reminder) => new Date(reminder.reminder_at).toISOString())
-            );
-            setNewReminderLocal("");
-        }
+    const getCurrentReminderIsos = () =>
+        normalizeReminderIsos(
+            (reminders || []).map((reminder) => new Date(reminder.reminder_at).toISOString())
+        );
+
+    const hasInvalidReminderForTask = (reminderIsos: string[]) => {
+        const deadlineDate = new Date(taskState.deadline);
+        return reminderIsos.some((reminderIso) => {
+            const reminderDate = new Date(reminderIso);
+            return reminderDate.getTime() <= Date.now() || reminderDate.getTime() > deadlineDate.getTime();
+        });
     };
 
-    const handleAddReminderDraft = () => {
-        if (!newReminderLocal) return;
-        const reminderIso = localDateTimeToIso(newReminderLocal);
+    async function saveReminderSet(reminderIsos: string[], clearReminderInput: boolean) {
+        if (isActionPending("saveReminders")) return { ok: false as const };
+        if (!canManageActionChildren) {
+            toast.error("Reminders can only be edited for active tasks.");
+            return { ok: false as const };
+        }
+
+        if (hasInvalidReminderForTask(reminderIsos)) {
+            toast.error("All reminders must be in the future and before or at the deadline.");
+            return { ok: false as const };
+        }
+
+        setActionPending("saveReminders", true);
+        const nowIso = new Date().toISOString();
+
+        const result = await runOptimisticMutation({
+            captureSnapshot: () => ({ reminders, taskState, newReminderLocal }),
+            applyOptimistic: () => {
+                const optimisticReminders = reminderIsos.map((reminderIso, index) => ({
+                    id: `temp-reminder-${index}-${Math.random().toString(36).slice(2, 8)}`,
+                    parent_task_id: taskState.id,
+                    user_id: taskState.user_id,
+                    reminder_at: reminderIso,
+                    notified_at: null,
+                    created_at: nowIso,
+                    updated_at: nowIso,
+                }));
+                setReminders(optimisticReminders);
+                setTaskState((prev) => ({
+                    ...prev,
+                    reminders: optimisticReminders,
+                }));
+                if (clearReminderInput) {
+                    setNewReminderLocal("");
+                }
+            },
+            runMutation: () => replaceTaskReminders(taskState.id, reminderIsos),
+            rollback: (snapshot) => {
+                setReminders(snapshot.reminders);
+                setTaskState(snapshot.taskState);
+                setNewReminderLocal(snapshot.newReminderLocal);
+            },
+            getFailureMessage: (mutationResult) => mutationResult.error || null,
+            fallbackErrorMessage: "Could not save reminders.",
+            onSuccess: () => {
+                refreshInBackground();
+            },
+        });
+
+        if (!result.ok) {
+            refreshInBackground();
+        }
+
+        setActionPending("saveReminders", false);
+        return result;
+    }
+
+    async function handleAddReminder(e: React.FormEvent<HTMLFormElement>) {
+        e.preventDefault();
+        if (!canManageActionChildren || isActionPending("saveReminders")) return;
+        if (!newReminderLocal.trim()) return;
+
+        const reminderIso = localDateTimeToIso(newReminderLocal.trim());
         if (!reminderIso) {
             toast.error("Please choose a valid reminder.");
             return;
@@ -411,84 +472,14 @@ export default function TaskDetailClient({
             return;
         }
 
-        setReminderDrafts((prev) => normalizeReminderIsos([...prev, reminderIso]));
-        setNewReminderLocal("");
-    };
+        const nextReminderIsos = normalizeReminderIsos([...getCurrentReminderIsos(), reminderIso]);
+        await saveReminderSet(nextReminderIsos, true);
+    }
 
-    const handleRemoveReminderDraft = (reminderIso: string) => {
-        setReminderDrafts((prev) => prev.filter((value) => value !== reminderIso));
-    };
-
-    async function handleSaveReminders() {
-        if (isActionPending("saveReminders")) return;
-        if (!isOwner || !isActiveParentTask) {
-            toast.error("Reminders can only be edited for active tasks.");
-            return;
-        }
-
-        const pendingReminderIso = newReminderLocal.trim()
-            ? localDateTimeToIso(newReminderLocal)
-            : null;
-        if (newReminderLocal.trim() && !pendingReminderIso) {
-            toast.error("Please choose a valid reminder.");
-            return;
-        }
-
-        const normalizedDrafts = normalizeReminderIsos(
-            pendingReminderIso ? [...reminderDrafts, pendingReminderIso] : reminderDrafts
-        );
-        const deadlineDate = new Date(taskState.deadline);
-        const hasInvalidReminder = normalizedDrafts.some((reminderIso) => {
-            const reminderDate = new Date(reminderIso);
-            return reminderDate.getTime() <= Date.now() || reminderDate.getTime() > deadlineDate.getTime();
-        });
-        if (hasInvalidReminder) {
-            toast.error("All reminders must be in the future and before or at the deadline.");
-            return;
-        }
-
-        setActionPending("saveReminders", true);
-        const nowIso = new Date().toISOString();
-
-        const result = await runOptimisticMutation({
-            captureSnapshot: () => ({ reminders, taskState, remindersOpen, newReminderLocal }),
-            applyOptimistic: () => {
-                const optimisticReminders = normalizedDrafts.map((reminderIso, index) => ({
-                    id: `temp-reminder-${index}-${Math.random().toString(36).slice(2, 8)}`,
-                    parent_task_id: taskState.id,
-                    user_id: taskState.user_id,
-                    reminder_at: reminderIso,
-                    notified_at: null,
-                    created_at: nowIso,
-                    updated_at: nowIso,
-                }));
-                setReminders(optimisticReminders);
-                setTaskState((prev) => ({
-                    ...prev,
-                    reminders: optimisticReminders,
-                }));
-                setRemindersOpen(false);
-                setNewReminderLocal("");
-            },
-            runMutation: () => replaceTaskReminders(taskState.id, normalizedDrafts),
-            rollback: (snapshot) => {
-                setReminders(snapshot.reminders);
-                setTaskState(snapshot.taskState);
-                setRemindersOpen(snapshot.remindersOpen);
-                setNewReminderLocal(snapshot.newReminderLocal);
-            },
-            getFailureMessage: (mutationResult) => mutationResult.error || null,
-            fallbackErrorMessage: "Could not save reminders.",
-            onSuccess: () => {
-                refreshInBackground();
-            },
-        });
-
-        if (!result.ok) {
-            refreshInBackground();
-        }
-
-        setActionPending("saveReminders", false);
+    async function handleRemoveReminder(reminderIso: string) {
+        if (!canManageActionChildren || isActionPending("saveReminders")) return;
+        const nextReminderIsos = getCurrentReminderIsos().filter((value) => value !== reminderIso);
+        await saveReminderSet(nextReminderIsos, false);
     }
 
     const processPickedProofFile = async (selectedFile: File) => {
@@ -622,6 +613,19 @@ export default function TaskDetailClient({
         RECTIFIED: "bg-orange-500/20 text-orange-300 border border-orange-500/30",
         SETTLED: "bg-slate-600/40 text-slate-300 border border-slate-600/50",
     };
+    const taskStatusLabel =
+        taskState.status === "FAILED"
+            ? (taskState.marked_completed_at ? "DENIED" : "FAILED")
+            : taskState.status === "COMPLETED"
+                ? (taskState.voucher_timeout_auto_accepted ? "VOUCHER DID NOT RESPOND" : "COMPLETED")
+                : taskState.status === "SETTLED"
+                    ? "FORCE MAJEURE"
+                    : taskState.status.replace("_", " ");
+    const proofSummary = storedProof
+        ? `Uploaded (${storedProof.media_kind})`
+        : proofDraft
+            ? `Attached (${proofDraft.proof.mediaKind})`
+            : "None";
 
     async function handleMarkComplete() {
         if (isActionPending("markComplete")) return;
@@ -781,7 +785,7 @@ export default function TaskDetailClient({
 
     async function handleAddSubtask(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
-        if (!canManageSubtasks || isAddingSubtask) return;
+        if (!canManageActionChildren || isAddingSubtask) return;
 
         const normalizedTitle = newSubtaskTitle.trim();
         if (!normalizedTitle) {
@@ -811,17 +815,15 @@ export default function TaskDetailClient({
         };
 
         const result = await runOptimisticMutation({
-            captureSnapshot: () => ({ subtasks, newSubtaskTitle, subtaskInputOpen }),
+            captureSnapshot: () => ({ subtasks, newSubtaskTitle }),
             applyOptimistic: () => {
                 setSubtasks((prev) => [...prev, optimisticSubtask]);
                 setNewSubtaskTitle("");
-                setSubtaskInputOpen(true);
             },
             runMutation: () => addTaskSubtask(taskState.id, normalizedTitle),
             rollback: (snapshot) => {
                 setSubtasks(snapshot.subtasks);
                 setNewSubtaskTitle(snapshot.newSubtaskTitle);
-                setSubtaskInputOpen(snapshot.subtaskInputOpen);
             },
             onSuccess: (mutationResult) => {
                 if (mutationResult && "subtask" in mutationResult && mutationResult.subtask) {
@@ -848,7 +850,7 @@ export default function TaskDetailClient({
     }
 
     async function handleToggleSubtask(subtaskId: string) {
-        if (!canManageSubtasks || pendingSubtaskIds.has(subtaskId)) return;
+        if (!canManageActionChildren || pendingSubtaskIds.has(subtaskId)) return;
 
         const current = subtasks.find((subtask) => subtask.id === subtaskId);
         if (!current) return;
@@ -890,7 +892,7 @@ export default function TaskDetailClient({
     }
 
     async function handleDeleteSubtask(subtaskId: string) {
-        if (!canManageSubtasks || pendingSubtaskIds.has(subtaskId)) return;
+        if (!canManageActionChildren || pendingSubtaskIds.has(subtaskId)) return;
 
         setSubtaskPending(subtaskId, true);
         setSubtaskError(null);
@@ -1034,18 +1036,6 @@ export default function TaskDetailClient({
                             <Repeat className="h-5 w-5 text-slate-500 shrink-0" />
                         )}
                     </h1>
-                    <div className="flex items-center gap-3 mt-2">
-                        <Badge className={statusColors[taskState.status]}>
-                            {taskState.status === "FAILED"
-                                ? (taskState.marked_completed_at ? "DENIED" : "FAILED")
-                                : taskState.status === "COMPLETED"
-                                    ? (taskState.voucher_timeout_auto_accepted ? "VOUCHER DID NOT RESPOND" : "COMPLETED")
-                                    : taskState.status === "SETTLED" ? "FORCE MAJEURE" : taskState.status.replace("_", " ")}
-                        </Badge>
-                        <span className="text-slate-400">
-                            Voucher: {taskState.voucher?.username}
-                        </span>
-                    </div>
                     {recurrenceSummary && (
                         <p className="mt-2 text-sm text-slate-400">{recurrenceSummary}</p>
                     )}
@@ -1067,38 +1057,47 @@ export default function TaskDetailClient({
                     <CardTitle className="text-white">Task Details</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="rounded-lg border border-slate-800/80 bg-slate-950/35 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">Task State</p>
+                            <div className="mt-2">
+                                <Badge className={statusColors[taskState.status]}>{taskStatusLabel}</Badge>
+                            </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-800/80 bg-slate-950/35 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">Voucher</p>
+                            <p className="mt-2 text-white font-medium">{taskState.voucher?.username || "Unassigned"}</p>
+                        </div>
+                        <div className="rounded-lg border border-slate-800/80 bg-slate-950/35 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">Deadline</p>
+                            <p className={`mt-2 text-lg font-medium ${isOverdue ? "text-red-400" : "text-white"}`}>
+                                {formatDateTimeDdMmYy(deadline)}
+                            </p>
+                        </div>
+                        <div className="rounded-lg border border-slate-800/80 bg-slate-950/35 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">Hedge</p>
+                            <p className="mt-2 text-lg font-medium text-pink-400">
+                                {"\u20ac"}{(taskState.failure_cost_cents / 100).toFixed(2)}
+                            </p>
+                        </div>
+                        <div className="rounded-lg border border-slate-800/80 bg-slate-950/35 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">Time Spent</p>
+                            <p className="mt-2 text-lg font-medium text-cyan-300">
+                                {formatFocusTime(totalPomoSeconds)}
+                            </p>
+                        </div>
+                        <div className="rounded-lg border border-slate-800/80 bg-slate-950/35 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">Proof</p>
+                            <p className="mt-2 text-white font-medium">{proofSummary}</p>
+                        </div>
+                    </div>
+
                     {taskState.description && (
                         <div>
                             <p className="text-sm text-slate-400">Description</p>
                             <p className="text-white">{taskState.description}</p>
                         </div>
                     )}
-
-                    <div className={`grid grid-cols-1 ${hasPomoData ? "sm:grid-cols-3" : "sm:grid-cols-2"} gap-4`}>
-                        <div>
-                            <p className="text-sm text-slate-400">Deadline</p>
-                            <p className={`text-lg font-medium ${isOverdue ? "text-red-400" : "text-white"}`}>
-                                {formatDateTimeDdMmYy(deadline)}
-                            </p>
-                        </div>
-                        <div>
-                            <p className="text-sm text-slate-400">Failure Cost</p>
-                            <p className="text-lg font-medium text-pink-400">
-                                {"\u20ac"}{(taskState.failure_cost_cents / 100).toFixed(2)}
-                            </p>
-                        </div>
-                        {hasPomoData && (
-                            <div>
-                                <p className="text-sm text-slate-400">Time Focused</p>
-                                <p className="text-lg font-medium text-cyan-300">
-                                    {formatFocusTime(pomoSummary?.totalSeconds || 0)}
-                                </p>
-                                <p className="text-xs text-slate-500 mt-0.5">
-                                    {(pomoSummary?.sessionCount || 0)} sessions
-                                </p>
-                            </div>
-                        )}
-                    </div>
 
                     {taskState.postponed_at && (
                         <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
@@ -1118,12 +1117,9 @@ export default function TaskDetailClient({
 
                     {storedProof && storedProofSrc && (
                         <div className="p-3 rounded-lg border border-slate-700 bg-slate-950/40 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
                                 <p className="text-xs text-slate-300 uppercase tracking-wider font-mono">
                                     Completion proof ({storedProof.media_kind})
-                                </p>
-                                <p className="text-[11px] text-slate-500">
-                                    Proof is locked while awaiting voucher response.
                                 </p>
                             </div>
                             {storedProof.media_kind === "image" ? (
@@ -1149,229 +1145,6 @@ export default function TaskDetailClient({
                 </CardContent>
             </Card>
 
-            {isOwner && (
-                <Card className="bg-slate-900/40 border-slate-800">
-                    <CardHeader className="flex flex-row items-start justify-between gap-3">
-                        <div>
-                            <CardTitle className="text-white">Reminders</CardTitle>
-                            <CardDescription className="text-slate-400">
-                                Private reminders for this task. Hidden from voucher.
-                            </CardDescription>
-                        </div>
-                        <Dialog open={remindersOpen} onOpenChange={handleRemindersOpenChange}>
-                            <DialogTrigger asChild>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    disabled={!isActiveParentTask}
-                                    className={cn(
-                                        "bg-slate-900/70 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white",
-                                        !isActiveParentTask && "cursor-not-allowed opacity-100 bg-slate-900/40 border-slate-800 text-slate-500"
-                                    )}
-                                >
-                                    Edit
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent className="bg-slate-900 border-slate-800 text-slate-100 [&>[data-slot='dialog-close']]:text-slate-300 [&>[data-slot='dialog-close']]:opacity-100 [&>[data-slot='dialog-close']]:hover:text-white">
-                                <DialogHeader>
-                                    <DialogTitle className="text-white">Edit Reminders</DialogTitle>
-                                    <DialogDescription className="text-slate-300">
-                                        Add one or more reminders before or at the deadline.
-                                    </DialogDescription>
-                                </DialogHeader>
-                                <div className="space-y-3">
-                                    <div className="flex items-center gap-2">
-                                        <Input
-                                            type="datetime-local"
-                                            value={newReminderLocal}
-                                            onChange={(e) => setNewReminderLocal(e.target.value)}
-                                            className="bg-slate-800/70 border-slate-600 text-white [color-scheme:dark]"
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            onClick={handleAddReminderDraft}
-                                            disabled={!newReminderLocal}
-                                            className="bg-slate-800/80 border-slate-600 text-slate-100 hover:bg-slate-700/80 disabled:opacity-100 disabled:border-slate-800 disabled:bg-slate-900/50 disabled:text-slate-500"
-                                        >
-                                            Add
-                                        </Button>
-                                    </div>
-                                    <p className="text-xs text-slate-400">Click Add or just Save to include this reminder.</p>
-
-                                    {reminderDrafts.length > 0 ? (
-                                        <div className="space-y-1.5 rounded-md border border-slate-800 bg-slate-950/40 p-2">
-                                            {normalizeReminderIsos(reminderDrafts).map((reminderIso) => (
-                                                <div key={reminderIso} className="flex items-center justify-between gap-2">
-                                                    <span className="text-xs text-slate-300">
-                                                        {formatDateTimeDdMmYy(reminderIso)}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleRemoveReminderDraft(reminderIso)}
-                                                        className="text-xs text-red-300 hover:text-red-200"
-                                                    >
-                                                        Remove
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <p className="text-xs text-slate-300">No reminders configured.</p>
-                                    )}
-                                </div>
-                                <DialogFooter>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={() => setRemindersOpen(false)}
-                                        className="bg-slate-900/70 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white"
-                                    >
-                                        Cancel
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        onClick={handleSaveReminders}
-                                        disabled={isActionPending("saveReminders")}
-                                        className="border border-blue-500/40 bg-blue-600/30 text-blue-100 hover:bg-blue-600/40"
-                                    >
-                                        Save
-                                    </Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
-                    </CardHeader>
-                    <CardContent>
-                        {reminders.length > 0 ? (
-                            <div className="space-y-2">
-                                {reminders.map((reminder) => (
-                                    <div
-                                        key={reminder.id}
-                                        className="rounded-md border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm text-slate-200"
-                                    >
-                                        {formatDateTimeDdMmYy(reminder.reminder_at)}
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-sm text-slate-500">No reminders set.</p>
-                        )}
-                    </CardContent>
-                </Card>
-            )}
-
-            {isOwner && (
-                <Card className="bg-slate-900/40 border-slate-800">
-                    <CardHeader>
-                        <CardTitle className="text-white">Subtasks</CardTitle>
-                        <CardDescription className="text-slate-400">
-                            {completedSubtasksCount}/{subtasks.length} completed . max {MAX_SUBTASKS_PER_TASK}
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                        {subtasks.length > 0 && (
-                            <div className="ml-3 border-l border-slate-800/80 pl-3 space-y-2">
-                                {subtasks.map((subtask) => {
-                                    const isPending = pendingSubtaskIds.has(subtask.id);
-                                    return (
-                                        <div key={subtask.id} className="flex items-center gap-2">
-                                            <button
-                                                type="button"
-                                                disabled={!canManageSubtasks || isPending}
-                                                onClick={() => handleToggleSubtask(subtask.id)}
-                                                className={cn(
-                                                    "h-5 w-5 rounded-full border flex items-center justify-center",
-                                                    subtask.is_completed
-                                                        ? "bg-emerald-600/20 border-emerald-500/40 text-emerald-300"
-                                                        : "border-slate-600 text-transparent",
-                                                    (!canManageSubtasks || isPending) && "cursor-not-allowed opacity-60"
-                                                )}
-                                                title={canManageSubtasks ? "Toggle subtask" : "Subtasks are locked in this status"}
-                                            >
-                                                {subtask.is_completed && <Check className="h-3 w-3" strokeWidth={3} />}
-                                            </button>
-                                            <button
-                                                type="button"
-                                                disabled={!canManageSubtasks || isPending}
-                                                onClick={() => handleToggleSubtask(subtask.id)}
-                                                className={cn(
-                                                    "flex-1 min-w-0 text-left text-sm",
-                                                    subtask.is_completed ? "text-slate-500 line-through" : "text-slate-200",
-                                                    (!canManageSubtasks || isPending) && "cursor-not-allowed"
-                                                )}
-                                                title={subtask.title}
-                                            >
-                                                <span className="truncate block">{subtask.title}</span>
-                                            </button>
-                                            {canManageSubtasks && (
-                                                <button
-                                                    type="button"
-                                                    disabled={isPending}
-                                                    onClick={() => handleDeleteSubtask(subtask.id)}
-                                                    className={cn(
-                                                        "h-7 w-7 rounded border border-red-500/30 text-red-400 flex items-center justify-center",
-                                                        "hover:bg-red-500/10",
-                                                        isPending && "cursor-not-allowed opacity-60"
-                                                    )}
-                                                    title="Delete subtask"
-                                                    aria-label="Delete subtask"
-                                                >
-                                                    <Trash2 className="h-3.5 w-3.5" />
-                                                </button>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-
-                        {canManageSubtasks && (
-                            <>
-                                {!subtaskInputOpen ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => setSubtaskInputOpen(true)}
-                                        className="inline-flex items-center gap-2 text-xs font-mono uppercase tracking-wider text-slate-300 hover:text-white"
-                                    >
-                                        <PenLine className="h-3.5 w-3.5" />
-                                        Add Child Task
-                                    </button>
-                                ) : (
-                                    <form onSubmit={handleAddSubtask}>
-                                        <div className="flex items-center gap-2">
-                                            <Input
-                                                ref={newSubtaskInputRef}
-                                                value={newSubtaskTitle}
-                                                onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                                                placeholder="e.g., draft intro paragraph"
-                                                maxLength={120}
-                                                className="bg-slate-900/60 border-slate-700 text-slate-200"
-                                                disabled={subtasks.length >= MAX_SUBTASKS_PER_TASK}
-                                                autoFocus
-                                            />
-                                            <Button
-                                                type="submit"
-                                                size="sm"
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onPointerDown={(e) => e.preventDefault()}
-                                                disabled={isAddingSubtask || subtasks.length >= MAX_SUBTASKS_PER_TASK}
-                                                className="bg-slate-200/10 border border-slate-600 text-slate-200 hover:bg-slate-200/20"
-                                            >
-                                                <Plus className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    </form>
-                                )}
-                            </>
-                        )}
-
-                        {subtaskError && (
-                            <p className="text-xs text-red-400">{subtaskError}</p>
-                        )}
-                    </CardContent>
-                </Card>
-            )}
-
             <Card className="bg-slate-900/40 border-slate-800">
                 <CardHeader>
                     <CardTitle className="text-white">Actions</CardTitle>
@@ -1379,13 +1152,209 @@ export default function TaskDetailClient({
                         Available actions for this task
                     </CardDescription>
                 </CardHeader>
-                <CardContent className="flex flex-wrap gap-3">
+                <CardContent className="space-y-4">
+                    {isOwner && (
+                        <div className="space-y-3">
+                            <div>
+                                <button
+                                    type="button"
+                                    onClick={() => setRemindersSectionOpen((prev) => !prev)}
+                                    className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-slate-900/50"
+                                    aria-expanded={remindersSectionOpen}
+                                >
+                                    <span className="text-sm font-medium text-slate-100">Reminders</span>
+                                    <span className="flex items-center gap-2">
+                                        <span className="text-xs text-slate-400">{reminders.length}</span>
+                                        <ChevronDown
+                                            className={cn(
+                                                "h-4 w-4 text-slate-400 transition-transform",
+                                                remindersSectionOpen && "rotate-180"
+                                            )}
+                                        />
+                                    </span>
+                                </button>
+                                {remindersSectionOpen && (
+                                    <div className="space-y-3 px-3 pb-3">
+                                        <form onSubmit={handleAddReminder}>
+                                            <div className="flex items-center gap-2">
+                                                <Input
+                                                    type="datetime-local"
+                                                    value={newReminderLocal}
+                                                    onChange={(e) => setNewReminderLocal(e.target.value)}
+                                                    disabled={!canManageActionChildren || isActionPending("saveReminders")}
+                                                    className={cn(
+                                                        "bg-slate-800/70 border-slate-600 text-white [color-scheme:dark]",
+                                                        (!canManageActionChildren || isActionPending("saveReminders")) &&
+                                                        "cursor-not-allowed border-slate-800 bg-slate-900/50 text-slate-500"
+                                                    )}
+                                                />
+                                                <Button
+                                                    type="submit"
+                                                    variant="outline"
+                                                    disabled={
+                                                        !canManageActionChildren ||
+                                                        isActionPending("saveReminders") ||
+                                                        !newReminderLocal.trim()
+                                                    }
+                                                    className="bg-slate-800/80 border-slate-600 text-slate-100 hover:bg-slate-700/80 disabled:opacity-100 disabled:border-slate-800 disabled:bg-slate-900/50 disabled:text-slate-500"
+                                                >
+                                                    Add
+                                                </Button>
+                                            </div>
+                                        </form>
+
+                                        {reminders.length > 0 && (
+                                            <div className="space-y-1.5 rounded-md border border-slate-800 bg-slate-950/40 p-2">
+                                                {reminders.map((reminder) => {
+                                                    const reminderIso = new Date(reminder.reminder_at).toISOString();
+                                                    return (
+                                                        <div key={reminder.id} className="flex items-center justify-between gap-2">
+                                                            <span className="text-xs text-slate-300">
+                                                                {formatDateTimeDdMmYy(reminderIso)}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                disabled={!canManageActionChildren || isActionPending("saveReminders")}
+                                                                onClick={() => void handleRemoveReminder(reminderIso)}
+                                                                className={cn(
+                                                                    "text-xs text-red-300 hover:text-red-200",
+                                                                    (!canManageActionChildren || isActionPending("saveReminders")) &&
+                                                                    "cursor-not-allowed text-slate-500 hover:text-slate-500"
+                                                                )}
+                                                            >
+                                                                Remove
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div>
+                                <button
+                                    type="button"
+                                    onClick={() => setSubtasksSectionOpen((prev) => !prev)}
+                                    className="flex w-full items-center justify-between px-3 py-2 text-left hover:bg-slate-900/50"
+                                    aria-expanded={subtasksSectionOpen}
+                                >
+                                    <span className="text-sm font-medium text-slate-100">Subtasks</span>
+                                    <span className="flex items-center gap-2 text-xs text-slate-400">
+                                        {completedSubtasksCount}/{subtasks.length} completed
+                                        <ChevronDown
+                                            className={cn(
+                                                "h-4 w-4 transition-transform",
+                                                subtasksSectionOpen && "rotate-180"
+                                            )}
+                                        />
+                                    </span>
+                                </button>
+                                {subtasksSectionOpen && (
+                                    <div className="space-y-3 px-3 pb-3">
+                                        {subtasks.length > 0 && (
+                                            <div className="ml-3 space-y-2 border-l border-slate-800/80 pl-3">
+                                                {subtasks.map((subtask) => {
+                                                    const isPending = pendingSubtaskIds.has(subtask.id);
+                                                    return (
+                                                        <div key={subtask.id} className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                disabled={!canManageActionChildren || isPending}
+                                                                onClick={() => handleToggleSubtask(subtask.id)}
+                                                                className={cn(
+                                                                    "h-5 w-5 rounded-full border flex items-center justify-center",
+                                                                    subtask.is_completed
+                                                                        ? "bg-emerald-600/20 border-emerald-500/40 text-emerald-300"
+                                                                        : "border-slate-600 text-transparent",
+                                                                    (!canManageActionChildren || isPending) && "cursor-not-allowed opacity-60"
+                                                                )}
+                                                                title={canManageActionChildren ? "Toggle subtask" : "Subtasks are locked in this status"}
+                                                            >
+                                                                {subtask.is_completed && <Check className="h-3 w-3" strokeWidth={3} />}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                disabled={!canManageActionChildren || isPending}
+                                                                onClick={() => handleToggleSubtask(subtask.id)}
+                                                                className={cn(
+                                                                    "flex-1 min-w-0 text-left text-sm",
+                                                                    subtask.is_completed ? "text-slate-500 line-through" : "text-slate-200",
+                                                                    (!canManageActionChildren || isPending) && "cursor-not-allowed"
+                                                                )}
+                                                                title={subtask.title}
+                                                            >
+                                                                <span className="truncate block">{subtask.title}</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                disabled={!canManageActionChildren || isPending}
+                                                                onClick={() => handleDeleteSubtask(subtask.id)}
+                                                                className={cn(
+                                                                    "h-7 w-7 rounded border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/10",
+                                                                    (!canManageActionChildren || isPending) && "cursor-not-allowed opacity-60 hover:bg-transparent"
+                                                                )}
+                                                                title={canManageActionChildren ? "Delete subtask" : "Subtasks are locked in this status"}
+                                                                aria-label="Delete subtask"
+                                                            >
+                                                                <Trash2 className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
+                                        <form onSubmit={handleAddSubtask}>
+                                            <div className="flex items-center gap-2">
+                                                <Input
+                                                    ref={newSubtaskInputRef}
+                                                    value={newSubtaskTitle}
+                                                    onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                                                    placeholder="e.g., draft intro paragraph"
+                                                    maxLength={120}
+                                                    className={cn(
+                                                        "bg-slate-900/60 border-slate-700 text-slate-200",
+                                                        !canManageActionChildren && "border-slate-800 text-slate-500 bg-slate-900/50 cursor-not-allowed"
+                                                    )}
+                                                    disabled={
+                                                        !canManageActionChildren ||
+                                                        isAddingSubtask
+                                                    }
+                                                />
+                                                <Button
+                                                    type="submit"
+                                                    size="sm"
+                                                    onMouseDown={(e) => e.preventDefault()}
+                                                    onPointerDown={(e) => e.preventDefault()}
+                                                    disabled={
+                                                        !canManageActionChildren ||
+                                                        isAddingSubtask
+                                                    }
+                                                    className="bg-slate-200/10 border border-slate-600 text-slate-200 hover:bg-slate-200/20 disabled:opacity-100 disabled:border-slate-800 disabled:bg-slate-900/50 disabled:text-slate-500"
+                                                >
+                                                    <Plus className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        </form>
+
+                                        {subtaskError && (
+                                            <p className="text-xs text-red-400">{subtaskError}</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-3">
                     {(taskState.status === "CREATED" || taskState.status === "POSTPONED") && (
                         <>
                             <PomoButton
                                 taskId={taskState.id}
                                 variant="full"
-                                className="mr-1"
+                                className="shrink-0"
                                 defaultDurationMinutes={defaultPomoDurationMinutes}
                             />
                             <Button
@@ -1408,7 +1377,7 @@ export default function TaskDetailClient({
                                 onClick={handleMarkComplete}
                                 disabled={isActionPending("markComplete") || isOverdue || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement}
                                 className={cn(
-                                    "border text-emerald-300",
+                                    "h-9 border text-emerald-300",
                                     (incompleteSubtasksCount > 0 || hasIncompletePomoRequirement)
                                         ? "bg-slate-800/50 border-slate-700/60 text-slate-500 cursor-not-allowed"
                                         : "bg-emerald-600/20 hover:bg-emerald-600/30 border-emerald-500/40"
@@ -1461,7 +1430,7 @@ export default function TaskDetailClient({
                                     <DialogTrigger asChild>
                                         <Button
                                             variant="outline"
-                                            className="bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300"
+                                            className="h-9 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300"
                                         >
                                             Postpone (1x only)
                                         </Button>
@@ -1621,6 +1590,7 @@ export default function TaskDetailClient({
                             </p>
                         </div>
                     )}
+                    </div>
                 </CardContent>
             </Card>
 

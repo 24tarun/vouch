@@ -22,6 +22,8 @@ interface TaskRowProps {
     isDeleting?: boolean;
 }
 
+const PREFETCH_STATUSES = new Set(["CREATED", "POSTPONED", "AWAITING_VOUCHER", "MARKED_COMPLETED"]);
+
 export function TaskRow({
     task,
     onComplete,
@@ -211,8 +213,10 @@ export function TaskRow({
 
     const currentStatusColor = statusColors[task.status] || "";
     const detailPath = `/dashboard/tasks/${task.id}`;
+    const shouldPrefetchDetail = PREFETCH_STATUSES.has(task.status);
 
     const prefetchTaskDetails = () => {
+        if (!shouldPrefetchDetail) return;
         if (hasPrefetchedRef.current) return;
         hasPrefetchedRef.current = true;
         void router.prefetch(detailPath);

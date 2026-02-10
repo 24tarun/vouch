@@ -1,57 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import type { Task } from "@/lib/types";
-import { AlertTriangle, Check, Timer, Trash2 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { canOwnerTemporarilyDelete } from "@/lib/task-delete-window";
+import { ExternalLink, Timer } from "lucide-react";
 
 type StatsTask = Task & { pomo_total_seconds?: number };
+const PREFETCH_STATUSES = new Set(["CREATED", "POSTPONED", "AWAITING_VOUCHER", "MARKED_COMPLETED"]);
 
 interface CompactStatsItemProps {
     task: StatsTask;
-    showQuickActions?: boolean;
-    onComplete?: (task: StatsTask) => void;
-    onPostpone?: (task: StatsTask) => void;
-    onQuickPomo?: (task: StatsTask) => void;
-    onDelete?: (task: StatsTask) => void;
-    isCompleting?: boolean;
-    isPostponing?: boolean;
-    isDeleting?: boolean;
-    isStartingPomo?: boolean;
-    defaultPomoDurationMinutes?: number;
+    forceActiveBadge?: boolean;
 }
 
 export function CompactStatsItem({
     task,
-    showQuickActions = false,
-    onComplete,
-    onPostpone,
-    onQuickPomo,
-    onDelete,
-    isCompleting = false,
-    isPostponing = false,
-    isDeleting = false,
-    isStartingPomo = false,
-    defaultPomoDurationMinutes = 25,
+    forceActiveBadge = false,
 }: CompactStatsItemProps) {
     const router = useRouter();
-    const [nowMs, setNowMs] = useState(() => Date.now());
     const detailPath = `/dashboard/tasks/${task.id}`;
-
-    useEffect(() => {
-        if (!showQuickActions) return;
-
-        const id = window.setInterval(() => {
-            setNowMs(Date.now());
-        }, 15000);
-
-        return () => {
-            window.clearInterval(id);
-        };
-    }, [showQuickActions]);
 
     const statusColors: Record<string, string> = {
         CREATED: "text-blue-400",
@@ -95,17 +62,12 @@ export function CompactStatsItem({
     };
 
     const pomoTotalSeconds = task.pomo_total_seconds || 0;
-    const requiredPomoSeconds = (task.required_pomo_minutes || 0) * 60;
-    const hasIncompletePomoRequirement =
-        requiredPomoSeconds > 0 && pomoTotalSeconds < requiredPomoSeconds;
     const statusColorClass = statusColors[task.status] || "text-slate-500";
     const isActiveTask = task.status === "CREATED" || task.status === "POSTPONED";
-    const isOverdue = new Date(task.deadline) < new Date();
-    const canComplete = isActiveTask && !isOverdue && !hasIncompletePomoRequirement;
-    const canPostpone = task.status === "CREATED" && !task.postponed_at && !isOverdue;
-    const canQuickPomo = isActiveTask;
-    const canDelete = !task.id.startsWith("temp-") && canOwnerTemporarilyDelete(task, nowMs);
-    const canShowActions = showQuickActions && isActiveTask;
+    const shouldPrefetchDetail = PREFETCH_STATUSES.has(task.status);
+    const openTaskDetails = () => {
+        router.push(detailPath);
+    };
 
     return (
         <div
@@ -117,6 +79,7 @@ export function CompactStatsItem({
                 router.push(detailPath);
             }}
             onMouseEnter={() => {
+                if (!shouldPrefetchDetail) return;
                 void router.prefetch(detailPath);
             }}
         >
@@ -125,7 +88,12 @@ export function CompactStatsItem({
                     <p className="text-lg font-medium text-white group-hover:text-blue-400 transition-colors truncate">
                         {task.title}
                     </p>
-                    {!isActiveTask && (
+                    {forceActiveBadge && isActiveTask && (
+                        <Badge variant="outline" className="text-[9px] h-4 py-0 px-1 border-slate-900 uppercase tracking-tighter text-blue-400">
+                            ACTIVE
+                        </Badge>
+                    )}
+                    {!(forceActiveBadge && task.status === "CREATED") && (
                         <Badge variant="outline" className={`text-[9px] h-4 py-0 px-1 border-slate-900 uppercase tracking-tighter ${statusColorClass}`}>
                             {task.status === "FAILED"
                                 ? (task.marked_completed_at ? "DENIED" : "FAILED")
@@ -148,72 +116,17 @@ export function CompactStatsItem({
                 </p>
             </div>
 
-            {canShowActions && (
-                <div className="relative z-20 flex items-center gap-2">
-                    <button
-                        type="button"
-                        disabled={isCompleting || !canComplete}
-                        onClick={() => onComplete?.(task)}
-                        className={cn(
-                            "h-8 w-8 rounded-md border flex items-center justify-center transition-colors",
-                            canComplete
-                                ? "bg-emerald-600/20 hover:bg-emerald-600/30 border-emerald-500/40 text-emerald-300"
-                                : "bg-slate-800/50 border-slate-700/60 text-slate-500 cursor-not-allowed"
-                        )}
-                        aria-label="Mark complete"
-                        title={hasIncompletePomoRequirement
-                            ? `Log ${Math.ceil((requiredPomoSeconds - pomoTotalSeconds) / 60)} more focus minute(s) first`
-                            : "Mark complete"}
-                    >
-                        <Check className="h-4 w-4" strokeWidth={3} />
-                    </button>
-
-                    <button
-                        type="button"
-                        disabled={isPostponing || !canPostpone}
-                        onClick={() => onPostpone?.(task)}
-                        className={cn(
-                            "h-8 w-8 rounded-md border flex items-center justify-center transition-colors",
-                            canPostpone
-                                ? "bg-amber-600/20 hover:bg-amber-600/30 border-amber-500/40 text-amber-300"
-                                : "bg-slate-800/50 border-slate-700/60 text-slate-500 cursor-not-allowed"
-                        )}
-                        aria-label="Postpone one hour"
-                        title={canPostpone ? "Postpone by 1 hour" : "Already postponed or overdue"}
-                    >
-                        <AlertTriangle className="h-4 w-4" />
-                    </button>
-
-                    <button
-                        type="button"
-                        disabled={isStartingPomo || !canQuickPomo}
-                        onClick={() => onQuickPomo?.(task)}
-                        className={cn(
-                            "h-8 w-8 rounded-md border flex items-center justify-center transition-colors transition-shadow",
-                            canQuickPomo
-                                ? "bg-cyan-600/20 hover:bg-cyan-600/30 border-cyan-500/40 text-cyan-300 hover:shadow-[0_0_12px_rgba(34,211,238,0.55)]"
-                                : "bg-slate-800/50 border-slate-700/60 text-slate-500 cursor-not-allowed"
-                        )}
-                        aria-label={`Start ${defaultPomoDurationMinutes} minute Pomodoro`}
-                        title={`Start ${defaultPomoDurationMinutes} minute Pomodoro`}
-                    >
-                        <Timer className="h-4 w-4" />
-                    </button>
-
-                    {canDelete && (
-                        <button
-                            type="button"
-                            disabled={isDeleting}
-                            onClick={() => onDelete?.(task)}
-                            className="h-8 w-8 rounded-md border flex items-center justify-center transition-colors bg-red-950/30 hover:bg-red-900/40 border-red-900/50 text-red-400"
-                            aria-label="Delete task"
-                            title="Delete task"
-                        >
-                            <Trash2 className="h-4 w-4" />
-                        </button>
-                    )}
-                </div>
-            )}
+            <div className="relative z-20 flex items-center gap-2">
+                <button
+                    type="button"
+                    onClick={openTaskDetails}
+                    className="h-8 w-8 rounded-md border flex items-center justify-center transition-colors bg-slate-900/60 border-slate-700/80 text-slate-300 hover:text-white hover:bg-slate-800"
+                    aria-label="Open task details"
+                    title="Open task details"
+                >
+                    <ExternalLink className="h-4 w-4" />
+                </button>
+            </div>
         </div>
     );
 }

@@ -14,6 +14,7 @@ import { DashboardHeaderActions } from "@/components/DashboardHeaderActions";
 import { TaskInput, type TaskInputCreatePayload } from "@/components/TaskInput";
 import { TaskRow } from "@/components/TaskRow";
 import { CollapsibleCompletedList } from "@/components/CollapsibleCompletedList";
+import { TaskDetailPrefetcher } from "@/components/TaskDetailPrefetcher";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import type { Profile, Task } from "@/lib/types";
 import { Lightbulb } from "lucide-react";
@@ -33,6 +34,12 @@ interface TaskProofDraft {
     previewUrl: string;
 }
 
+interface ProofUploadTarget {
+    bucket: string;
+    objectPath: string;
+    uploadToken?: string;
+}
+
 function getVoucherResponseDeadlineLocal(baseDate: Date = new Date()): Date {
     const deadline = new Date(baseDate);
     deadline.setDate(deadline.getDate() + 2);
@@ -50,10 +57,24 @@ interface DashboardClientProps {
     initialHideTips: boolean;
 }
 
+function isTaskCompletedToday(task: Task, reference: Date = new Date()): boolean {
+    const completionTimestamp = task.marked_completed_at || task.updated_at;
+    const completedAt = new Date(completionTimestamp);
+    if (Number.isNaN(completedAt.getTime())) return false;
+
+    const startOfDay = new Date(reference);
+    startOfDay.setHours(0, 0, 0, 0);
+    const startOfNextDay = new Date(startOfDay);
+    startOfNextDay.setDate(startOfNextDay.getDate() + 1);
+
+    return completedAt >= startOfDay && completedAt < startOfNextDay;
+}
+
 function splitTasks(tasks: Task[]) {
     const active = tasks.filter((task) => ["CREATED", "POSTPONED"].includes(task.status));
     const completed = tasks.filter((task) =>
-        ["COMPLETED", "AWAITING_VOUCHER", "RECTIFIED", "SETTLED", "FAILED", "DELETED"].includes(task.status)
+        ["COMPLETED", "AWAITING_VOUCHER", "RECTIFIED", "SETTLED", "FAILED", "DELETED"].includes(task.status) &&
+        isTaskCompletedToday(task)
     );
 
     return { active, completed };
@@ -259,7 +280,7 @@ export default function DashboardClient({
     const uploadProofInBackground = async (
         taskId: string,
         draft: TaskProofDraft,
-        target: { bucket: string; objectPath: string; uploadToken?: string }
+        target: ProofUploadTarget
     ) => {
         const supabase = createBrowserSupabaseClient();
         const uploadResponse = target.uploadToken
@@ -438,9 +459,8 @@ export default function DashboardClient({
         }
 
         if (result.ok && proofDraft) {
-            const uploadTarget = (result.result as any)?.proofUploadTarget as
-                | { bucket: string; objectPath: string; uploadToken?: string }
-                | undefined;
+            const mutationResult = result.result as { proofUploadTarget?: ProofUploadTarget } | undefined;
+            const uploadTarget = mutationResult?.proofUploadTarget;
 
             if (!uploadTarget) {
                 setProofUploadErrors((prev) => ({
@@ -524,6 +544,7 @@ export default function DashboardClient({
 
     return (
         <div className="max-w-3xl mx-auto space-y-6 px-4 md:px-0 pb-14">
+            <TaskDetailPrefetcher tasks={[...activeTasks, ...completedTasks]} />
             <div className="flex items-center justify-between mb-8">
                 <h1 className="text-2xl font-bold text-white flex items-center gap-2">{`Hi ${username}`}</h1>
                 <DashboardHeaderActions />

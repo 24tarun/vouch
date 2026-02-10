@@ -1,9 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import type { Task } from "@/lib/types";
-import { CompactStatsItem } from "@/components/CompactStatsItem";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
-import { DEFAULT_POMO_DURATION_MINUTES } from "@/lib/constants";
 import { StatsActiveTaskList } from "@/components/StatsActiveTaskList";
+import { StatsHistoryTaskList } from "@/components/StatsHistoryTaskList";
 
 const ACTIVE_SECTION_STATUSES = new Set(["CREATED", "POSTPONED", "AWAITING_VOUCHER", "MARKED_COMPLETED"]);
 
@@ -14,7 +13,7 @@ export default async function OverviewPage() {
     } = await supabase.auth.getUser();
     const userId = user?.id ?? "";
 
-    const [tasksResult, pomoSessionsResult, profileResult] = await Promise.all([
+    const [tasksResult, pomoSessionsResult] = await Promise.all([
         supabase
             .from("tasks")
             .select("*")
@@ -25,26 +24,18 @@ export default async function OverviewPage() {
             .select("task_id, elapsed_seconds")
             .eq("user_id", userId)
             .neq("status", "DELETED"),
-        supabase
-            .from("profiles")
-            .select("default_pomo_duration_minutes")
-            .eq("id", userId)
-            .maybeSingle(),
     ]);
 
     const rawTasks = (tasksResult.data as Task[] | null) || [];
-    const profile = profileResult.data as { default_pomo_duration_minutes: number | null } | null;
-    const defaultPomoDurationMinutes =
-        profile?.default_pomo_duration_minutes ?? DEFAULT_POMO_DURATION_MINUTES;
     const taskIds = rawTasks.map((task) => task.id).filter(Boolean);
     let timeoutAcceptedTaskIds = new Set<string>();
     if (taskIds.length > 0) {
-        // @ts-ignore
-        const { data: timeoutEvents } = await (supabase.from("task_events") as any)
+        const { data: timeoutEvents } = await supabase
+            .from("task_events")
             .select("task_id")
-            .in("task_id", taskIds as any)
+            .in("task_id", taskIds)
             .eq("event_type", "VOUCHER_TIMEOUT");
-        timeoutAcceptedTaskIds = new Set(((timeoutEvents as any[]) || []).map((event) => event.task_id as string));
+        timeoutAcceptedTaskIds = new Set((timeoutEvents || []).map((event) => event.task_id));
     }
     const tasks = rawTasks.map((task) => ({
         ...task,
@@ -152,29 +143,13 @@ export default async function OverviewPage() {
                     <div className="flex flex-col border-t border-slate-900/50">
                         <StatsActiveTaskList
                             initialTasks={activeTasksWithPomo}
-                            defaultPomoDurationMinutes={defaultPomoDurationMinutes}
                         />
                     </div>
                 )}
             </section>
 
-            {/* History Section - Same List Principle as Vouch/Dashboard */}
-            <section className="space-y-4">
-                <h2 className="text-xl font-semibold text-slate-500 border-b border-slate-900 pb-2">
-                    Task History
-                </h2>
-                {historyTasks.length === 0 ? (
-                    <div className="bg-slate-900/40 border border-slate-800/20 rounded-xl py-12 text-center">
-                        <p className="text-slate-600 text-sm italic">Nothing in your history yet.</p>
-                    </div>
-                ) : (
-                    <div className="flex flex-col border-t border-slate-900/50">
-                        {historyTasksWithPomo.map((task: Task & { pomo_total_seconds?: number }) => (
-                            <CompactStatsItem key={task.id} task={task} />
-                        ))}
-                    </div>
-                )}
-            </section>
+            {/* History Section - Collapsible + paged like voucher history */}
+            <StatsHistoryTaskList tasks={historyTasksWithPomo} />
         </div>
     );
 }
