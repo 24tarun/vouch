@@ -308,7 +308,7 @@ export async function updateUserDefaults(formData: FormData) {
     return { success: true };
 }
 
-export async function hideDashboardTips() {
+export async function setDashboardTipsHidden(hidden: boolean) {
     const supabase = await createClient();
     const {
         data: { user },
@@ -320,7 +320,7 @@ export async function hideDashboardTips() {
 
     // @ts-ignore
     const { error } = await (supabase.from("profiles" as any) as any)
-        .update({ hide_tips: true } as any)
+        .update({ hide_tips: hidden } as any)
         .eq("id", user.id as any);
 
     if (error) {

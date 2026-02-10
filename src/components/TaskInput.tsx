@@ -32,6 +32,35 @@ import {
     toDateTimeLocalValue,
 } from "@/lib/datetime-local";
 
+function parseTimeToken(token: string, allowHourOnly: boolean) {
+    const normalized = token.trim();
+    let hours = Number.NaN;
+    let minutes = Number.NaN;
+
+    const colonMatch = normalized.match(/^(\d{1,2}):(\d{2})$/);
+    if (colonMatch) {
+        hours = Number.parseInt(colonMatch[1], 10);
+        minutes = Number.parseInt(colonMatch[2], 10);
+    } else {
+        const compactMatch = normalized.match(/^(\d{4})$/);
+        if (compactMatch) {
+            hours = Number.parseInt(compactMatch[1].slice(0, 2), 10);
+            minutes = Number.parseInt(compactMatch[1].slice(2, 4), 10);
+        } else if (allowHourOnly) {
+            const hourOnlyMatch = normalized.match(/^(\d{1,2})$/);
+            if (hourOnlyMatch) {
+                hours = Number.parseInt(hourOnlyMatch[1], 10);
+                minutes = 0;
+            }
+        }
+    }
+
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+
+    return { hours, minutes };
+}
+
 interface TaskInputProps {
     friends: Profile[];
     defaultFailureCostEuros: string;
@@ -186,16 +215,14 @@ export function TaskInput({
     };
 
     const parseReminderTimesFromTitle = (text: string) => {
-        const regex = /!r\s*(\d{1,2})(?::(\d{2}))?/gi;
+        const regex = /\bremind\s+(\d{1,2}:\d{2}|\d{4})\b/gi;
         const results: Array<{ hours: number; minutes: number }> = [];
         let match: RegExpExecArray | null;
 
         while ((match = regex.exec(text)) !== null) {
-            const hours = parseInt(match[1], 10);
-            const minutes = parseInt(match[2] || "0", 10);
-            if (Number.isNaN(hours) || Number.isNaN(minutes)) continue;
-            if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) continue;
-            results.push({ hours, minutes });
+            const parsed = parseTimeToken(match[1], false);
+            if (!parsed) continue;
+            results.push(parsed);
         }
 
         return results;
@@ -304,15 +331,13 @@ export function TaskInput({
     };
 
     useEffect(() => {
-        const timeMatch = title.match(/@(\d{1,2})(?::(\d{2}))?/);
+        const timeMatch = title.match(/@(\d{1,2}:\d{2}|\d{4}|\d{1,2})/);
         if (timeMatch && !isDeadlineManuallyPicked) {
-            const hours = parseInt(timeMatch[1]);
-            const minutes = parseInt(timeMatch[2] || "0");
-
-            if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
-                // Always interpret @HH[:MM] as today's local time.
+            const parsed = parseTimeToken(timeMatch[1], true);
+            if (parsed) {
+                // Always interpret @HH[:MM] and @HHMM as today's local time.
                 const todayAtParsedTime = new Date();
-                todayAtParsedTime.setHours(hours, minutes, 0, 0);
+                todayAtParsedTime.setHours(parsed.hours, parsed.minutes, 0, 0);
                 setSelectedDate(todayAtParsedTime);
                 if (todayAtParsedTime.getTime() <= Date.now()) {
                     setDeadlineError("Deadline must be in the future.");
@@ -338,8 +363,8 @@ export function TaskInput({
 
     const stripMetadata = (text: string) => {
         return text
-            .replace(/@\d{1,2}(?::\d{2})?/g, "")
-            .replace(/!r\s*\d{1,2}(?::\d{2})?/gi, "")
+            .replace(/@(?:\d{1,2}:\d{2}|\d{4}|\d{1,2})/g, "")
+            .replace(/\bremind\s+(?:\d{1,2}:\d{2}|\d{4})\b/gi, "")
             .replace(/vouch\s+\w+/gi, "")
             .replace(/\bpomo\s+\d+\b/gi, "")
             .trim();
@@ -487,7 +512,7 @@ export function TaskInput({
                     onChange={(e) => setTitle(e.target.value)}
                     onKeyDown={handleTitleKeyDown}
                     enterKeyHint="done"
-                    placeholder="study pomo 75 /solve questions @16 !r16:30 vouch bob"
+                    placeholder="study pomo 75 /solve questions @2045 remind 1000 vouch bob"
                     className="w-full bg-transparent border-none py-4 px-5 text-white placeholder:text-slate-500/70 focus:outline-none transition-all font-medium text-lg"
                     disabled={isLoading}
                 />

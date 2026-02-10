@@ -10,7 +10,7 @@ import {
     postponeTask,
     revertTaskCompletionAfterProofFailure,
 } from "@/actions/tasks";
-import { hideDashboardTips } from "@/actions/auth";
+import { setDashboardTipsHidden } from "@/actions/auth";
 import { DashboardHeaderActions } from "@/components/DashboardHeaderActions";
 import { TaskInput, type TaskInputCreatePayload } from "@/components/TaskInput";
 import { TaskRow } from "@/components/TaskRow";
@@ -18,7 +18,6 @@ import { CollapsibleCompletedList } from "@/components/CollapsibleCompletedList"
 import { TaskDetailPrefetcher } from "@/components/TaskDetailPrefetcher";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import type { Profile, Task } from "@/lib/types";
-import { Lightbulb } from "lucide-react";
 import { toast } from "sonner";
 import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
@@ -135,7 +134,7 @@ export default function DashboardClient({
     const [proofUploadErrors, setProofUploadErrors] = useState<Record<string, string>>({});
     const [proofPickerTaskId, setProofPickerTaskId] = useState<string | null>(null);
     const [tipsHidden, setTipsHidden] = useState(initialHideTips);
-    const [isHidingTips, setIsHidingTips] = useState(false);
+    const [isTogglingTips, setIsTogglingTips] = useState(false);
     const proofInputRef = useRef<HTMLInputElement>(null);
     const proofByTaskIdRef = useRef<Record<string, TaskProofDraft>>({});
 
@@ -596,16 +595,17 @@ export default function DashboardClient({
         setTaskPostponing(task.id, false);
     };
 
-    const handleHideTips = async () => {
-        if (tipsHidden || isHidingTips) return;
-        setIsHidingTips(true);
+    const handleToggleTips = async () => {
+        if (isTogglingTips) return;
+        const nextTipsHidden = !tipsHidden;
+        setIsTogglingTips(true);
 
         const result = await runOptimisticMutation({
             captureSnapshot: () => ({ tipsHidden }),
             applyOptimistic: () => {
-                setTipsHidden(true);
+                setTipsHidden(nextTipsHidden);
             },
-            runMutation: () => hideDashboardTips(),
+            runMutation: () => setDashboardTipsHidden(nextTipsHidden),
             rollback: (snapshot) => {
                 setTipsHidden(snapshot.tipsHidden);
             },
@@ -618,7 +618,7 @@ export default function DashboardClient({
             refreshInBackground();
         }
 
-        setIsHidingTips(false);
+        setIsTogglingTips(false);
     };
 
     return (
@@ -626,7 +626,13 @@ export default function DashboardClient({
             <TaskDetailPrefetcher tasks={[...activeTasks, ...completedTasks]} />
             <div className="flex items-center justify-between mb-8">
                 <h1 className="text-2xl font-bold text-white flex items-center gap-2">{`Hi ${username}`}</h1>
-                <DashboardHeaderActions />
+                <DashboardHeaderActions
+                    tipsVisible={!tipsHidden}
+                    onToggleTips={() => {
+                        void handleToggleTips();
+                    }}
+                    isTogglingTips={isTogglingTips}
+                />
             </div>
 
             <TaskInput
@@ -636,25 +642,15 @@ export default function DashboardClient({
                 onCreateTaskOptimistic={handleCreateTaskOptimistic}
             />
             {!tipsHidden && (
-                <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                        <p className="px-1 text-[10px] text-slate-400 font-mono uppercase tracking-wider flex items-center gap-1.5">
-                            <Lightbulb className="h-3 w-3 shrink-0 text-yellow-400" />
-                            Ticking the task off will instantly mark it as completed.
-                        </p>
-                        <button
-                            type="button"
-                            disabled={isHidingTips}
-                            onClick={handleHideTips}
-                            className="text-[10px] px-2 py-1 rounded border border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600 disabled:opacity-60"
-                        >
-                            Hide tips
-                        </button>
-                    </div>
-                    <p className="px-1 text-[10px] text-slate-400 font-mono uppercase tracking-wider flex items-center gap-1.5">
-                        <Lightbulb className="h-3 w-3 shrink-0 text-yellow-400" />
-                        a new task can be deleted within 5 mins
-                    </p>
+                <div className="space-y-1 px-1 text-[10px] text-slate-400 font-mono uppercase tracking-wider">
+                    <p>Parser tips:</p>
+                    <p>Deadline: use @20:45 or @2045</p>
+                    <p>Reminder: use remind 10:00 or remind 1000</p>
+                    <p>Pomodoro: use pomo 75</p>
+                    <p>Voucher: use vouch bob</p>
+                    <p>Subtasks: separate with /</p>
+                    <p>Ticking a task marks it complete instantly</p>
+                    <p>A new task can be deleted within 5 mins</p>
                 </div>
             )}
 
