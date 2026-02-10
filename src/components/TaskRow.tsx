@@ -276,16 +276,22 @@ export function TaskRow({
             onClick={handleCheck}
             disabled={isCompleteActionDisabled}
             className={cn(
-                "h-8 w-8 p-0 rounded-full border flex items-center justify-center transition-all",
-                isActuallyCompleted
-                    ? (currentStatusColor || "bg-slate-700 border-slate-700 text-slate-400")
-                    : ("border-slate-600 hover:border-slate-500 text-transparent"),
+                `${quickActionButtonClass} group flex items-center justify-center`,
                 (hasIncompleteSubtasks || hasIncompletePomoRequirement) && !isActuallyCompleted && "opacity-60 cursor-not-allowed"
             )}
             title={disabledCompleteTitle}
             aria-label="Mark complete"
         >
-            {isActuallyCompleted && <Check className="h-[14px] w-[14px]" strokeWidth={3} />}
+            <span
+                className={cn(
+                    "h-[20px] w-[20px] rounded-full border flex items-center justify-center transition-all",
+                    isActuallyCompleted
+                        ? (currentStatusColor || "bg-slate-700 border-slate-700 text-slate-400")
+                        : "border-slate-600 text-transparent group-hover:border-slate-500"
+                )}
+            >
+                {isActuallyCompleted && <Check className="h-[12px] w-[12px]" strokeWidth={3} />}
+            </span>
         </button>
     );
 
@@ -330,7 +336,7 @@ export function TaskRow({
                 taskId={task.id}
                 variant="icon"
                 defaultDurationMinutes={normalizedDefaultPomoDuration}
-                className="h-10 w-10 p-0 justify-center text-cyan-300 hover:text-cyan-200 disabled:text-slate-500"
+                className="h-10 w-10 p-0 justify-center text-cyan-300 hover:text-cyan-200 disabled:text-slate-500 [&_svg]:h-[18px] [&_svg]:w-[18px]"
             />
 
             {canDeleteButtonBeShown && (
