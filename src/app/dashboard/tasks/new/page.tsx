@@ -248,7 +248,7 @@ export default function NewTaskPage() {
                                 <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-sm">
                                     You need to add friends before creating a task.{" "}
                                     <a
-                                        href="/dashboard/friends"
+                                        href="/dashboard/settings"
                                         className="underline hover:text-yellow-200"
                                     >
                                         Add friends →

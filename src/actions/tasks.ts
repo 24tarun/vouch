@@ -473,7 +473,7 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
     });
 
     invalidatePendingVoucherRequestsCache(defaultVoucherId);
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidateTaskSurfaces((task as any).id, user.id);
     return { success: true, taskId: (task as any).id };
 }
@@ -688,7 +688,7 @@ export async function createTask(formData: FormData) {
     });
 
     invalidatePendingVoucherRequestsCache(voucherId);
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidateTaskSurfaces((task as any).id, (user as any).id);
     return { success: true, taskId: (task as any).id };
 }
@@ -936,7 +936,7 @@ export async function markTaskCompleteWithProofIntent(
     invalidateActiveTasksCache((user as any).id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
     // Mirror accept/deny behavior so voucher list cache is invalidated on new request.
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidatePath(`/dashboard/tasks/${taskId}`);
     return { success: true, proofUploadTarget };
 }
@@ -1010,7 +1010,7 @@ export async function finalizeTaskProofUpload(taskId: string, proofMeta: TaskPro
     }
 
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidatePath(`/dashboard/tasks/${taskId}`);
     return { success: true };
 }
@@ -1083,7 +1083,7 @@ export async function revertTaskCompletionAfterProofFailure(taskId: string) {
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
     revalidatePath("/dashboard");
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidatePath(`/dashboard/tasks/${taskId}`);
 
     return { success: true, status: restoredStatus };
@@ -1158,7 +1158,7 @@ export async function undoTaskComplete(taskId: string) {
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
     revalidatePath("/dashboard");
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidatePath(`/dashboard/tasks/${taskId}`);
 
     return { success: true, status: restoredStatus };
@@ -1451,7 +1451,7 @@ export async function postponeTask(taskId: string, newDeadline?: string) {
     });
 
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidateTaskSurfaces(taskId, user.id);
     return { success: true };
 }
@@ -1503,7 +1503,7 @@ export async function ownerTempDeleteTask(taskId: string) {
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
     revalidatePath("/dashboard");
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidatePath("/dashboard/stats");
     revalidatePath(`/dashboard/tasks/${taskId}`);
     return { success: true };

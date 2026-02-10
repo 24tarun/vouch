@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { type Database } from "@/lib/types";
+import { type Database, type FriendPomoActivity } from "@/lib/types";
 import { type SupabaseClient } from "@supabase/supabase-js";
 
 export async function addFriend(formData: FormData) {
@@ -81,7 +81,10 @@ export async function addFriend(formData: FormData) {
 
     try {
         revalidatePath("/dashboard/friends");
-    } catch (e) {
+        revalidatePath("/dashboard/settings");
+        revalidatePath("/dashboard");
+        revalidatePath("/dashboard/tasks/new");
+    } catch {
         // Ignore revalidation errors
     }
     return { success: true };
@@ -163,7 +166,7 @@ export async function removeFriend(friendId: string) {
         revalidatePath("/dashboard/settings");
         revalidatePath("/dashboard");
         revalidatePath("/dashboard/tasks/new");
-    } catch (e) {
+    } catch {
         // Ignore revalidation errors
     }
     return { success: true };
@@ -189,4 +192,97 @@ export async function getFriends() {
         .eq("user_id", user.id);
 
     return (friendships as any)?.map((f: any) => f.friend) || [];
+}
+
+function getPomoStatusPriority(status: "ACTIVE" | "PAUSED") {
+    return status === "ACTIVE" ? 2 : 1;
+}
+
+export async function getWorkingFriendActivities(): Promise<FriendPomoActivity[]> {
+    const supabase: SupabaseClient<Database> = await createClient();
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) return [];
+
+    // @ts-ignore
+    const { data: friendships } = await supabase
+        .from("friendships")
+        .select(
+            `
+      friend_id,
+      friend:profiles!friendships_friend_id_fkey(id, username)
+    `
+        )
+        .eq("user_id", user.id);
+
+    const rows = (friendships as Array<{ friend_id: string; friend: { id: string; username: string | null } | null }> | null) || [];
+    if (rows.length === 0) return [];
+
+    const friendMetaById = new Map<string, string>();
+    for (const row of rows) {
+        if (!row?.friend_id) continue;
+        const fallbackName = "Friend";
+        friendMetaById.set(row.friend_id, row.friend?.username || fallbackName);
+    }
+
+    const friendIds = [...friendMetaById.keys()];
+    if (friendIds.length === 0) return [];
+
+    // Rely on RLS: friends can only read ACTIVE/PAUSED sessions for linked friends.
+    // @ts-ignore
+    const { data: sessions, error: sessionsError } = await (supabase.from("pomo_sessions") as any)
+        .select("user_id, status, updated_at")
+        .in("user_id", friendIds as any)
+        .in("status", ["ACTIVE", "PAUSED"] as any)
+        .order("updated_at", { ascending: false });
+
+    if (sessionsError) {
+        console.error("Failed to load working friend activities:", sessionsError);
+        return [];
+    }
+
+    const bestSessionByFriend = new Map<string, { status: "ACTIVE" | "PAUSED"; updated_at: string }>();
+
+    for (const session of ((sessions as Array<{ user_id: string; status: "ACTIVE" | "PAUSED"; updated_at: string }> | null) || [])) {
+        if (!session?.user_id || !friendMetaById.has(session.user_id)) continue;
+        if (session.status !== "ACTIVE" && session.status !== "PAUSED") continue;
+
+        const current = bestSessionByFriend.get(session.user_id);
+        if (!current) {
+            bestSessionByFriend.set(session.user_id, {
+                status: session.status,
+                updated_at: session.updated_at,
+            });
+            continue;
+        }
+
+        const currentPriority = getPomoStatusPriority(current.status);
+        const incomingPriority = getPomoStatusPriority(session.status);
+        const currentUpdatedTs = new Date(current.updated_at).getTime() || 0;
+        const incomingUpdatedTs = new Date(session.updated_at).getTime() || 0;
+
+        if (
+            incomingPriority > currentPriority ||
+            (incomingPriority === currentPriority && incomingUpdatedTs > currentUpdatedTs)
+        ) {
+            bestSessionByFriend.set(session.user_id, {
+                status: session.status,
+                updated_at: session.updated_at,
+            });
+        }
+    }
+
+    return [...bestSessionByFriend.entries()]
+        .map(([friendId, session]) => ({
+            friend_id: friendId,
+            friend_username: friendMetaById.get(friendId) || "Friend",
+            status: session.status,
+        }))
+        .sort((a, b) => {
+            const priorityDiff = getPomoStatusPriority(b.status) - getPomoStatusPriority(a.status);
+            if (priorityDiff !== 0) return priorityDiff;
+            return a.friend_username.localeCompare(b.friend_username);
+        });
 }

@@ -10,6 +10,7 @@
 import { schedules } from "@trigger.dev/sdk/v3";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendNotification } from "@/lib/notifications";
+import { type Database } from "@/lib/types";
 
 interface PendingVoucherTask {
     voucher_id: string;
@@ -20,6 +21,12 @@ interface PendingVoucherTask {
         username: string | null;
     } | null;
 }
+
+type VoucherReminderLogInsert = Database["public"]["Tables"]["voucher_reminder_logs"]["Insert"];
+type VoucherReminderLogsUpsert = (
+    values: VoucherReminderLogInsert,
+    options: { onConflict?: string }
+) => Promise<{ error: unknown }>;
 
 export const voucherDeadlineWarning = schedules.task({
     id: "voucher-deadline-warning",
@@ -107,9 +114,9 @@ export const voucherDeadlineWarning = schedules.task({
                         <h1>Vouch Requests</h1>
                         <p>Hi ${summary.username || "there"},</p>
                         <p>${body}</p>
-                        <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/voucher">Open voucher dashboard</a></p>
+                        <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/friends">Open friends tab</a></p>
                     `,
-                    url: "/dashboard/voucher",
+                    url: "/dashboard/friends",
                     tag: `voucher-digest-${voucherId}-${utcDate}`,
                     data: {
                         kind: "VOUCH_REQUEST_DIGEST",
@@ -118,16 +125,17 @@ export const voucherDeadlineWarning = schedules.task({
                     },
                 });
 
-                const reminderLogRes = await (supabase
-                    .from("voucher_reminder_logs") as any)
-                    .upsert(
-                        {
-                            voucher_id: voucherId,
-                            reminder_date: utcDate,
-                            pending_count: summary.count,
-                        },
-                        { onConflict: "voucher_id,reminder_date" }
-                    );
+                const reminderLogPayload: VoucherReminderLogInsert = {
+                    voucher_id: voucherId,
+                    reminder_date: utcDate,
+                    pending_count: summary.count,
+                };
+                const reminderLogsTable = supabase.from("voucher_reminder_logs") as unknown as {
+                    upsert: VoucherReminderLogsUpsert;
+                };
+                const reminderLogRes = await reminderLogsTable.upsert(reminderLogPayload, {
+                    onConflict: "voucher_id,reminder_date",
+                });
 
                 if (reminderLogRes.error) {
                     console.error(`Failed to insert reminder log for voucher ${voucherId}:`, reminderLogRes.error);

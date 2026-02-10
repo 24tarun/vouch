@@ -1,12 +1,5 @@
-import { getPendingVouchRequests } from "@/actions/voucher";
-import VoucherDashboardClient from "./voucher-dashboard-client";
+import { redirect } from "next/navigation";
 
-export default async function VoucherPage() {
-    const pendingTasks = await getPendingVouchRequests();
-
-    return (
-        <VoucherDashboardClient
-            pendingTasks={pendingTasks}
-        />
-    );
+export default function VoucherPage() {
+    redirect("/dashboard/friends");
 }

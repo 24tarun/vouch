@@ -5,7 +5,7 @@ import { authorizeRectify, getVouchHistoryPage, voucherAccept, voucherDeny } fro
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import type { TaskWithRelations, VoucherPendingTask } from "@/lib/types";
+import type { FriendPomoActivity, TaskWithRelations, VoucherPendingTask } from "@/lib/types";
 import { Check, ChevronDown, ChevronRight, Loader2, Timer, X } from "lucide-react";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import { toast } from "sonner";
@@ -15,6 +15,7 @@ import { getWarmProofSrc, purgeLocalProofMedia } from "@/lib/proof-media-warmup"
 
 interface VoucherDashboardClientProps {
     pendingTasks: VoucherPendingTask[];
+    workingFriends?: FriendPomoActivity[];
 }
 
 type HistoryTask = TaskWithRelations & { rectify_passes_used?: number };
@@ -22,7 +23,7 @@ type HistoryTask = TaskWithRelations & { rectify_passes_used?: number };
 const HISTORY_PAGE_SIZE = 10;
 const RECTIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const VOUCH_HISTORY_OPEN_SESSION_KEY = "voucher.history.open";
-const PENDING_FALLBACK_POLL_MS = 3000;
+const PENDING_FALLBACK_POLL_MS = 60000;
 
 function mergeTasksById(
     existing: HistoryTask[],
@@ -48,6 +49,7 @@ function isWithinRectifyWindow(updatedAt: string, referenceTimestamp: number): b
 
 export default function VoucherDashboardClient({
     pendingTasks,
+    workingFriends = [],
 }: VoucherDashboardClientProps) {
     const router = useRouter();
     const [, startRefreshTransition] = useTransition();
@@ -271,13 +273,34 @@ export default function VoucherDashboardClient({
             <TaskDetailPrefetcher tasks={pendingState} />
             <div className="flex items-start justify-between gap-3">
                 <div>
-                    <h1 className="text-3xl font-bold text-white">Vouch Requests</h1>
+                    <h1 className="text-3xl font-bold text-white">Friends</h1>
                     <p className="text-slate-400 mt-1">
-                        Review and verify task completions for your friends
+                        Review vouch requests and see who is currently focusing
                     </p>
                 </div>
                 <HardRefreshButton />
             </div>
+
+            {workingFriends.length > 0 && (
+                <section className="space-y-3">
+                    <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3">
+                        <div className="space-y-2">
+                            {workingFriends.map((friend) => (
+                                <p
+                                    key={friend.friend_id}
+                                    className="flex items-center gap-2 text-sm text-cyan-200"
+                                >
+                                    <Timer className="h-4 w-4 text-cyan-400 animate-pulse drop-shadow-[0_0_8px_rgba(34,211,238,0.6)]" />
+                                    <span>
+                                        <span className="font-semibold text-cyan-100">{friend.friend_username}</span>{" "}
+                                        is currently focusing on a task
+                                    </span>
+                                </p>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+            )}
 
             <section className="space-y-4">
                 <h2 className="text-xl font-semibold text-slate-500 border-b border-slate-900 pb-2">

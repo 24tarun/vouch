@@ -124,7 +124,7 @@ export async function voucherAccept(taskId: string) {
     });
 
     invalidatePendingVoucherRequestsCache((user as any).id);
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidatePath(`/dashboard/tasks/${taskId}`);
     return { success: true };
 }
@@ -208,7 +208,7 @@ export async function voucherDeleteTask(taskId: string) {
     }
 
     invalidatePendingVoucherRequestsCache((user as any).id);
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidatePath("/dashboard");
 
     return { success: true };
@@ -295,7 +295,7 @@ export async function voucherDeny(taskId: string) {
     }
 
     invalidatePendingVoucherRequestsCache((user as any).id);
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidatePath(`/dashboard/tasks/${taskId}`);
     return { success: true };
 }
@@ -382,7 +382,7 @@ export async function authorizeRectify(taskId: string) {
         to_status: "RECTIFIED",
     });
 
-    revalidatePath("/dashboard/voucher");
+    revalidatePath("/dashboard/friends");
     revalidatePath(`/dashboard/tasks/${taskId}`);
     return { success: true };
 }

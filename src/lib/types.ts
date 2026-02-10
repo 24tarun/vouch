@@ -193,6 +193,12 @@ export interface VoucherPendingTask extends TaskWithRelations {
     pending_actionable: boolean;
 }
 
+export interface FriendPomoActivity {
+    friend_id: string;
+    friend_username: string;
+    status: "ACTIVE" | "PAUSED";
+}
+
 export interface ProfileWithFriends extends Profile {
     friends?: Profile[];
 }

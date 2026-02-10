@@ -49,10 +49,10 @@ export default function manifest(): MetadataRoute.Manifest {
                 icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
             },
             {
-                name: 'Vouching',
-                short_name: 'Vouch',
+                name: 'Friends',
+                short_name: 'Friends',
                 description: 'Review pending vouch requests',
-                url: '/dashboard/voucher',
+                url: '/dashboard/friends',
                 icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }],
             },
         ],

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { updateUserDefaults, updateUsername } from "@/actions/auth";
+import { addFriend, getFriends, removeFriend } from "@/actions/friends";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +20,7 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PushInitializer } from "@/components/PushInitializer";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
 import type { Profile } from "@/lib/types";
@@ -34,7 +36,13 @@ interface SettingsClientProps {
 
 const NONE_VOUCHER_VALUE = "__none__";
 
-export default function SettingsClient({ profile, friends }: SettingsClientProps) {
+export default function SettingsClient({ profile, friends: initialFriends }: SettingsClientProps) {
+    const [friends, setFriends] = useState<Profile[]>(initialFriends);
+    const [friendEmail, setFriendEmail] = useState("");
+    const [isFriendsLoading, setIsFriendsLoading] = useState(false);
+    const [friendsError, setFriendsError] = useState<string | null>(null);
+    const [friendsSuccess, setFriendsSuccess] = useState<string | null>(null);
+
     const [username, setUsername] = useState(profile.username);
     const [isUsernameLoading, setIsUsernameLoading] = useState(false);
     const [usernameError, setUsernameError] = useState<string | null>(null);
@@ -58,6 +66,64 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
     const hasValidDefaultVoucher =
         !!defaultVoucherId && friends.some((friend) => friend.id === defaultVoucherId);
     const effectiveDefaultVoucherId = hasValidDefaultVoucher ? defaultVoucherId : null;
+
+    async function refreshFriendsList() {
+        const updatedFriends = await getFriends();
+        setFriends((updatedFriends as Profile[]) || []);
+    }
+
+    async function handleAddFriend(e: React.FormEvent) {
+        e.preventDefault();
+        setIsFriendsLoading(true);
+        setFriendsError(null);
+        setFriendsSuccess(null);
+
+        try {
+            const formData = new FormData();
+            formData.append("email", friendEmail);
+            const result = await addFriend(formData);
+
+            if (result.error) {
+                setFriendsError(result.error);
+                return;
+            }
+
+            setFriendsSuccess("Friend added successfully.");
+            setFriendEmail("");
+            await refreshFriendsList();
+        } catch (error) {
+            console.error(error);
+            setFriendsError("Failed to add friend.");
+        } finally {
+            setIsFriendsLoading(false);
+        }
+    }
+
+    async function handleRemoveFriend(friendId: string) {
+        setIsFriendsLoading(true);
+        setFriendsError(null);
+        setFriendsSuccess(null);
+
+        try {
+            const result = await removeFriend(friendId);
+
+            if (result.error) {
+                setFriendsError(result.error);
+                return;
+            }
+
+            if (defaultVoucherId === friendId) {
+                setDefaultVoucherId(null);
+            }
+
+            await refreshFriendsList();
+        } catch (error) {
+            console.error(error);
+            setFriendsError("Failed to remove friend.");
+        } finally {
+            setIsFriendsLoading(false);
+        }
+    }
 
     async function handleUsernameSubmit(e: React.FormEvent) {
         e.preventDefault();
@@ -117,7 +183,90 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
 
             <PushInitializer />
 
-            {/* Profile Settings */}
+            <Card className="bg-slate-900/40 border-slate-800">
+                <CardHeader>
+                    <CardTitle className="text-white">Friends</CardTitle>
+                    <CardDescription className="text-slate-400">
+                        Add or remove friends used for vouchers and activity visibility
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                    <form onSubmit={handleAddFriend} className="flex flex-col sm:flex-row gap-3">
+                        <div className="flex-1 min-w-0">
+                            <Label htmlFor="friendEmail" className="sr-only">
+                                Friend Email
+                            </Label>
+                            <Input
+                                id="friendEmail"
+                                type="email"
+                                placeholder="name@domain.com"
+                                value={friendEmail}
+                                onChange={(e) => setFriendEmail(e.target.value)}
+                                required
+                                className="bg-slate-800/40 border-slate-700 text-white"
+                            />
+                        </div>
+                        <Button
+                            type="submit"
+                            disabled={isFriendsLoading}
+                            className="bg-slate-100 text-slate-950 hover:bg-white font-semibold"
+                        >
+                            {isFriendsLoading ? "Adding..." : "Add Friend"}
+                        </Button>
+                    </form>
+
+                    {friendsError && (
+                        <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded px-3 py-2">
+                            {friendsError}
+                        </p>
+                    )}
+                    {friendsSuccess && (
+                        <p className="text-sm text-green-400 bg-green-500/10 border border-green-500/30 rounded px-3 py-2">
+                            {friendsSuccess}
+                        </p>
+                    )}
+
+                    {friends.length === 0 ? (
+                        <p className="text-sm text-slate-500">No friends yet.</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {friends.map((friend) => (
+                                <div
+                                    key={friend.id}
+                                    className="flex items-center justify-between gap-3 rounded border border-slate-800 bg-slate-950/50 px-3 py-3"
+                                >
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <Avatar className="h-8 w-8 border border-slate-800">
+                                            <AvatarFallback className="bg-slate-900 text-slate-400 text-[10px] font-mono">
+                                                {friend.username?.slice(0, 2).toUpperCase() || "??"}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-semibold text-white truncate">{friend.username}</p>
+                                            <p className="text-xs text-slate-500 truncate">{friend.email}</p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleRemoveFriend(friend.id)}
+                                        disabled={isFriendsLoading}
+                                        className="text-slate-400 hover:text-red-400 hover:bg-red-500/10"
+                                    >
+                                        Remove
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <p className="text-xs text-slate-500">
+                        Friends can only be removed if they are not an active voucher for your pending tasks.
+                    </p>
+                </CardContent>
+            </Card>
+
             <Card className="bg-slate-900/40 border-slate-800">
                 <CardHeader>
                     <CardTitle className="text-white">Profile</CardTitle>
@@ -264,7 +413,6 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
                 </CardContent>
             </Card>
 
-            {/* Account Info */}
             <Card className="bg-slate-900/40 border-slate-800">
                 <CardHeader>
                     <CardTitle className="text-white">Account</CardTitle>
@@ -279,7 +427,6 @@ export default function SettingsClient({ profile, friends }: SettingsClientProps
                 </CardContent>
             </Card>
 
-            {/* Charity Placeholder */}
             <Card className="bg-slate-900/40 border-slate-800">
                 <CardHeader>
                     <CardTitle className="text-white">Charity Preferences</CardTitle>

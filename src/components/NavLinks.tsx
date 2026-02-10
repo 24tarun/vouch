@@ -29,9 +29,8 @@ export function NavLinks({ vouchCount = 0 }: NavLinksProps) {
         () => [
             { href: "/dashboard", label: "Tasks" },
             { href: "/dashboard/stats", label: "Stats" },
-            { href: "/dashboard/voucher", label: "Vouching", badge: vouchCount > 0 ? vouchCount : undefined },
+            { href: "/dashboard/friends", label: "Friends", badge: vouchCount > 0 ? vouchCount : undefined },
             { href: "/dashboard", label: "TAS", isLogo: true },
-            { href: "/dashboard/friends", label: "Network" },
             { href: "/dashboard/ledger", label: "Ledger" },
             { href: "/dashboard/settings", label: "Settings" },
         ],
