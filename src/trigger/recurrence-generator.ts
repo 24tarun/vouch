@@ -397,6 +397,26 @@ async function processRule(rule: RecurrenceRule, supabase: any) {
         }
 
         if (createdTask?.id) {
+            const { error: createdEventError } = await (supabase.from("task_events") as any).insert({
+                task_id: createdTask.id,
+                event_type: "CREATED",
+                actor_id: null,
+                from_status: "CREATED",
+                to_status: "CREATED",
+                metadata: {
+                    source: "recurrence_generator",
+                    recurrence_rule_id: rule.id,
+                    generated_local_date: currentLocalDateStr,
+                    deadline: createdTask.deadline || deadlineIso,
+                },
+            });
+
+            if (createdEventError) {
+                console.error(`Failed to insert CREATED event for generated task ${createdTask.id}:`, createdEventError);
+            }
+        }
+
+        if (createdTask?.id) {
             await insertGeneratedReminders(
                 supabase,
                 createdTask.id,

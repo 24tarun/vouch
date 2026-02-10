@@ -56,6 +56,7 @@ import { canOwnerTemporarilyDelete } from "@/lib/task-delete-window";
 import { MAX_SUBTASKS_PER_TASK } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { formatRecurrenceSummary } from "@/lib/recurrence-display";
 import {
     getProofIntentFromPreparedProof,
     prepareTaskProof,
@@ -172,6 +173,10 @@ export default function TaskDetailClient({
         }
         return null;
     }, [taskState.marked_completed_at, taskState.voucher_response_deadline]);
+    const recurrenceSummary = useMemo(() => {
+        if (!taskState.recurrence_rule) return null;
+        return formatRecurrenceSummary(taskState.recurrence_rule, taskState.deadline);
+    }, [taskState.recurrence_rule, taskState.deadline]);
 
     const refreshInBackground = () => {
         startRefreshTransition(() => {
@@ -371,7 +376,17 @@ export default function TaskDetailClient({
             return;
         }
 
-        const normalizedDrafts = normalizeReminderIsos(reminderDrafts);
+        const pendingReminderIso = newReminderLocal.trim()
+            ? localDateTimeToIso(newReminderLocal)
+            : null;
+        if (newReminderLocal.trim() && !pendingReminderIso) {
+            toast.error("Please choose a valid reminder.");
+            return;
+        }
+
+        const normalizedDrafts = normalizeReminderIsos(
+            pendingReminderIso ? [...reminderDrafts, pendingReminderIso] : reminderDrafts
+        );
         const deadlineDate = new Date(taskState.deadline);
         const hasInvalidReminder = normalizedDrafts.some((reminderIso) => {
             const reminderDate = new Date(reminderIso);
@@ -386,7 +401,7 @@ export default function TaskDetailClient({
         const nowIso = new Date().toISOString();
 
         const result = await runOptimisticMutation({
-            captureSnapshot: () => ({ reminders, taskState, remindersOpen }),
+            captureSnapshot: () => ({ reminders, taskState, remindersOpen, newReminderLocal }),
             applyOptimistic: () => {
                 const optimisticReminders = normalizedDrafts.map((reminderIso, index) => ({
                     id: `temp-reminder-${index}-${Math.random().toString(36).slice(2, 8)}`,
@@ -403,12 +418,14 @@ export default function TaskDetailClient({
                     reminders: optimisticReminders,
                 }));
                 setRemindersOpen(false);
+                setNewReminderLocal("");
             },
             runMutation: () => replaceTaskReminders(taskState.id, normalizedDrafts),
             rollback: (snapshot) => {
                 setReminders(snapshot.reminders);
                 setTaskState(snapshot.taskState);
                 setRemindersOpen(snapshot.remindersOpen);
+                setNewReminderLocal(snapshot.newReminderLocal);
             },
             getFailureMessage: (mutationResult) => mutationResult.error || null,
             fallbackErrorMessage: "Could not save reminders.",
@@ -975,6 +992,9 @@ export default function TaskDetailClient({
                             Voucher: {taskState.voucher?.username}
                         </span>
                     </div>
+                    {recurrenceSummary && (
+                        <p className="mt-2 text-sm text-slate-400">{recurrenceSummary}</p>
+                    )}
                 </div>
                 <HardRefreshButton />
             </div>
@@ -1060,8 +1080,8 @@ export default function TaskDetailClient({
                                     variant="outline"
                                     disabled={!isActiveParentTask}
                                     className={cn(
-                                        "border-slate-700 text-slate-200 hover:bg-slate-800",
-                                        !isActiveParentTask && "cursor-not-allowed opacity-80 text-slate-400"
+                                        "bg-slate-900/70 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white",
+                                        !isActiveParentTask && "cursor-not-allowed opacity-100 bg-slate-900/40 border-slate-800 text-slate-500"
                                     )}
                                 >
                                     Edit
@@ -1087,11 +1107,12 @@ export default function TaskDetailClient({
                                             variant="outline"
                                             onClick={handleAddReminderDraft}
                                             disabled={!newReminderLocal}
-                                            className="border-slate-600 text-slate-100 hover:bg-slate-700 disabled:opacity-100 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-400"
+                                            className="bg-slate-800/80 border-slate-600 text-slate-100 hover:bg-slate-700/80 disabled:opacity-100 disabled:border-slate-800 disabled:bg-slate-900/50 disabled:text-slate-500"
                                         >
                                             Add
                                         </Button>
                                     </div>
+                                    <p className="text-xs text-slate-400">Click Add or just Save to include this reminder.</p>
 
                                     {reminderDrafts.length > 0 ? (
                                         <div className="space-y-1.5 rounded-md border border-slate-800 bg-slate-950/40 p-2">
@@ -1119,7 +1140,7 @@ export default function TaskDetailClient({
                                         type="button"
                                         variant="outline"
                                         onClick={() => setRemindersOpen(false)}
-                                        className="border-slate-600 text-slate-100 hover:bg-slate-700"
+                                        className="bg-slate-900/70 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white"
                                     >
                                         Cancel
                                     </Button>

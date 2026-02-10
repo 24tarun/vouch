@@ -27,12 +27,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/lib/types";
-import { isIOS } from "@/lib/platform";
 import {
-    combineDateAndTime,
     fromDateTimeLocalValue,
-    getDatePartFromLocalDateTime,
-    getTimePartFromLocalDateTime,
     toDateTimeLocalValue,
 } from "@/lib/datetime-local";
 
@@ -61,8 +57,6 @@ export function TaskInput({
     defaultVoucherId,
     onCreateTaskOptimistic,
 }: TaskInputProps) {
-    const isIOSDevice = isIOS();
-
     const getDefaultDeadline = () => {
         const defaultDeadline = new Date();
         defaultDeadline.setHours(23, 59, 0, 0);
@@ -81,8 +75,7 @@ export function TaskInput({
     const [isDeadlineManuallyPicked, setIsDeadlineManuallyPicked] = useState(false);
 
     const [isDateSheetOpen, setIsDateSheetOpen] = useState(false);
-    const [dateDraft, setDateDraft] = useState("");
-    const [timeDraft, setTimeDraft] = useState("");
+    const [deadlineDraftValue, setDeadlineDraftValue] = useState("");
     const [reminders, setReminders] = useState<Date[]>([]);
     const [remindersDraft, setRemindersDraft] = useState<Date[]>([]);
     const [reminderDraftValue, setReminderDraftValue] = useState("");
@@ -109,8 +102,7 @@ export function TaskInput({
     useEffect(() => {
         const defaultDeadline = getDefaultDeadline();
         setSelectedDate(defaultDeadline);
-        setDateDraft(getDatePartFromLocalDateTime(toDateTimeLocalValue(defaultDeadline)));
-        setTimeDraft(getTimePartFromLocalDateTime(toDateTimeLocalValue(defaultDeadline)));
+        setDeadlineDraftValue(toDateTimeLocalValue(defaultDeadline));
         setHasMounted(true);
     }, []);
 
@@ -125,8 +117,7 @@ export function TaskInput({
     useEffect(() => {
         const localValue = toDateTimeLocalValue(selectedDate);
         if (!localValue) return;
-        setDateDraft(getDatePartFromLocalDateTime(localValue));
-        setTimeDraft(getTimePartFromLocalDateTime(localValue));
+        setDeadlineDraftValue(localValue);
     }, [selectedDate]);
 
     const getSelectedWeekday = () => {
@@ -175,9 +166,8 @@ export function TaskInput({
     };
 
     const getDraftDeadline = () => {
-        const localValue = combineDateAndTime(dateDraft, timeDraft);
-        if (!localValue) return null;
-        return fromDateTimeLocalValue(localValue);
+        if (!deadlineDraftValue) return null;
+        return fromDateTimeLocalValue(deadlineDraftValue);
     };
 
     const normalizeReminderDates = (values: Date[]) => {
@@ -220,9 +210,7 @@ export function TaskInput({
     };
 
     const openDateSheet = () => {
-        const localValue = toDateTimeLocalValue(selectedDate ?? getDefaultDeadline());
-        setDateDraft(getDatePartFromLocalDateTime(localValue));
-        setTimeDraft(getTimePartFromLocalDateTime(localValue));
+        setDeadlineDraftValue(toDateTimeLocalValue(selectedDate ?? getDefaultDeadline()));
         setRemindersDraft(reminders.slice().sort((a, b) => a.getTime() - b.getTime()));
         setReminderDraftValue("");
         setIsDateSheetOpen(true);
@@ -238,17 +226,11 @@ export function TaskInput({
             return;
         }
 
-        if (isIOSDevice) {
-            openDateSheet();
-            return;
-        }
-
         openDateSheet();
     };
 
     const applyDateSheet = () => {
-        const localValue = combineDateAndTime(dateDraft, timeDraft);
-        const parsed = fromDateTimeLocalValue(localValue);
+        const parsed = fromDateTimeLocalValue(deadlineDraftValue);
         if (!parsed) return;
         if (parsed.getTime() <= Date.now()) {
             setDeadlineError("Deadline must be in the future.");
@@ -313,16 +295,15 @@ export function TaskInput({
             const minutes = parseInt(timeMatch[2] || "0");
 
             if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
-                setSelectedDate((previousDate) => {
-                    const newDate = new Date(previousDate || new Date());
-                    newDate.setHours(hours, minutes, 0, 0);
-
-                    if (newDate < new Date() && !timeMatch[2]) {
-                        newDate.setDate(newDate.getDate() + 1);
-                    }
-
-                    return newDate;
-                });
+                // Always interpret @HH[:MM] as today's local time.
+                const todayAtParsedTime = new Date();
+                todayAtParsedTime.setHours(hours, minutes, 0, 0);
+                setSelectedDate(todayAtParsedTime);
+                if (todayAtParsedTime.getTime() <= Date.now()) {
+                    setDeadlineError("Deadline must be in the future.");
+                } else {
+                    setDeadlineError(null);
+                }
             }
         }
 
@@ -663,22 +644,11 @@ export function TaskInput({
 
                     <div className="space-y-3">
                         <div className="space-y-1.5">
-                            <label className="text-xs uppercase tracking-wide text-slate-400">Date</label>
+                            <label className="text-xs uppercase tracking-wide text-slate-400">Deadline</label>
                             <input
-                                type="date"
-                                value={dateDraft}
-                                onChange={(e) => setDateDraft(e.target.value)}
-                                className="h-9 w-full px-3 bg-slate-800/70 border border-slate-600 rounded-md text-white [color-scheme:dark] focus:outline-none focus:border-slate-400"
-                            />
-                        </div>
-
-                        <div className="space-y-1.5">
-                            <label className="text-xs uppercase tracking-wide text-slate-400">Time</label>
-                            <input
-                                type="time"
-                                value={timeDraft}
-                                onChange={(e) => setTimeDraft(e.target.value)}
-                                step={60}
+                                type="datetime-local"
+                                value={deadlineDraftValue}
+                                onChange={(e) => setDeadlineDraftValue(e.target.value)}
                                 className="h-9 w-full px-3 bg-slate-800/70 border border-slate-600 rounded-md text-white [color-scheme:dark] focus:outline-none focus:border-slate-400"
                             />
                         </div>
@@ -695,7 +665,7 @@ export function TaskInput({
                                 <button
                                     type="button"
                                     onClick={handleAddReminderDraft}
-                                    disabled={!dateDraft || !timeDraft || !reminderDraftValue}
+                                    disabled={!deadlineDraftValue || !reminderDraftValue}
                                     className="h-9 px-3 rounded-md border border-slate-600 text-slate-100 hover:bg-slate-700 disabled:border-slate-700 disabled:bg-slate-800 disabled:text-slate-400 disabled:opacity-100"
                                 >
                                     Add
@@ -742,7 +712,7 @@ export function TaskInput({
                         <button
                             type="button"
                             onClick={applyDateSheet}
-                            disabled={!dateDraft || !timeDraft}
+                            disabled={!deadlineDraftValue}
                             className="h-9 px-3 rounded-md bg-blue-600/20 border border-blue-500/30 text-blue-300 hover:bg-blue-600/30 disabled:opacity-50"
                         >
                             Apply
