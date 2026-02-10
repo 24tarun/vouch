@@ -27,6 +27,7 @@ import {
     type PreparedTaskProof,
 } from "@/lib/task-proof-client";
 import { pickProofFileFromNativeUi } from "@/lib/native-proof-picker";
+import { purgeLocalProofMedia } from "@/lib/proof-media-warmup";
 
 const MAX_COMPLETED_TASKS = 10;
 
@@ -334,6 +335,7 @@ export default function DashboardClient({
             if (reverted?.error) {
                 toast.error(reverted.error);
             }
+            void purgeLocalProofMedia(taskId);
             refreshInBackground();
             return;
         }
@@ -356,6 +358,7 @@ export default function DashboardClient({
             if (reverted?.error) {
                 toast.error(reverted.error);
             }
+            void purgeLocalProofMedia(taskId);
             refreshInBackground();
             return;
         }
@@ -446,6 +449,9 @@ export default function DashboardClient({
         const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
         const proofDraft = proofByTaskId[task.id] || null;
         const proofIntent = proofDraft ? getProofIntentFromPreparedProof(proofDraft.proof) : null;
+        if (proofIntent || task.completion_proof) {
+            void purgeLocalProofMedia(task.id);
+        }
         const nowIso = now.toISOString();
         const optimisticTask: Task = {
             ...task,
@@ -472,6 +478,9 @@ export default function DashboardClient({
                 setCompletedTasks(snapshot.completedTasks);
             },
             onSuccess: () => {
+                if (!proofIntent) {
+                    void purgeLocalProofMedia(task.id);
+                }
                 refreshInBackground();
             },
         });

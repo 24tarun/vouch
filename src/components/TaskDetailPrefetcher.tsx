@@ -1,12 +1,19 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { TaskStatus } from "@/lib/xstate/task-machine";
+import { shouldSkipAutoWarmup, warmProofImage } from "@/lib/proof-media-warmup";
 
 interface TaskLike {
     id: string;
     status: TaskStatus;
+    updated_at?: string;
+    completion_proof?: {
+        media_kind?: "image" | "video";
+        upload_state?: "PENDING" | "UPLOADED" | "FAILED";
+        updated_at?: string;
+    } | null;
 }
 
 interface TaskDetailPrefetcherProps {
@@ -23,8 +30,6 @@ const PREFETCH_STATUSES = new Set<TaskStatus>([
 const MEDIA_PREFETCH_STATUSES = new Set<TaskStatus>(["AWAITING_VOUCHER", "MARKED_COMPLETED"]);
 
 const prefetchedDetailTaskIds = new Set<string>();
-const prefetchedMediaTaskIds = new Set<string>();
-const prefetchingMediaTaskIds = new Set<string>();
 
 export function TaskDetailPrefetcher({
     tasks,
@@ -41,15 +46,33 @@ export function TaskDetailPrefetcher({
         return Array.from(ids);
     }, [tasks]);
 
-    const mediaPrefetchIds = useMemo(() => {
+    const mediaWarmTargets = useMemo(() => {
         if (!prefetchMedia) return [];
-        const ids = new Set<string>();
+
+        const targets: Array<{ taskId: string; version: string; url: string }> = [];
         for (const task of tasks) {
             if (!task?.id || !MEDIA_PREFETCH_STATUSES.has(task.status)) continue;
-            ids.add(task.id);
+            const proof = task.completion_proof;
+            if (!proof || proof.upload_state !== "UPLOADED" || proof.media_kind !== "image") continue;
+            const version = proof.updated_at || task.updated_at || "0";
+            targets.push({
+                taskId: task.id,
+                version,
+                url: `/api/task-proofs/${task.id}?v=${encodeURIComponent(version)}`,
+            });
         }
-        return Array.from(ids);
+        return targets;
     }, [prefetchMedia, tasks]);
+
+    const runMediaWarmup = useCallback((signal?: AbortSignal) => {
+        if (!prefetchMedia) return;
+        if (mediaWarmTargets.length === 0) return;
+        if (shouldSkipAutoWarmup()) return;
+
+        for (const target of mediaWarmTargets) {
+            void warmProofImage(target.taskId, target.version, target.url, signal);
+        }
+    }, [mediaWarmTargets, prefetchMedia]);
 
     useEffect(() => {
         for (const taskId of detailPrefetchIds) {
@@ -60,41 +83,27 @@ export function TaskDetailPrefetcher({
     }, [detailPrefetchIds, router]);
 
     useEffect(() => {
-        if (!prefetchMedia) return;
-        if (mediaPrefetchIds.length === 0) return;
-
         const controller = new AbortController();
-        for (const taskId of mediaPrefetchIds) {
-            if (prefetchedMediaTaskIds.has(taskId)) continue;
-            if (prefetchingMediaTaskIds.has(taskId)) continue;
-            prefetchingMediaTaskIds.add(taskId);
-
-            void fetch(`/api/task-proofs/${taskId}`, {
-                method: "GET",
-                cache: "force-cache",
-                credentials: "same-origin",
-                signal: controller.signal,
-            })
-                .then((response) => {
-                    if (response.ok) {
-                        prefetchedMediaTaskIds.add(taskId);
-                    } else {
-                        prefetchedMediaTaskIds.delete(taskId);
-                    }
-                })
-                .catch(() => {
-                    // No proof / no access / expired proof are expected in some cases.
-                    prefetchedMediaTaskIds.delete(taskId);
-                })
-                .finally(() => {
-                    prefetchingMediaTaskIds.delete(taskId);
-                });
-        }
+        runMediaWarmup(controller.signal);
 
         return () => {
             controller.abort();
         };
-    }, [mediaPrefetchIds, prefetchMedia]);
+    }, [runMediaWarmup]);
+
+    useEffect(() => {
+        if (!prefetchMedia) return;
+
+        const onVisibilityChange = () => {
+            if (document.visibilityState !== "visible") return;
+            runMediaWarmup();
+        };
+
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        return () => {
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+        };
+    }, [prefetchMedia, runMediaWarmup]);
 
     return null;
 }

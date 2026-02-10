@@ -66,8 +66,9 @@ export default async function DashboardPage() {
 
     const subtasksByParent = new Map<string, NonNullable<Task["subtasks"]>>();
     const pomoTotalSecondsByTask = new Map<string, number>();
+    const proofByTaskId = new Map<string, Task["completion_proof"]>();
     if (initialTaskIds.length > 0) {
-        const [{ data: subtasksResult }, { data: pomoResult }] = await Promise.all([
+        const [{ data: subtasksResult }, { data: pomoResult }, { data: proofsResult }] = await Promise.all([
             supabase
                 .from("task_subtasks")
                 .select("*")
@@ -78,6 +79,11 @@ export default async function DashboardPage() {
                 .eq("user_id", userId || "")
                 .in("task_id", initialTaskIds)
                 .neq("status", "DELETED"),
+            supabase
+                .from("task_completion_proofs")
+                .select("*")
+                .in("task_id", initialTaskIds)
+                .eq("upload_state", "UPLOADED"),
         ]);
 
         for (const row of (subtasksResult as NonNullable<Task["subtasks"]>) || []) {
@@ -91,6 +97,11 @@ export default async function DashboardPage() {
             const current = pomoTotalSecondsByTask.get(row.task_id) || 0;
             pomoTotalSecondsByTask.set(row.task_id, current + (row.elapsed_seconds || 0));
         }
+
+        for (const row of ((proofsResult as Task["completion_proof"][] | null) || [])) {
+            if (!row?.task_id) continue;
+            proofByTaskId.set(row.task_id, row);
+        }
     }
 
     const initialTasksWithSubtasks = initialTasks.map((task) => ({
@@ -99,6 +110,7 @@ export default async function DashboardPage() {
             new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         ),
         pomo_total_seconds: pomoTotalSecondsByTask.get(task.id) || 0,
+        completion_proof: proofByTaskId.get(task.id) || null,
     }));
 
     return (

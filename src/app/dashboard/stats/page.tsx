@@ -28,6 +28,21 @@ export default async function OverviewPage() {
 
     const rawTasks = (tasksResult.data as Task[] | null) || [];
     const taskIds = rawTasks.map((task) => task.id).filter(Boolean);
+    const proofByTaskId = new Map<string, Task["completion_proof"]>();
+
+    if (taskIds.length > 0) {
+        const { data: proofsResult } = await supabase
+            .from("task_completion_proofs")
+            .select("*")
+            .in("task_id", taskIds)
+            .eq("upload_state", "UPLOADED");
+
+        for (const row of ((proofsResult as Task["completion_proof"][] | null) || [])) {
+            if (!row?.task_id) continue;
+            proofByTaskId.set(row.task_id, row);
+        }
+    }
+
     let timeoutAcceptedTaskIds = new Set<string>();
     if (taskIds.length > 0) {
         const { data: timeoutEventsRaw } = await supabase
@@ -45,6 +60,7 @@ export default async function OverviewPage() {
     const tasks = rawTasks.map((task) => ({
         ...task,
         voucher_timeout_auto_accepted: timeoutAcceptedTaskIds.has(task.id),
+        completion_proof: proofByTaskId.get(task.id) || null,
     }));
     const allSessions = (pomoSessionsResult.data as Array<{
         task_id: string;

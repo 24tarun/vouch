@@ -11,6 +11,7 @@ import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import { toast } from "sonner";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
 import { TaskDetailPrefetcher } from "@/components/TaskDetailPrefetcher";
+import { getWarmProofSrc, purgeLocalProofMedia } from "@/lib/proof-media-warmup";
 
 interface VoucherDashboardClientProps {
     pendingTasks: VoucherPendingTask[];
@@ -179,6 +180,7 @@ export default function VoucherDashboardClient({
                 setHistoryState(snapshot.historyState);
             },
             onSuccess: () => {
+                void purgeLocalProofMedia(taskId);
                 refreshInBackground();
             },
         });
@@ -214,6 +216,7 @@ export default function VoucherDashboardClient({
                 setHistoryState(snapshot.historyState);
             },
             onSuccess: () => {
+                void purgeLocalProofMedia(taskId);
                 refreshInBackground();
             },
         });
@@ -426,8 +429,11 @@ function CompactPendingItem({
             ? "bg-red-500/10 text-red-500 border-red-500/30 text-[10px]"
             : "bg-purple-500/10 text-purple-400 border-purple-500/30 text-[10px]");
     const proof = task.completion_proof;
-    const proofSrc = proof
-        ? `/api/task-proofs/${task.id}`
+    const proofVersion = proof
+        ? (proof.updated_at || task.updated_at)
+        : null;
+    const proofSrc = proof && proofVersion
+        ? (getWarmProofSrc(task.id, proofVersion) || `/api/task-proofs/${task.id}?v=${encodeURIComponent(proofVersion)}`)
         : null;
 
     useEffect(() => {

@@ -63,6 +63,7 @@ import {
     type PreparedTaskProof,
 } from "@/lib/task-proof-client";
 import { pickProofFileFromNativeUi } from "@/lib/native-proof-picker";
+import { getWarmProofSrc, purgeLocalProofMedia } from "@/lib/proof-media-warmup";
 
 interface TaskDetailClientProps {
     task: TaskWithRelations;
@@ -205,10 +206,16 @@ export default function TaskDetailClient({
         if (!proof || proof.upload_state !== "UPLOADED") return null;
         return proof;
     }, [canViewStoredProof, taskState.completion_proof]);
-    const storedProofSrc = useMemo(() => {
+    const storedProofVersion = useMemo(() => {
         if (!storedProof) return null;
-        return `/api/task-proofs/${taskState.id}`;
-    }, [storedProof, taskState.id]);
+        return storedProof.updated_at || taskState.updated_at;
+    }, [storedProof, taskState.updated_at]);
+    const storedProofSrc = useMemo(() => {
+        if (!storedProof || !storedProofVersion) return null;
+        const warmSrc = getWarmProofSrc(taskState.id, storedProofVersion);
+        if (warmSrc) return warmSrc;
+        return `/api/task-proofs/${taskState.id}?v=${encodeURIComponent(storedProofVersion)}`;
+    }, [storedProof, storedProofVersion, taskState.id]);
 
     const refreshInBackground = () => {
         startRefreshTransition(() => {
@@ -565,6 +572,7 @@ export default function TaskDetailClient({
                     updated_at: new Date().toISOString(),
                 }));
             }
+            void purgeLocalProofMedia(taskId);
             refreshInBackground();
             return;
         }
@@ -594,6 +602,7 @@ export default function TaskDetailClient({
                     updated_at: new Date().toISOString(),
                 }));
             }
+            void purgeLocalProofMedia(taskId);
             refreshInBackground();
             return;
         }
@@ -645,6 +654,10 @@ export default function TaskDetailClient({
         const voucherResponseDeadline = getVoucherResponseDeadlineLocal(now);
         const draft = proofDraft;
         const proofIntent = draft ? getProofIntentFromPreparedProof(draft.proof) : null;
+        if (proofIntent || storedProof) {
+            // Drop any previously warmed proof immediately when replacing/removing proof state.
+            void purgeLocalProofMedia(taskState.id);
+        }
 
         const result = await runOptimisticMutation({
             captureSnapshot: () => ({ taskState }),
@@ -662,6 +675,9 @@ export default function TaskDetailClient({
                 setTaskState(snapshot.taskState);
             },
             onSuccess: () => {
+                if (!proofIntent) {
+                    void purgeLocalProofMedia(taskState.id);
+                }
                 refreshInBackground();
             },
         });
@@ -715,6 +731,7 @@ export default function TaskDetailClient({
             onSuccess: () => {
                 setTaskProofDraft(null);
                 setProofUploadError(null);
+                void purgeLocalProofMedia(taskState.id);
                 refreshInBackground();
             },
         });
