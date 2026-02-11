@@ -173,6 +173,70 @@ export async function signUp(formData: FormData) {
     return { success: true, message: "Check your email to confirm your account!" };
 }
 
+export async function requestPasswordReset(formData: FormData) {
+    const email = (formData.get("email") as string | null)?.trim() || "";
+    if (!email) {
+        return { error: "Email is required." };
+    }
+
+    const supabase = await createClient();
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const resetRedirectTo = `${appUrl}/auth/callback?next=${encodeURIComponent("/login?mode=reset")}`;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: resetRedirectTo,
+    });
+
+    if (error) {
+        console.error("Password reset request error:", error);
+        return { error: error.message };
+    }
+
+    return {
+        success: true,
+        message: "If an account exists for this email, a password reset link has been sent.",
+    };
+}
+
+export async function completePasswordReset(formData: FormData) {
+    const password = (formData.get("password") as string | null) || "";
+    const confirmPassword = (formData.get("confirmPassword") as string | null) || "";
+
+    if (!password || password.length < 6) {
+        return { error: "Password must be at least 6 characters." };
+    }
+    if (password !== confirmPassword) {
+        return { error: "Passwords do not match." };
+    }
+
+    const supabase = await createClient();
+    const {
+        data: { user },
+        error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+        return { error: "Reset link is invalid or has expired. Please request a new one." };
+    }
+
+    const { error } = await supabase.auth.updateUser({
+        password,
+    });
+
+    if (error) {
+        console.error("Password reset completion error:", error);
+        return { error: error.message };
+    }
+
+    await supabase.auth.signOut();
+    revalidatePath("/", "layout");
+
+    return {
+        success: true,
+        message: "Password updated successfully. Please sign in with your new password.",
+    };
+}
+
 export async function signOut() {
     const supabase = await createClient();
     const {

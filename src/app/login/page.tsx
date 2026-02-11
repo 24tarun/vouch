@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { signIn, signUp } from "@/actions/auth";
+import {
+    completePasswordReset,
+    requestPasswordReset,
+    signIn,
+    signUp,
+} from "@/actions/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,38 +19,39 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 
+type AuthMode = "signin" | "signup" | "forgot" | "reset";
+
+function resolveMode(rawMode: string | null): AuthMode {
+    if (rawMode === "signup") return "signup";
+    if (rawMode === "forgot") return "forgot";
+    if (rawMode === "reset") return "reset";
+    return "signin";
+}
+
 function LoginContent() {
     const searchParams = useSearchParams();
-    const initialMode = searchParams.get("mode") === "signup" ? "signup" : "signin";
+    const initialMode = resolveMode(searchParams.get("mode"));
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [mode, setMode] = useState<"signin" | "signup">(initialMode);
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [mode, setMode] = useState<AuthMode>(initialMode);
     const [isLoading, setIsLoading] = useState(false);
     const [message, setMessage] = useState<{
         type: "success" | "error";
         text: string;
     } | null>(null);
 
-    // Update mode if query param changes
-    useEffect(() => {
-        const queryMode = searchParams.get("mode");
-        if (queryMode === "signup" || queryMode === "signin") {
-            setMode(queryMode);
-        }
-
-        // Handle auth callback errors
-        const errorParam = searchParams.get("error");
-        if (errorParam) {
-            let errorMessage = "Authentication failed. Please try again.";
-            if (errorParam === "exchange_failed") {
-                errorMessage = "Failed to complete sign-in. The confirmation link may have expired. Please try signing in again.";
-            } else if (errorParam === "missing_code") {
-                errorMessage = "Invalid confirmation link. Please request a new one.";
-            }
-            setMessage({ type: "error", text: errorMessage });
-        }
-    }, [searchParams]);
+    const callbackErrorParam = searchParams.get("error");
+    const callbackErrorMessage =
+        callbackErrorParam === "exchange_failed"
+            ? "Failed to complete authentication. The link may have expired. Please try again."
+            : callbackErrorParam === "missing_code"
+                ? "Invalid authentication link. Please request a new one."
+                : callbackErrorParam
+                    ? "Authentication failed. Please try again."
+                    : null;
+    const effectiveMessage = message ?? (callbackErrorMessage ? { type: "error" as const, text: callbackErrorMessage } : null);
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
@@ -53,29 +59,46 @@ function LoginContent() {
         setMessage(null);
 
         const formData = new FormData();
-        formData.append("email", email);
-        formData.append("password", password);
-
-        console.log("Submitting form:", { mode, email });
+        if (mode !== "reset") {
+            formData.append("email", email);
+        }
+        if (mode !== "forgot") {
+            formData.append("password", password);
+        }
+        if (mode === "reset") {
+            formData.append("confirmPassword", confirmPassword);
+        }
 
         try {
             let result;
             if (mode === "signin") {
                 result = await signIn(formData);
-            } else {
+            } else if (mode === "signup") {
                 result = await signUp(formData);
+            } else if (mode === "forgot") {
+                result = await requestPasswordReset(formData);
+            } else {
+                result = await completePasswordReset(formData);
             }
-
-            console.log("Auth result:", result);
 
             if (result?.error) {
                 setMessage({ type: "error", text: result.error });
             } else if (result && "success" in result && result.success) {
                 setMessage({ type: "success", text: result.message || "Success!" });
+                if (mode === "forgot") {
+                    setEmail("");
+                } else if (mode === "reset") {
+                    setPassword("");
+                    setConfirmPassword("");
+                    setMode("signin");
+                }
             }
-        } catch (err: any) {
-            // Next.js throws a NEXT_REDIRECT error for server-side redirects; ignore it so we don't flash an error
-            if (err?.digest && typeof err.digest === "string" && err.digest.startsWith("NEXT_REDIRECT")) {
+        } catch (err: unknown) {
+            const digest =
+                typeof err === "object" && err !== null && "digest" in err
+                    ? (err as { digest?: unknown }).digest
+                    : undefined;
+            if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) {
                 throw err;
             }
 
@@ -94,54 +117,101 @@ function LoginContent() {
                         <span className="text-xs font-bold text-slate-900 leading-none">TAS</span>
                     </div>
                     <CardTitle className="text-2xl font-bold text-white tracking-tight">
-                        {mode === "signin" ? "Sign In" : "Create Account"}
+                        {mode === "signin"
+                            ? "Sign In"
+                            : mode === "signup"
+                                ? "Create Account"
+                                : mode === "forgot"
+                                    ? "Reset Password"
+                                    : "Set New Password"}
                     </CardTitle>
                     <CardDescription className="text-slate-500 text-sm">
                         {mode === "signin"
                             ? "Access the Task Accountability System"
-                            : "Join TAS and start committing to your goals"}
+                            : mode === "signup"
+                                ? "Join TAS and start committing to your goals"
+                                : mode === "forgot"
+                                    ? "Enter your email and we will send a password reset link"
+                                    : "Choose a new password for your account"}
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-6">
-                        <div className="space-y-2">
-                            <Label htmlFor="email" className="text-xs font-mono uppercase tracking-widest text-slate-500">
-                                Email
-                            </Label>
-                            <Input
-                                id="email"
-                                type="email"
-                                placeholder="name@domain.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                                className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-700 focus:border-slate-500 focus:ring-0 transition-colors"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="password" className="text-xs font-mono uppercase tracking-widest text-slate-500">
-                                Password
-                            </Label>
-                            <Input
-                                id="password"
-                                type="password"
-                                placeholder="••••••••"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                                minLength={6}
-                                className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-700 focus:border-slate-500 focus:ring-0 transition-colors"
-                            />
-                        </div>
+                        {mode !== "reset" && (
+                            <div className="space-y-2">
+                                <Label htmlFor="email" className="text-xs font-mono uppercase tracking-widest text-slate-500">
+                                    Email
+                                </Label>
+                                <Input
+                                    id="email"
+                                    type="email"
+                                    placeholder="name@domain.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                    className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-700 focus:border-slate-500 focus:ring-0 transition-colors"
+                                />
+                            </div>
+                        )}
 
-                        {message && (
+                        {mode !== "forgot" && (
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <Label htmlFor="password" className="text-xs font-mono uppercase tracking-widest text-slate-500">
+                                        Password
+                                    </Label>
+                                    {mode === "signin" && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setMode("forgot");
+                                                setMessage(null);
+                                            }}
+                                            className="text-[10px] font-mono uppercase tracking-widest text-slate-300 hover:text-white transition-colors"
+                                        >
+                                            Forgot password?
+                                        </button>
+                                    )}
+                                </div>
+                                <Input
+                                    id="password"
+                                    type="password"
+                                    placeholder="********"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                    minLength={6}
+                                    className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-700 focus:border-slate-500 focus:ring-0 transition-colors"
+                                />
+                            </div>
+                        )}
+
+                        {mode === "reset" && (
+                            <div className="space-y-2">
+                                <Label htmlFor="confirmPassword" className="text-xs font-mono uppercase tracking-widest text-slate-500">
+                                    Confirm Password
+                                </Label>
+                                <Input
+                                    id="confirmPassword"
+                                    type="password"
+                                    placeholder="********"
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    required
+                                    minLength={6}
+                                    className="bg-slate-950 border-slate-800 text-slate-200 placeholder:text-slate-700 focus:border-slate-500 focus:ring-0 transition-colors"
+                                />
+                            </div>
+                        )}
+
+                        {effectiveMessage && (
                             <div
-                                className={`p-3 rounded text-xs font-medium ${message.type === "success"
+                                className={`p-3 rounded text-xs font-medium ${effectiveMessage.type === "success"
                                     ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                                     : "bg-red-500/10 text-red-400 border border-red-500/20"
                                     }`}
                             >
-                                {message.text}
+                                {effectiveMessage.text}
                             </div>
                         )}
 
@@ -152,7 +222,13 @@ function LoginContent() {
                         >
                             {isLoading
                                 ? "Processing..."
-                                : mode === "signin" ? "Sign In" : "Sign Up"}
+                                : mode === "signin"
+                                    ? "Sign In"
+                                    : mode === "signup"
+                                        ? "Sign Up"
+                                        : mode === "forgot"
+                                            ? "Send Reset Link"
+                                            : "Update Password"}
                         </Button>
                     </form>
 
@@ -170,7 +246,7 @@ function LoginContent() {
                                     Sign Up
                                 </button>
                             </>
-                        ) : (
+                        ) : mode === "signup" ? (
                             <>
                                 Already have an account?{" "}
                                 <button
@@ -183,6 +259,16 @@ function LoginContent() {
                                     Sign In
                                 </button>
                             </>
+                        ) : (
+                            <button
+                                onClick={() => {
+                                    setMode("signin");
+                                    setMessage(null);
+                                }}
+                                className="text-slate-200 hover:text-white transition-colors"
+                            >
+                                Back to Sign In
+                            </button>
                         )}
                     </div>
                 </CardContent>
