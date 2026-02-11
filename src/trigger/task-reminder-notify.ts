@@ -46,6 +46,10 @@ interface DeadlineWarningTask {
     user: DeadlineWarningUser | null;
 }
 
+interface SupabaseUpdateError {
+    message?: string;
+}
+
 const ACTIVE_STATUSES: TaskStatus[] = ["CREATED", "POSTPONED"];
 const ONE_HOUR_REMINDER_EVENT = "DEADLINE_WARNING_1H";
 const FIVE_MIN_REMINDER_EVENT = "DEADLINE_WARNING_5M";
@@ -208,7 +212,12 @@ async function processDueTaskReminders(
         } catch (error) {
             console.error(`Failed to send task reminder ${reminder.id}:`, error);
         } finally {
-            const { error: markNotifiedError } = await supabase.from("task_reminders")
+            const taskReminders = supabase.from("task_reminders") as unknown as {
+                update: (values: { notified_at: string }) => {
+                    eq: (column: "id", value: string) => Promise<{ error: SupabaseUpdateError | null }>;
+                };
+            };
+            const { error: markNotifiedError } = await taskReminders
                 .update({ notified_at: new Date().toISOString() })
                 .eq("id", reminder.id);
 
