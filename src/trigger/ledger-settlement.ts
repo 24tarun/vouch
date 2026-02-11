@@ -10,6 +10,7 @@
 import { schedules } from "@trigger.dev/sdk/v3";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendNotification } from "@/lib/notifications";
+import { formatCurrencyFromCents, normalizeCurrency } from "@/lib/currency";
 
 function formatLedgerEntryType(entryType: string): string {
     if (entryType === "voucher_timeout_penalty") return "Voucher Timeout Penalty";
@@ -47,16 +48,17 @@ export const monthlySettlement = schedules.task({
                 .eq("period", period) as any;
 
             const totalCents = (entries as any[])?.reduce((sum, e) => sum + e.amount_cents, 0) || 0;
+            const currency = normalizeCurrency((user as { currency?: string | null }).currency);
 
             if (totalCents > 0) {
-                const amountFormatted = (totalCents / 100).toFixed(2);
+                const amountFormatted = formatCurrencyFromCents(totalCents, currency);
 
                 const tableRows = (entries as any[] || []).map(entry => `
                     <tr>
                         <td style="padding: 8px; border-bottom: 1px solid #eee;">${entry.task?.title || 'Adjustment'}</td>
                         <td style="padding: 8px; border-bottom: 1px solid #eee;">${formatLedgerEntryType(entry.entry_type)}</td>
                         <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: ${entry.amount_cents > 0 ? '#dc322f' : '#859900'}; font-family: monospace;">
-                            ${entry.amount_cents > 0 ? '+' : ''}${(entry.amount_cents / 100).toFixed(2)} EUR
+                            ${entry.amount_cents > 0 ? '+' : ''}${formatCurrencyFromCents(entry.amount_cents, currency)}
                         </td>
                     </tr>
                 `).join('');
@@ -64,7 +66,7 @@ export const monthlySettlement = schedules.task({
                 await sendNotification({
                     to: user.email,
                     userId: user.id,
-                    subject: `Monthly Settlement: €${amountFormatted} for ${monthName}`,
+                    subject: `Monthly Settlement: ${amountFormatted} for ${monthName}`,
                     title: "Monthly Settlement",
                     html: `
                         <div style="font-family: sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);">
@@ -73,7 +75,7 @@ export const monthlySettlement = schedules.task({
                             
                             <div style="background: #fff1f2; border: 1px solid #fecdd3; padding: 20px; border-radius: 8px; margin: 24px 0; text-align: center;">
                                 <p style="margin: 0; font-size: 14px; color: #9f1239; text-transform: uppercase; font-weight: bold; letter-spacing: 0.05em;">Total Charitable Commitment</p>
-                                <p style="margin: 8px 0 0 0; font-size: 42px; font-weight: 800; color: #e11d48;">€${amountFormatted} EUR</p>
+                                <p style="margin: 8px 0 0 0; font-size: 42px; font-weight: 800; color: #e11d48;">${amountFormatted}</p>
                             </div>
 
                             <h3 style="margin-top: 32px; font-size: 18px; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">Detailed Breakdown</h3>
@@ -116,7 +118,7 @@ export const monthlySettlement = schedules.task({
                             
                             <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 24px; border-radius: 8px; margin: 24px 0;">
                                 <p style="margin: 0; font-size: 14px; color: #166534; text-transform: uppercase; font-weight: bold;">Final Balance</p>
-                                <p style="margin: 8px 0 0 0; font-size: 36px; font-weight: 800; color: #15803d;">€0.00 EUR</p>
+                                <p style="margin: 8px 0 0 0; font-size: 36px; font-weight: 800; color: #15803d;">${formatCurrencyFromCents(0, currency)}</p>
                             </div>
 
                             <p style="color: #64748b; font-size: 14px;">Your commitment to consistency is paying off. Let's keep the momentum going!</p>
@@ -129,3 +131,4 @@ export const monthlySettlement = schedules.task({
         }
     },
 });
+

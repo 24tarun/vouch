@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/lib/types";
+import { getCurrencySymbol, type SupportedCurrency } from "@/lib/currency";
 import {
     fromDateTimeLocalValue,
     toDateTimeLocalValue,
@@ -64,6 +65,7 @@ function parseTimeToken(token: string, allowHourOnly: boolean) {
 interface TaskInputProps {
     friends: Profile[];
     defaultFailureCostEuros: string;
+    defaultCurrency: SupportedCurrency;
     defaultVoucherId: string | null;
     onCreateTaskOptimistic?: (payload: TaskInputCreatePayload) => void;
 }
@@ -84,6 +86,7 @@ export interface TaskInputCreatePayload {
 export function TaskInput({
     friends,
     defaultFailureCostEuros,
+    defaultCurrency,
     defaultVoucherId,
     onCreateTaskOptimistic,
 }: TaskInputProps) {
@@ -120,6 +123,7 @@ export function TaskInput({
 
     const formRef = useRef<HTMLFormElement>(null);
     const lastCalendarTapRef = useRef(0);
+    const currencySymbol = getCurrencySymbol(defaultCurrency);
 
     useEffect(() => {
         setFailureCost(defaultFailureCostEuros);
@@ -521,7 +525,7 @@ export function TaskInput({
                     <div className="flex items-start gap-1.5">
                         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1 pr-1">
                             <div className="relative w-16 shrink-0">
-                                <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400 text-[9px] font-mono pointer-events-none z-10">{"\u20ac"}</span>
+                                <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400 text-[9px] font-mono pointer-events-none z-10">{currencySymbol}</span>
                                 <input
                                     type="number"
                                     step="0.01"

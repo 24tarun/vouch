@@ -1,10 +1,12 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types";
+import { isSupportedCurrency, type SupportedCurrency } from "@/lib/currency";
+import { pendingVoucherRequestsTag } from "@/lib/cache-tags";
 import {
     DEFAULT_FAILURE_COST_CENTS,
     DEFAULT_POMO_DURATION_MINUTES,
@@ -234,7 +236,9 @@ export async function updateUserDefaults(formData: FormData) {
     const defaultFailureCostRaw = formData.get("defaultFailureCost") as string;
     const defaultVoucherIdRaw = formData.get("defaultVoucherId") as string;
     const strictPomoEnabledRaw = formData.get("strictPomoEnabled");
+    const deadlineOneHourWarningEnabledRaw = formData.get("deadlineOneHourWarningEnabled");
     const deadlineFinalWarningEnabledRaw = formData.get("deadlineFinalWarningEnabled");
+    const currencyRaw = formData.get("currency");
 
     const defaultPomoDurationMinutes = Number(defaultPomoDurationRaw);
     if (
@@ -252,7 +256,7 @@ export async function updateUserDefaults(formData: FormData) {
         defaultFailureCostEuros < 0.01 ||
         defaultFailureCostEuros > 100
     ) {
-        return { error: "Default failure cost must be between €0.01 and €100." };
+        return { error: "Default failure cost must be between 0.01 and 100." };
     }
 
     const defaultFailureCostCents = Math.round(defaultFailureCostEuros * 100);
@@ -271,6 +275,16 @@ export async function updateUserDefaults(formData: FormData) {
         }
         strictPomoEnabled = strictPomoEnabledRaw === "true";
     }
+    let deadlineOneHourWarningEnabled: boolean | undefined;
+    if (deadlineOneHourWarningEnabledRaw != null && deadlineOneHourWarningEnabledRaw !== "") {
+        if (typeof deadlineOneHourWarningEnabledRaw !== "string") {
+            return { error: "1-hour deadline warning toggle value is invalid." };
+        }
+        if (deadlineOneHourWarningEnabledRaw !== "true" && deadlineOneHourWarningEnabledRaw !== "false") {
+            return { error: "1-hour deadline warning toggle value is invalid." };
+        }
+        deadlineOneHourWarningEnabled = deadlineOneHourWarningEnabledRaw === "true";
+    }
     let deadlineFinalWarningEnabled: boolean | undefined;
     if (deadlineFinalWarningEnabledRaw != null && deadlineFinalWarningEnabledRaw !== "") {
         if (typeof deadlineFinalWarningEnabledRaw !== "string") {
@@ -280,6 +294,13 @@ export async function updateUserDefaults(formData: FormData) {
             return { error: "Final deadline warning toggle value is invalid." };
         }
         deadlineFinalWarningEnabled = deadlineFinalWarningEnabledRaw === "true";
+    }
+    let currency: SupportedCurrency | undefined;
+    if (currencyRaw != null && currencyRaw !== "") {
+        if (typeof currencyRaw !== "string" || !isSupportedCurrency(currencyRaw)) {
+            return { error: "Currency value is invalid." };
+        }
+        currency = currencyRaw;
     }
 
     if (defaultVoucherId) {
@@ -303,8 +324,14 @@ export async function updateUserDefaults(formData: FormData) {
     if (strictPomoEnabled !== undefined) {
         profileUpdate.strict_pomo_enabled = strictPomoEnabled;
     }
+    if (deadlineOneHourWarningEnabled !== undefined) {
+        profileUpdate.deadline_one_hour_warning_enabled = deadlineOneHourWarningEnabled;
+    }
     if (deadlineFinalWarningEnabled !== undefined) {
         profileUpdate.deadline_final_warning_enabled = deadlineFinalWarningEnabled;
+    }
+    if (currency !== undefined) {
+        profileUpdate.currency = currency;
     }
 
     // @ts-ignore
@@ -316,9 +343,26 @@ export async function updateUserDefaults(formData: FormData) {
         return { error: error.message };
     }
 
+    // Invalidate voucher pending caches so owner currency updates are reflected quickly.
+    const { data: ownerTaskRows } = await (supabase.from("tasks") as any)
+        .select("voucher_id")
+        .eq("user_id", user.id as any)
+        .in("status", ["CREATED", "POSTPONED", "AWAITING_VOUCHER", "MARKED_COMPLETED"] as any);
+
+    const voucherIds = new Set<string>(
+        ((ownerTaskRows as Array<{ voucher_id: string | null }> | null) || [])
+            .map((row) => row.voucher_id)
+            .filter((value): value is string => typeof value === "string" && value.length > 0)
+    );
+    for (const voucherId of voucherIds) {
+        revalidateTag(pendingVoucherRequestsTag(voucherId), "max");
+    }
+
     revalidatePath("/dashboard/settings");
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/tasks/new");
+    revalidatePath("/dashboard/ledger");
+    revalidatePath("/dashboard/friends");
     return { success: true };
 }
 

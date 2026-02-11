@@ -37,6 +37,7 @@ import { HardRefreshButton } from "@/components/HardRefreshButton";
 import { canOwnerTemporarilyDelete } from "@/lib/task-delete-window";
 import { MAX_SUBTASKS_PER_TASK } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { formatCurrencyFromCents, normalizeCurrency, type SupportedCurrency } from "@/lib/currency";
 import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { formatRecurrenceSummary } from "@/lib/recurrence-display";
 import {
@@ -58,6 +59,7 @@ interface TaskDetailClientProps {
     } | null;
     defaultPomoDurationMinutes: number;
     viewerId: string;
+    viewerCurrency: SupportedCurrency;
 }
 
 interface TaskProofDraft {
@@ -94,6 +96,7 @@ export default function TaskDetailClient({
     pomoSummary,
     defaultPomoDurationMinutes,
     viewerId,
+    viewerCurrency,
 }: TaskDetailClientProps) {
     const router = useRouter();
     const [, startRefreshTransition] = useTransition();
@@ -137,6 +140,8 @@ export default function TaskDetailClient({
     const hasIncompletePomoRequirement =
         requiredPomoSeconds > 0 && remainingRequiredPomoSeconds > 0;
     const canManageActionChildren = isOwner && isActiveParentTask;
+    const ownerCurrency = normalizeCurrency(taskState.user?.currency ?? viewerCurrency);
+    const formattedFailureCost = formatCurrencyFromCents(taskState.failure_cost_cents, ownerCurrency);
 
     const formatDateDdMmYy = (value: Date | string) =>
         new Date(value).toLocaleDateString("en-GB", {
@@ -1101,7 +1106,7 @@ export default function TaskDetailClient({
                         <div>
                             <p className="text-[11px] uppercase tracking-wide text-slate-400">Hedge</p>
                             <p className="mt-2 text-lg font-medium text-pink-400">
-                                {"\u20ac"}{(taskState.failure_cost_cents / 100).toFixed(2)}
+                                {formattedFailureCost}
                             </p>
                         </div>
                         <div>
@@ -1563,7 +1568,7 @@ export default function TaskDetailClient({
                             <p className="text-red-300">
                                 {taskState.marked_completed_at
                                     ? "Denied by voucher."
-                                    : "Deadline missed. Failure cost:"} {"\u20ac"}{(taskState.failure_cost_cents / 100).toFixed(2)} added to ledger.
+                                    : "Deadline missed. Failure cost:"} {formattedFailureCost} added to ledger.
                             </p>
                         </div>
                     )}

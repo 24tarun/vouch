@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
 import { TaskDetailPrefetcher } from "@/components/TaskDetailPrefetcher";
 import { getWarmProofSrc, purgeLocalProofMedia } from "@/lib/proof-media-warmup";
+import { formatCurrencyFromCents, normalizeCurrency } from "@/lib/currency";
 
 interface VoucherDashboardClientProps {
     pendingTasks: VoucherPendingTask[];
@@ -458,6 +459,8 @@ function CompactPendingItem({
     const proofSrc = proof && proofVersion
         ? (getWarmProofSrc(task.id, proofVersion) || `/api/task-proofs/${task.id}?v=${encodeURIComponent(proofVersion)}`)
         : null;
+    const ownerCurrency = normalizeCurrency(task.user?.currency);
+    const formattedFailureCost = formatCurrencyFromCents(task.failure_cost_cents, ownerCurrency);
 
     useEffect(() => {
         if (!isProofFullscreen) return;
@@ -502,7 +505,7 @@ function CompactPendingItem({
 
                 <p className="text-sm text-slate-500 mt-2">
                     <span className="text-slate-300">{task.user?.username || "Unknown"}</span> .{" "}
-                    <span className="text-slate-400 font-mono">{"\u20ac"}{(task.failure_cost_cents / 100).toFixed(2)}</span>
+                    <span className="text-slate-400 font-mono">{formattedFailureCost}</span>
                 </p>
 
                 {proof && proofSrc && (
@@ -639,6 +642,8 @@ function CompactHistoryItem({
     const isRectifiable = task.status === "FAILED";
     const withinRectifyWindow = isWithinRectifyWindow(task.updated_at, renderNow);
     const passLimitReached = (task.rectify_passes_used ?? 0) >= 5;
+    const ownerCurrency = normalizeCurrency(task.user?.currency);
+    const formattedFailureCost = formatCurrencyFromCents(task.failure_cost_cents, ownerCurrency);
 
     return (
         <div className="group flex items-center gap-3 py-4 border-b border-slate-900/50 last:border-0 hover:bg-slate-900/10 -mx-4 px-4 transition-colors">
@@ -664,7 +669,7 @@ function CompactHistoryItem({
                 <p className="text-xs text-slate-600 mt-1">
                     <span className="text-slate-400">{task.user?.username || "Unknown"}</span> .{" "}
                     <span>{new Date(task.updated_at).toLocaleDateString()}</span> .{" "}
-                    <span className="font-mono">{"\u20ac"}{(task.failure_cost_cents / 100).toFixed(2)}</span>
+                    <span className="font-mono">{formattedFailureCost}</span>
                 </p>
             </div>
 

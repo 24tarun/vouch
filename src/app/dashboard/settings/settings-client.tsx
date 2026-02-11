@@ -25,6 +25,12 @@ import { PushInitializer } from "@/components/PushInitializer";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
 import type { Profile } from "@/lib/types";
 import {
+    getCurrencySymbol,
+    normalizeCurrency,
+    SUPPORTED_CURRENCIES,
+    type SupportedCurrency,
+} from "@/lib/currency";
+import {
     DEFAULT_FAILURE_COST_CENTS,
     DEFAULT_POMO_DURATION_MINUTES,
 } from "@/lib/constants";
@@ -60,8 +66,14 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
     const [strictPomoEnabled, setStrictPomoEnabled] = useState(
         profile.strict_pomo_enabled ?? false
     );
+    const [deadlineOneHourWarningEnabled, setDeadlineOneHourWarningEnabled] = useState(
+        profile.deadline_one_hour_warning_enabled ?? true
+    );
     const [deadlineFinalWarningEnabled, setDeadlineFinalWarningEnabled] = useState(
         profile.deadline_final_warning_enabled ?? true
+    );
+    const [currency, setCurrency] = useState<SupportedCurrency>(
+        normalizeCurrency(profile.currency)
     );
     const [isDefaultsLoading, setIsDefaultsLoading] = useState(false);
     const [defaultsError, setDefaultsError] = useState<string | null>(null);
@@ -69,6 +81,7 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
     const hasValidDefaultVoucher =
         !!defaultVoucherId && friends.some((friend) => friend.id === defaultVoucherId);
     const effectiveDefaultVoucherId = hasValidDefaultVoucher ? defaultVoucherId : null;
+    const currencySymbol = getCurrencySymbol(currency);
 
     async function refreshFriendsList() {
         const updatedFriends = await getFriends();
@@ -159,7 +172,9 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
         formData.append("defaultFailureCost", defaultFailureCostEuros);
         formData.append("defaultVoucherId", effectiveDefaultVoucherId ?? "");
         formData.append("strictPomoEnabled", String(strictPomoEnabled));
+        formData.append("deadlineOneHourWarningEnabled", String(deadlineOneHourWarningEnabled));
         formData.append("deadlineFinalWarningEnabled", String(deadlineFinalWarningEnabled));
+        formData.append("currency", currency);
 
         const result = await updateUserDefaults(formData);
 
@@ -177,7 +192,7 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
             <div className="flex items-start justify-between gap-3">
                 <div>
                     <h1 className="text-3xl font-bold text-white">Settings</h1>
-                    <p className="text-slate-400 mt-1">Manage your profile and task defaults</p>
+                    <p className="text-slate-400 mt-1">Manage your profile and defaults</p>
                     <p className="text-xs text-slate-500 font-mono mt-2">
                         Signed in as <span className="text-slate-300">{profile.email}</span>
                     </p>
@@ -315,7 +330,7 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
 
             <Card className="bg-slate-900/40 border-slate-800">
                 <CardHeader>
-                    <CardTitle className="text-white">Task Defaults</CardTitle>
+                    <CardTitle className="text-white">Defaults</CardTitle>
                     <CardDescription className="text-slate-400">
                         Choose default values for new tasks and Pomodoro sessions
                     </CardDescription>
@@ -340,7 +355,7 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
 
                         <div className="space-y-2">
                             <Label htmlFor="defaultFailureCost" className="text-slate-200">
-                                Default Failure Cost (€)
+                                Default Failure Cost ({currencySymbol})
                             </Label>
                             <Input
                                 id="defaultFailureCost"
@@ -381,6 +396,27 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                             </Select>
                         </div>
 
+                        <div className="space-y-2">
+                            <Label htmlFor="currency" className="text-slate-200">
+                                Currency
+                            </Label>
+                            <Select value={currency} onValueChange={(value) => setCurrency(normalizeCurrency(value))}>
+                                <SelectTrigger
+                                    id="currency"
+                                    className="bg-slate-800/40 border-slate-700 text-white w-full"
+                                >
+                                    <SelectValue placeholder="Select currency" />
+                                </SelectTrigger>
+                                <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                                    {SUPPORTED_CURRENCIES.map((currencyCode) => (
+                                        <SelectItem key={currencyCode} value={currencyCode}>
+                                            {currencyCode}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
                         <div className="rounded-lg border border-slate-700/70 bg-slate-800/30 px-3 py-3">
                             <div className="flex items-center justify-between gap-3">
                                 <div className="space-y-1">
@@ -404,11 +440,31 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                         <div className="rounded-lg border border-slate-700/70 bg-slate-800/30 px-3 py-3">
                             <div className="flex items-center justify-between gap-3">
                                 <div className="space-y-1">
+                                    <Label htmlFor="deadlineOneHourWarningEnabled" className="text-slate-200">
+                                        Deadline warning (1 hour before deadline)
+                                    </Label>
+                                    <p className="text-xs text-slate-400">
+                                        Sends a push notification 1 hour before deadline.
+                                    </p>
+                                </div>
+                                <input
+                                    id="deadlineOneHourWarningEnabled"
+                                    type="checkbox"
+                                    checked={deadlineOneHourWarningEnabled}
+                                    onChange={(e) => setDeadlineOneHourWarningEnabled(e.target.checked)}
+                                    className="h-4 w-4 accent-cyan-400"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="rounded-lg border border-slate-700/70 bg-slate-800/30 px-3 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="space-y-1">
                                     <Label htmlFor="deadlineFinalWarningEnabled" className="text-slate-200">
                                         Final deadline warning (5 minutes before deadline)
                                     </Label>
                                     <p className="text-xs text-slate-400">
-                                        Sends a push notification 5 minutes before deadline. This does not affect the 1-hour warning.
+                                        Sends a push notification 5 minutes before deadline. Controlled independently from the 1-hour warning.
                                     </p>
                                 </div>
                                 <input
@@ -468,3 +524,4 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
         </div>
     );
 }
+

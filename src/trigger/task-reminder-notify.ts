@@ -4,7 +4,7 @@
  * What it does when it runs:
  * 1) Finds due task reminders that were not notified yet.
  * 2) Sends owner-only reminder notifications (push + email) for active tasks.
- * 3) Sends default 1-hour deadline warnings for active tasks (push only).
+ * 3) Sends optional default 1-hour deadline warnings for active tasks (push only).
  * 4) Sends optional default 5-minute deadline warnings for active tasks (push only).
  * 5) Marks reminders as notified to avoid duplicate sends.
  */
@@ -35,6 +35,7 @@ interface ReminderUser {
 
 interface DeadlineWarningUser {
     id: string;
+    deadline_one_hour_warning_enabled?: boolean;
     deadline_final_warning_enabled?: boolean;
 }
 
@@ -242,7 +243,7 @@ async function processOneHourDeadlineWarnings(
             title,
             deadline,
             status,
-            user:profiles!tasks_user_id_fkey(id)
+            user:profiles!tasks_user_id_fkey(id, deadline_one_hour_warning_enabled)
         `)
         .in("status", ACTIVE_STATUSES)
         .gt("deadline", toIso(fiftyNineMinutesFromNow))
@@ -263,6 +264,7 @@ async function processOneHourDeadlineWarnings(
 
     for (const task of tasks) {
         if (!task.user?.id) continue;
+        if (task.user.deadline_one_hour_warning_enabled !== true) continue;
         if (alreadyWarnedTaskIds.has(task.id)) continue;
 
         await sendDeadlineWarningAndLogEvent(

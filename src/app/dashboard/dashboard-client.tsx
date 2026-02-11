@@ -18,6 +18,7 @@ import { CollapsibleCompletedList } from "@/components/CollapsibleCompletedList"
 import { TaskDetailPrefetcher } from "@/components/TaskDetailPrefetcher";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import type { Profile, Task } from "@/lib/types";
+import type { SupportedCurrency } from "@/lib/currency";
 import { toast } from "sonner";
 import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
 import {
@@ -52,6 +53,7 @@ interface DashboardClientProps {
     initialTasks: Task[];
     friends: Profile[];
     defaultFailureCostEuros: string;
+    currency: SupportedCurrency;
     defaultVoucherId: string | null;
     defaultPomoDurationMinutes: number;
     userId: string;
@@ -115,6 +117,7 @@ export default function DashboardClient({
     initialTasks,
     friends,
     defaultFailureCostEuros,
+    currency,
     defaultVoucherId,
     defaultPomoDurationMinutes,
     userId,
@@ -641,6 +644,7 @@ export default function DashboardClient({
             <TaskInput
                 friends={friends}
                 defaultFailureCostEuros={defaultFailureCostEuros}
+                defaultCurrency={currency}
                 defaultVoucherId={defaultVoucherId}
                 onCreateTaskOptimistic={handleCreateTaskOptimistic}
             />

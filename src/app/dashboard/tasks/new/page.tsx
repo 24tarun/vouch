@@ -26,6 +26,7 @@ import {
     DEFAULT_FAILURE_COST_CENTS,
     DEFAULT_FAILURE_COST_EUROS,
 } from "@/lib/constants";
+import { getCurrencySymbol, normalizeCurrency, type SupportedCurrency } from "@/lib/currency";
 import type { Profile } from "@/lib/types";
 import { isIOS } from "@/lib/platform";
 import {
@@ -43,12 +44,14 @@ export default function NewTaskPage() {
     const [friends, setFriends] = useState<Profile[]>([]);
     const [selectedVoucherId, setSelectedVoucherId] = useState("");
     const [failureCost, setFailureCost] = useState(DEFAULT_FAILURE_COST_EUROS);
+    const [currency, setCurrency] = useState<SupportedCurrency>("EUR");
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const effectiveSelectedVoucherId =
         selectedVoucherId && friends.some((friend) => friend.id === selectedVoucherId)
             ? selectedVoucherId
             : "";
+    const currencySymbol = getCurrencySymbol(currency);
 
     // Set default deadline to tomorrow at noon
     const tomorrow = new Date();
@@ -72,6 +75,7 @@ export default function NewTaskPage() {
 
             const profileFailureCostCents = profile?.default_failure_cost_cents ?? DEFAULT_FAILURE_COST_CENTS;
             setFailureCost((profileFailureCostCents / 100).toFixed(2));
+            setCurrency(normalizeCurrency(profile?.currency));
 
             const profileDefaultVoucher = profile?.default_voucher_id ?? null;
             const hasValidVoucher =
@@ -219,7 +223,7 @@ export default function NewTaskPage() {
                         {/* Failure Cost */}
                         <div className="space-y-2">
                             <Label htmlFor="failureCost" className="text-slate-200">
-                                Failure Cost (€) *
+                                Failure Cost ({currencySymbol}) *
                             </Label>
                             <Input
                                 id="failureCost"
@@ -235,7 +239,7 @@ export default function NewTaskPage() {
                                 className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400"
                             />
                             <p className="text-xs text-slate-500">
-                                €0.01 - €100.00. Donated to charity if you fail.
+                                {currencySymbol}0.01 - {currencySymbol}100.00. Donated to charity if you fail.
                             </p>
                         </div>
 
@@ -313,3 +317,4 @@ export default function NewTaskPage() {
         </div>
     );
 }
+

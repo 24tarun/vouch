@@ -549,7 +549,7 @@ export async function createTask(formData: FormData) {
     }
 
     if (failureCostEuros < 0.01 || failureCostEuros > 100) {
-        return { error: "Failure cost must be between €0.01 and €100" };
+        return { error: "Failure cost must be between 0.01 and 100." };
     }
 
     // Verify voucher is a friend

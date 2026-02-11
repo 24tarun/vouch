@@ -3,6 +3,7 @@ import { getTask, getTaskEvents, getTaskPomoSummary } from "@/actions/tasks";
 import TaskDetailClient from "./task-detail-client";
 import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_POMO_DURATION_MINUTES } from "@/lib/constants";
+import { normalizeCurrency } from "@/lib/currency";
 
 interface TaskPageProps {
     params: Promise<{ id: string }>;
@@ -35,6 +36,7 @@ export default async function TaskPage({ params }: TaskPageProps) {
 
     const defaultPomoDurationMinutes =
         ((profile as any)?.default_pomo_duration_minutes as number | undefined) ?? DEFAULT_POMO_DURATION_MINUTES;
+    const viewerCurrency = normalizeCurrency((profile as any)?.currency);
 
     return (
         <TaskDetailClient
@@ -43,6 +45,7 @@ export default async function TaskPage({ params }: TaskPageProps) {
             pomoSummary={pomoSummary}
             defaultPomoDurationMinutes={defaultPomoDurationMinutes}
             viewerId={user?.id || ""}
+            viewerCurrency={viewerCurrency}
         />
     );
 }

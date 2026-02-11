@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { sendNotification } from "@/lib/notifications";
-import { revalidatePath } from "next/cache";
+import { formatCurrencyFromCents, normalizeCurrency } from "@/lib/currency";
 
 function formatLedgerEntryType(entryType: string): string {
     if (entryType === "voucher_timeout_penalty") return "Voucher Timeout Penalty";
@@ -21,6 +21,12 @@ export async function sendLedgerReportEmail() {
     if (!user || !user.email) {
         return { error: "Not authenticated or email missing" };
     }
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("currency")
+        .eq("id", user.id)
+        .maybeSingle();
+    const currency = normalizeCurrency((profile as { currency?: string | null } | null)?.currency);
 
     const currentPeriod = new Date().toISOString().slice(0, 7);
 
@@ -41,7 +47,7 @@ export async function sendLedgerReportEmail() {
     }
 
     const totalAmountCents = (entries as any).reduce((sum: number, entry: any) => sum + entry.amount_cents, 0);
-    const totalAmount = (totalAmountCents / 100).toFixed(2);
+    const totalAmount = formatCurrencyFromCents(totalAmountCents, currency);
 
     const rowsHtml = (entries as any).map((entry: any) => `
         <tr>
@@ -49,7 +55,7 @@ export async function sendLedgerReportEmail() {
             <td style="padding: 8px; border-bottom: 1px solid #eee;">${entry.task?.title || "Manual Entry"}</td>
             <td style="padding: 8px; border-bottom: 1px solid #eee;">${formatLedgerEntryType(entry.entry_type)}</td>
             <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: ${entry.amount_cents > 0 ? '#dc322f' : '#859900'}; font-family: monospace;">
-                ${entry.amount_cents > 0 ? '+' : ''}${(entry.amount_cents / 100).toFixed(2)} EUR
+                ${entry.amount_cents > 0 ? '+' : ''}${formatCurrencyFromCents(entry.amount_cents, currency)}
             </td>
         </tr>
     `).join("");
@@ -75,7 +81,7 @@ export async function sendLedgerReportEmail() {
                     <tr>
                         <td colspan="3" style="padding: 16px 8px; text-align: right; font-weight: bold;">Current Total:</td>
                         <td style="padding: 16px 8px; text-align: right; font-weight: bold; font-family: monospace; font-size: 1.2em; color: #db2777;">
-                            ${totalAmount} EUR
+                            ${totalAmount}
                         </td>
                     </tr>
                 </tfoot>
@@ -89,9 +95,9 @@ export async function sendLedgerReportEmail() {
 
     await sendNotification({
         to: user.email,
-        subject: `Your Ledger Report - ${totalAmount} EUR Pending`,
+        subject: `Your Ledger Report - ${totalAmount} Pending`,
         html,
-        text: `Your ledger report for ${currentPeriod}. Total pending: ${totalAmount} EUR.`,
+        text: `Your ledger report for ${currentPeriod}. Total pending: ${totalAmount}.`,
     });
 
     return { success: true };

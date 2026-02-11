@@ -5,12 +5,19 @@ import { LedgerReportButton } from "@/components/LedgerReportButton";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
+import { formatCurrencyFromCents, normalizeCurrency } from "@/lib/currency";
 
 export default async function LedgerPage() {
     const supabase = await createClient();
     const {
         data: { user },
     } = await supabase.auth.getUser();
+    const { data: profile } = await supabase
+        .from("profiles")
+        .select("currency")
+        .eq("id", user?.id as any)
+        .maybeSingle();
+    const currency = normalizeCurrency((profile as { currency?: string | null } | null)?.currency);
 
     const currentPeriod = new Date().toISOString().slice(0, 7);
 
@@ -44,6 +51,7 @@ export default async function LedgerPage() {
             (sum: number, entry: any) => sum + entry.amount_cents,
             0
         ) || 0;
+    const totalAmountLabel = formatCurrencyFromCents(totalAmount, currency);
 
     const failedCount =
         entries?.filter((e: LedgerEntry) => e.entry_type === "failure").length || 0;
@@ -68,7 +76,7 @@ export default async function LedgerPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
                 <div className="space-y-1">
                     <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Projected Donation</p>
-                    <p className="text-4xl font-light text-pink-500">€{(totalAmount / 100).toFixed(2)}</p>
+                    <p className="text-4xl font-light text-pink-500">{totalAmountLabel}</p>
                 </div>
                 <div className="space-y-1">
                     <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Rectify Passes</p>
@@ -89,7 +97,7 @@ export default async function LedgerPage() {
             {/* Donation Message */}
             <div className="bg-purple-900/10 border border-purple-500/20 rounded-xl p-6 text-center">
                 <p className="text-purple-300/80 text-sm">
-                    💜 Current charitable commitment for <span className="text-purple-200 font-bold">{new Date().toLocaleString('default', { month: 'long' })}</span>: <span className="text-white">€{(totalAmount / 100).toFixed(2)}</span>
+                    Current charitable commitment for <span className="text-purple-200 font-bold">{new Date().toLocaleString('default', { month: 'long' })}</span>: <span className="text-white">{totalAmountLabel}</span>
                 </p>
             </div>
 
@@ -109,6 +117,7 @@ export default async function LedgerPage() {
                     <div className="flex flex-col border-t border-slate-900/50">
                         {(entries as any).map((entry: any) => {
                             const taskId = entry.task?.id || entry.task_id || null;
+                            const absAmountLabel = formatCurrencyFromCents(Math.abs(entry.amount_cents), currency);
                             return (
                                 <div key={entry.id} className="group flex items-center gap-3 py-6 border-b border-slate-900 last:border-0 hover:bg-slate-900/10 -mx-4 px-4 transition-colors">
                                 <div className="flex-1 min-w-0">
@@ -151,7 +160,7 @@ export default async function LedgerPage() {
 
                                 <div className="flex flex-col items-end">
                                     <span className={`text-xl font-mono ${entry.amount_cents > 0 ? "text-red-500" : "text-green-500"}`}>
-                                        {entry.amount_cents > 0 ? "+" : "-"}€{(Math.abs(entry.amount_cents) / 100).toFixed(2)}
+                                        {entry.amount_cents > 0 ? "+" : "-"}{absAmountLabel}
                                     </span>
                                     <span className="text-[10px] text-slate-700 uppercase tracking-widest mt-1">
                                         {entry.amount_cents < 0 ? "Reversal" : "Amount"}
