@@ -491,7 +491,7 @@ export async function getCachedActiveTasksForUser(userId: string) {
                 .select("*")
                 .eq("user_id", userId as any)
                 .in("status", ["CREATED", "POSTPONED"])
-                .order("created_at", { ascending: false });
+                .order("deadline", { ascending: true });
 
             if (error) {
                 console.error("Failed to load cached active tasks:", error.message);
@@ -1354,6 +1354,54 @@ export async function toggleTaskSubtask(parentTaskId: string, subtaskId: string,
         .update({
             is_completed: completed,
             completed_at: completed ? nowIso : null,
+        })
+        .eq("id", subtaskId as any)
+        .eq("parent_task_id", parentTaskId as any)
+        .eq("user_id", user.id as any)
+        .select("*")
+        .single();
+
+    if (error) {
+        return { error: error.message };
+    }
+
+    if (!updatedSubtask) {
+        return { error: "Subtask not found" };
+    }
+
+    revalidateTaskSurfaces(parentTaskId, user.id);
+    return { success: true, subtask: updatedSubtask };
+}
+
+export async function renameTaskSubtask(parentTaskId: string, subtaskId: string, newTitle: string) {
+    const supabase = await createClient();
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+        return { error: "Not authenticated" };
+    }
+
+    const normalizedTitle = newTitle.trim();
+    if (!normalizedTitle) {
+        return { error: "Subtask title cannot be empty." };
+    }
+
+    const parentTask = await getOwnedParentTask(supabase, parentTaskId, user.id);
+    if (!parentTask) {
+        return { error: "Task not found" };
+    }
+
+    if (!ACTIVE_PARENT_TASK_STATUSES.includes(parentTask.status)) {
+        return { error: `Cannot edit subtasks in ${parentTask.status} status` };
+    }
+
+    // @ts-ignore
+    const { data: updatedSubtask, error } = await (supabase.from("task_subtasks") as any)
+        .update({
+            title: normalizedTitle,
+            updated_at: new Date().toISOString(),
         })
         .eq("id", subtaskId as any)
         .eq("parent_task_id", parentTaskId as any)

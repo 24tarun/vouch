@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PushInitializer } from "@/components/PushInitializer";
+import { SignOutMenuForm } from "@/components/SignOutMenuForm";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
 import type { Profile } from "@/lib/types";
 import {
@@ -521,6 +522,10 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                     </p>
                 </CardContent>
             </Card>
+
+            <div className="border-t border-slate-800 pt-6">
+                <SignOutMenuForm variant="menu" />
+            </div>
         </div>
     );
 }

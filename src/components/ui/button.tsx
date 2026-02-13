@@ -41,18 +41,14 @@ const buttonVariants = cva(
   }
 )
 
-function Button({
-  className,
-  variant = "default",
-  size = "default",
-  asChild = false,
-  haptic,
-  ...props
-}: React.ComponentProps<"button"> &
+const Button = React.forwardRef<
+  HTMLButtonElement,
+  React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
     haptic?: keyof typeof haptics;
-  }) {
+  }
+>(({ className, variant = "default", size = "default", asChild = false, haptic, ...props }, ref) => {
   const Comp = asChild ? Slot : "button"
 
   return (
@@ -67,9 +63,11 @@ function Button({
         }
         props.onClick?.(e);
       }}
+      ref={ref}
       {...props}
     />
   )
-}
+})
+Button.displayName = "Button"
 
 export { Button, buttonVariants }

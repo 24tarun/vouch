@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { deleteTaskSubtask, toggleTaskSubtask } from "@/actions/tasks";
+import { addTaskSubtask, deleteTaskSubtask, renameTaskSubtask, toggleTaskSubtask } from "@/actions/tasks";
 import type { Task } from "@/lib/types";
-import { Camera, Check, ChevronDown, ChevronRight, ExternalLink, Repeat, Trash2, TriangleAlert } from "lucide-react";
+import { Camera, Check, ChevronDown, ChevronRight, ExternalLink, Plus, Repeat, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "./ui/button";
 import { PomoButton } from "./ui/PomoButton";
 import { cn } from "@/lib/utils";
@@ -50,6 +50,11 @@ export function TaskRow({
     const [subtasks, setSubtasks] = useState(task.subtasks || []);
     const [subtaskPendingIds, setSubtaskPendingIds] = useState<Set<string>>(new Set());
     const [isExpanded, setIsExpanded] = useState(false);
+    const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+    const [isAddingSubtask, setIsAddingSubtask] = useState(false);
+    const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+    const [editingSubtaskTitle, setEditingSubtaskTitle] = useState("");
+    const newSubtaskInputRef = useRef<HTMLInputElement>(null);
 
     const isActuallyCompleted = useMemo(
         () => ["AWAITING_VOUCHER", "COMPLETED", "FAILED", "RECTIFIED", "SETTLED", "DELETED"].includes(task.status),
@@ -176,7 +181,11 @@ export function TaskRow({
         await runOptimisticMutation({
             captureSnapshot: () => ({ subtasks }),
             applyOptimistic: () => {
-                setSubtasks((prev) => prev.filter((subtask) => subtask.id !== subtaskId));
+                const nextSubtasks = subtasks.filter((subtask) => subtask.id !== subtaskId);
+                setSubtasks(nextSubtasks);
+                if (nextSubtasks.length === 0) {
+                    setTimeout(() => newSubtaskInputRef.current?.focus(), 0);
+                }
             },
             runMutation: () => deleteTaskSubtask(task.id, subtaskId),
             rollback: (snapshot) => {
@@ -206,6 +215,89 @@ export function TaskRow({
         });
     };
 
+    const handleAddSubtask = async () => {
+        const trimmed = newSubtaskTitle.trim();
+        if (!trimmed || isAddingSubtask || !isParentActive || isTempTask) return;
+        setIsAddingSubtask(true);
+
+        const tempId = `temp-subtask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const nowIso = new Date().toISOString();
+        const optimisticSubtask = {
+            id: tempId,
+            parent_task_id: task.id,
+            user_id: task.user_id,
+            title: trimmed,
+            is_completed: false,
+            completed_at: null,
+            created_at: nowIso,
+            updated_at: nowIso,
+        };
+
+        setNewSubtaskTitle("");
+
+        await runOptimisticMutation({
+            captureSnapshot: () => ({ subtasks }),
+            applyOptimistic: () => {
+                setSubtasks((prev) => [...prev, optimisticSubtask]);
+            },
+            runMutation: () => addTaskSubtask(task.id, trimmed),
+            rollback: (snapshot) => {
+                setSubtasks(snapshot.subtasks);
+            },
+            onSuccess: (result) => {
+                if (result && typeof result === 'object' && 'subtask' in result && result.subtask) {
+                    setSubtasks((prev) =>
+                        prev.map((s) => (s.id === tempId ? (result.subtask as typeof s) : s))
+                    );
+                }
+            },
+        });
+
+        setIsAddingSubtask(false);
+    };
+
+    const startEditingSubtask = (subtaskId: string, currentTitle: string) => {
+        if (!canEditSubtasks) return;
+        setEditingSubtaskId(subtaskId);
+        setEditingSubtaskTitle(currentTitle);
+    };
+
+    const handleSubtaskRename = async () => {
+        if (!editingSubtaskId) return;
+        const trimmed = editingSubtaskTitle.trim();
+        const subtask = subtasks.find((s) => s.id === editingSubtaskId);
+        if (!trimmed || !subtask) {
+            setEditingSubtaskId(null);
+            setEditingSubtaskTitle("");
+            return;
+        }
+        if (trimmed === subtask.title) {
+            setEditingSubtaskId(null);
+            setEditingSubtaskTitle("");
+            return;
+        }
+        const targetId = editingSubtaskId;
+        setEditingSubtaskId(null);
+        setEditingSubtaskTitle("");
+        setSubtaskPending(targetId, true);
+
+        await runOptimisticMutation({
+            captureSnapshot: () => ({ subtasks }),
+            applyOptimistic: () => {
+                setSubtasks((prev) =>
+                    prev.map((s) => (s.id === targetId ? { ...s, title: trimmed, updated_at: new Date().toISOString() } : s))
+                );
+            },
+            runMutation: () => renameTaskSubtask(task.id, targetId, trimmed),
+            rollback: (snapshot) => {
+                setSubtasks(snapshot.subtasks);
+            },
+            onSuccess: () => { },
+        });
+
+        setSubtaskPending(targetId, false);
+    };
+
     useEffect(() => {
         setSubtasks(task.subtasks || []);
     }, [task.id, task.subtasks]);
@@ -222,23 +314,13 @@ export function TaskRow({
     }, [onDelete]);
 
     useEffect(() => {
-        if (!hasSubtasks) {
-            setIsExpanded(false);
-            try {
-                window.localStorage.removeItem(subtaskExpandStorageKey);
-            } catch {
-                // Ignore localStorage access failures.
-            }
-            return;
-        }
-
         try {
             const saved = window.localStorage.getItem(subtaskExpandStorageKey);
             setIsExpanded(saved === "1");
         } catch {
             setIsExpanded(false);
         }
-    }, [hasSubtasks, subtaskExpandStorageKey]);
+    }, [subtaskExpandStorageKey]);
 
     const statusColors: Record<string, string> = {
         AWAITING_VOUCHER: "text-amber-400 border-amber-400",
@@ -360,16 +442,19 @@ export function TaskRow({
                 </Button>
             )}
 
-            {hasSubtasks && (
+            {(!isActuallyCompleted || hasSubtasks) && (
                 <Button
                     type="button"
                     variant="ghost"
                     onClick={handleExpandToggle}
-                    className="h-10 w-10 p-0 text-slate-300 hover:text-white hover:bg-slate-800"
-                    aria-label={isExpanded ? "Collapse subtasks" : "Expand subtasks"}
-                    title={isExpanded ? "Collapse subtasks" : "Expand subtasks"}
+                    className="h-10 w-10 p-0 text-slate-300 hover:text-white hover:bg-slate-800 js-subtask-toggle"
+                    aria-label={isExpanded ? "Collapse subtasks" : (hasSubtasks ? "Expand subtasks" : "Add subtasks")}
+                    title={isExpanded ? "Collapse subtasks" : (hasSubtasks ? "Expand subtasks" : "Add subtasks")}
                 >
-                    {isExpanded ? <ChevronDown className="h-[18px] w-[18px]" /> : <ChevronRight className="h-[18px] w-[18px]" />}
+                    {isExpanded
+                        ? <ChevronDown className="h-[18px] w-[18px]" />
+                        : (hasSubtasks ? <ChevronRight className="h-[18px] w-[18px]" /> : <Plus className="h-[18px] w-[18px]" />)
+                    }
                 </Button>
             )}
 
@@ -405,15 +490,19 @@ export function TaskRow({
                         onClick={handleCheck}
                         disabled={isActuallyCompleted || isCompleting || isOverdue || !onComplete || hasIncompleteSubtasks || hasIncompletePomoRequirement}
                         className={cn(
-                            "flex-shrink-0 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all",
-                            isActuallyCompleted
-                                ? (currentStatusColor || "bg-slate-700 border-slate-700 text-slate-400")
-                                : ("border-slate-600 hover:border-slate-500 text-transparent"),
+                            "flex-shrink-0 h-10 w-10 p-0 flex items-center justify-center transition-all",
                             (hasIncompleteSubtasks || hasIncompletePomoRequirement) && !isActuallyCompleted && "opacity-50 cursor-not-allowed"
                         )}
                         title={disabledCompleteTitle}
                     >
-                        {isActuallyCompleted && <Check className="h-3 w-3" strokeWidth={3} />}
+                        <span className={cn(
+                            "h-[20px] w-[20px] rounded-full border flex items-center justify-center transition-all",
+                            isActuallyCompleted
+                                ? (currentStatusColor || "bg-slate-700 border-slate-700 text-slate-400")
+                                : ("border-slate-600 hover:border-slate-500 text-transparent")
+                        )}>
+                            {isActuallyCompleted && <Check className="h-[12px] w-[12px]" strokeWidth={3} />}
+                        </span>
                     </button>
 
                     <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
@@ -444,16 +533,19 @@ export function TaskRow({
                             </span>
                         </div>
 
-                        {hasSubtasks && (
+                        {(!isActuallyCompleted || hasSubtasks) && (
                             <Button
                                 type="button"
                                 variant="ghost"
                                 onClick={handleExpandToggle}
-                                className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700/80"
-                                aria-label={isExpanded ? "Collapse subtasks" : "Expand subtasks"}
-                                title={isExpanded ? "Collapse subtasks" : "Expand subtasks"}
+                                className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700/80 js-subtask-toggle"
+                                aria-label={isExpanded ? "Collapse subtasks" : (hasSubtasks ? "Expand subtasks" : "Add subtasks")}
+                                title={isExpanded ? "Collapse subtasks" : (hasSubtasks ? "Expand subtasks" : "Add subtasks")}
                             >
-                                {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                {isExpanded
+                                    ? <ChevronDown className="h-3.5 w-3.5" />
+                                    : (hasSubtasks ? <ChevronRight className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />)
+                                }
                             </Button>
                         )}
 
@@ -589,8 +681,23 @@ export function TaskRow({
                 </div>
             )}
 
-            {hasSubtasks && isExpanded && (
-                <div className="ml-8 mr-3 mb-3 mt-1 border-l border-slate-800/70 pl-3 space-y-1.5">
+            {isExpanded && (
+                <div
+                    className="ml-8 mr-3 mb-3 mt-1 border-l border-slate-800/70 pl-3 space-y-1"
+                    onBlur={(e) => {
+                        // If focus is still within this specific task's subtask section, don't close
+                        if (e.relatedTarget && (e.currentTarget.contains(e.relatedTarget as Node) || (e.relatedTarget as HTMLElement).closest?.(".js-subtask-toggle"))) {
+                            return;
+                        }
+                        // Only auto-close if the list is empty and user isn't actively adding one with text
+                        if (subtasks.length === 0 && !newSubtaskTitle.trim()) {
+                            setIsExpanded(false);
+                            try {
+                                window.localStorage.removeItem(subtaskExpandStorageKey);
+                            } catch { }
+                        }
+                    }}
+                >
                     {subtasks.map((subtask) => {
                         const isPending = subtaskPendingIds.has(subtask.id);
                         return (
@@ -600,48 +707,98 @@ export function TaskRow({
                                     disabled={!canEditSubtasks || isPending}
                                     onClick={() => handleSubtaskToggle(subtask.id)}
                                     className={cn(
-                                        "h-4 w-4 rounded-full border flex items-center justify-center transition-colors",
-                                        subtask.is_completed
-                                            ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                                            : "border-slate-600 text-transparent",
+                                        "group h-10 w-10 flex items-center justify-center shrink-0 p-0 transition-opacity",
                                         (!canEditSubtasks || isPending) && "opacity-60 cursor-not-allowed"
                                     )}
                                     title={canEditSubtasks ? "Toggle subtask" : "Subtasks are locked"}
                                 >
-                                    {subtask.is_completed && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
+                                    <span className={cn(
+                                        "h-[20px] w-[20px] rounded-full border flex items-center justify-center transition-all shrink-0",
+                                        subtask.is_completed
+                                            ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                                            : "border-slate-600 text-transparent group-hover:border-slate-500"
+                                    )}>
+                                        {subtask.is_completed && <Check className="h-[12px] w-[12px]" strokeWidth={3} />}
+                                    </span>
                                 </button>
-                                <button
-                                    type="button"
-                                    disabled={!canEditSubtasks || isPending}
-                                    onClick={() => handleSubtaskToggle(subtask.id)}
-                                    className={cn(
-                                        "flex-1 min-w-0 text-left text-xs transition-colors",
-                                        subtask.is_completed ? "text-slate-500 line-through" : "text-slate-300",
-                                        (!canEditSubtasks || isPending) && "cursor-not-allowed"
-                                    )}
-                                    title={subtask.title}
-                                >
-                                    <span className="block truncate">{subtask.title}</span>
-                                </button>
+                                {editingSubtaskId === subtask.id ? (
+                                    <input
+                                        type="text"
+                                        value={editingSubtaskTitle}
+                                        onChange={(e) => setEditingSubtaskTitle(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                void handleSubtaskRename();
+                                            }
+                                            if (e.key === "Escape") {
+                                                setEditingSubtaskId(null);
+                                                setEditingSubtaskTitle("");
+                                            }
+                                        }}
+                                        onBlur={() => void handleSubtaskRename()}
+                                        autoFocus
+                                        className="flex-1 min-w-0 bg-transparent border-b border-slate-500 text-sm text-slate-300 focus:outline-none focus:border-slate-400 py-0.5"
+                                    />
+                                ) : (
+                                    <button
+                                        type="button"
+                                        disabled={isPending}
+                                        onClick={() => startEditingSubtask(subtask.id, subtask.title)}
+                                        className={cn(
+                                            "flex-1 min-w-0 text-left text-sm transition-colors py-1",
+                                            subtask.is_completed ? "text-slate-500 line-through" : "text-slate-300",
+                                            canEditSubtasks && !isPending && "hover:text-white cursor-text",
+                                            isPending && "cursor-not-allowed opacity-60"
+                                        )}
+                                        title="Click to edit"
+                                    >
+                                        <span className="block truncate">{subtask.title}</span>
+                                    </button>
+                                )}
                                 {canEditSubtasks && (
                                     <button
                                         type="button"
                                         disabled={isPending}
                                         onClick={() => handleSubtaskDelete(subtask.id)}
                                         className={cn(
-                                            "h-6 w-6 rounded border flex items-center justify-center",
-                                            "border-red-500/30 text-red-400 hover:bg-red-500/10",
+                                            "h-10 w-10 rounded flex items-center justify-center shrink-0 transition-colors",
+                                            "text-red-400/70 hover:text-red-300 hover:bg-red-500/10",
                                             isPending && "opacity-60 cursor-not-allowed"
                                         )}
                                         aria-label="Delete subtask"
                                         title="Delete subtask"
                                     >
-                                        <Trash2 className="h-3 w-3" />
+                                        <Trash2 className="h-[18px] w-[18px]" />
                                     </button>
                                 )}
                             </div>
                         );
                     })}
+                    {canEditSubtasks && (
+                        <div className="flex items-center gap-2 pr-2">
+                            <div className="h-10 w-10 flex items-center justify-center shrink-0">
+                                <Plus className="h-[18px] w-[18px] text-slate-500" />
+                            </div>
+                            <input
+                                type="text"
+                                value={newSubtaskTitle}
+                                onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        void handleAddSubtask();
+                                    }
+                                }}
+                                autoFocus
+                                placeholder="Add subtask…"
+                                ref={newSubtaskInputRef}
+                                disabled={isAddingSubtask}
+                                className="flex-1 min-w-0 bg-transparent border-b border-slate-700/60 text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-slate-500 py-1"
+                            />
+                        </div>
+                    )
+                    }
                 </div>
             )}
         </div>

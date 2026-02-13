@@ -78,6 +78,11 @@ export default async function OverviewPage() {
     const totalMinutes = Math.floor((totalSeconds % 3600) / 60);
 
     const activeTasks = tasks.filter((t) => ACTIVE_SECTION_STATUSES.has(t.status));
+    activeTasks.sort((a, b) => {
+        const deadlineDiff = new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+        if (deadlineDiff !== 0) return deadlineDiff;
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
 
     const activeTasksCount = activeTasks.length;
     const pendingVouchCount = tasks.filter((t) =>
@@ -111,9 +116,6 @@ export default async function OverviewPage() {
             <div className="flex items-start justify-between gap-3">
                 <div>
                     <h1 className="text-3xl font-bold text-white">Overview</h1>
-                    <p className="text-slate-400 mt-1">
-                        Your performance and habit reliability
-                    </p>
                 </div>
                 <HardRefreshButton />
             </div>

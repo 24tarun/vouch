@@ -81,6 +81,12 @@ function splitTasks(tasks: Task[]) {
         isTaskCompletedToday(task)
     );
 
+    active.sort((a, b) => {
+        const deadlineDiff = new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+        if (deadlineDiff !== 0) return deadlineDiff;
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+
     return { active, completed };
 }
 
