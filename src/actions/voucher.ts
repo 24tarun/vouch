@@ -55,6 +55,11 @@ function getPendingDeadline(task: {
         : deriveAwaitingDeadline(task);
 }
 
+function canVoucherSeeTask(task: { status: TaskStatus; user?: { voucher_can_view_active_tasks?: boolean } | null }): boolean {
+    if (!ACTIVE_PENDING_STATUS_SET.has(task.status)) return true;
+    return task.user?.voucher_can_view_active_tasks === true;
+}
+
 function sortPendingTasks(tasks: VoucherPendingTask[]): VoucherPendingTask[] {
     return [...tasks].sort((a, b) => {
         const aDeadlineTs = parseTimestamp(a.pending_deadline_at);
@@ -403,7 +408,12 @@ export async function getCachedPendingVouchRequestsForVoucher(voucherId: string)
                 .in("status", PENDING_VOUCH_REQUEST_STATUSES as any)
                 .order("updated_at", { ascending: false });
 
-            const pendingTasks = (tasks as any[]) || [];
+            const pendingTasks = ((tasks as any[]) || []).filter((task) =>
+                canVoucherSeeTask({
+                    status: task.status as TaskStatus,
+                    user: task.user as { voucher_can_view_active_tasks?: boolean } | null,
+                })
+            );
             if (pendingTasks.length === 0) return [];
 
             const taskIds = pendingTasks.map((task) => task.id);
@@ -527,7 +537,14 @@ export async function getAssignedTasksForVoucher() {
         .in("status", allowedStatuses)
         .order("deadline", { ascending: true });
 
-    return (tasks as any) || [];
+    const visibleTasks = ((tasks as any[]) || []).filter((task) =>
+        canVoucherSeeTask({
+            status: task.status as TaskStatus,
+            user: task.user as { voucher_can_view_active_tasks?: boolean } | null,
+        })
+    );
+
+    return visibleTasks;
 }
 
 export async function getFailedTasks() {

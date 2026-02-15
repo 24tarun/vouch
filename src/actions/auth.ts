@@ -302,6 +302,7 @@ export async function updateUserDefaults(formData: FormData) {
     const strictPomoEnabledRaw = formData.get("strictPomoEnabled");
     const deadlineOneHourWarningEnabledRaw = formData.get("deadlineOneHourWarningEnabled");
     const deadlineFinalWarningEnabledRaw = formData.get("deadlineFinalWarningEnabled");
+    const voucherCanViewActiveTasksEnabledRaw = formData.get("voucherCanViewActiveTasksEnabled");
     const currencyRaw = formData.get("currency");
 
     const defaultPomoDurationMinutes = Number(defaultPomoDurationRaw);
@@ -359,6 +360,16 @@ export async function updateUserDefaults(formData: FormData) {
         }
         deadlineFinalWarningEnabled = deadlineFinalWarningEnabledRaw === "true";
     }
+    let voucherCanViewActiveTasksEnabled: boolean | undefined;
+    if (voucherCanViewActiveTasksEnabledRaw != null && voucherCanViewActiveTasksEnabledRaw !== "") {
+        if (typeof voucherCanViewActiveTasksEnabledRaw !== "string") {
+            return { error: "Voucher active-task visibility toggle value is invalid." };
+        }
+        if (voucherCanViewActiveTasksEnabledRaw !== "true" && voucherCanViewActiveTasksEnabledRaw !== "false") {
+            return { error: "Voucher active-task visibility toggle value is invalid." };
+        }
+        voucherCanViewActiveTasksEnabled = voucherCanViewActiveTasksEnabledRaw === "true";
+    }
     let currency: SupportedCurrency | undefined;
     if (currencyRaw != null && currencyRaw !== "") {
         if (typeof currencyRaw !== "string" || !isSupportedCurrency(currencyRaw)) {
@@ -393,6 +404,9 @@ export async function updateUserDefaults(formData: FormData) {
     }
     if (deadlineFinalWarningEnabled !== undefined) {
         profileUpdate.deadline_final_warning_enabled = deadlineFinalWarningEnabled;
+    }
+    if (voucherCanViewActiveTasksEnabled !== undefined) {
+        profileUpdate.voucher_can_view_active_tasks = voucherCanViewActiveTasksEnabled;
     }
     if (currency !== undefined) {
         profileUpdate.currency = currency;

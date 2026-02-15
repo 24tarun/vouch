@@ -1676,6 +1676,13 @@ export async function getTask(taskId: string) {
     if (task) {
         const isOwner = (task as any).user_id === user.id;
         const isVoucher = (task as any).voucher_id === user.id;
+        const isActiveTask = ["CREATED", "POSTPONED"].includes((task as any).status);
+        const ownerAllowsVoucherActiveView = (task as any).user?.voucher_can_view_active_tasks === true;
+        const voucherActiveViewBlocked = isVoucher && !isOwner && isActiveTask && !ownerAllowsVoucherActiveView;
+
+        if (voucherActiveViewBlocked) {
+            return null;
+        }
 
         if (isOwner || isVoucher) {
             const now = new Date();
@@ -1781,7 +1788,7 @@ export async function getTaskPomoSummary(taskId: string) {
     // Verify access to task first
     // @ts-ignore
     const { data: task } = await (supabase.from("tasks") as any)
-        .select("id, user_id, voucher_id")
+        .select("id, user_id, voucher_id, status, user:profiles!tasks_user_id_fkey(voucher_can_view_active_tasks)")
         .eq("id", taskId as any)
         .single();
 
@@ -1789,6 +1796,11 @@ export async function getTaskPomoSummary(taskId: string) {
 
     const canView = task.user_id === user.id || task.voucher_id === user.id;
     if (!canView) return null;
+    const isVoucher = task.voucher_id === user.id;
+    const isOwner = task.user_id === user.id;
+    const isActiveTask = ["CREATED", "POSTPONED"].includes((task as any).status);
+    const ownerAllowsVoucherActiveView = (task as any).user?.voucher_can_view_active_tasks === true;
+    if (isVoucher && !isOwner && isActiveTask && !ownerAllowsVoucherActiveView) return null;
 
     // @ts-ignore
     const { data: sessions } = await (supabase.from("pomo_sessions") as any)

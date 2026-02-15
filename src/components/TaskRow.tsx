@@ -51,7 +51,6 @@ export function TaskRow({
     const [subtaskPendingIds, setSubtaskPendingIds] = useState<Set<string>>(new Set());
     const [isExpanded, setIsExpanded] = useState(false);
     const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
-    const [isAddingSubtask, setIsAddingSubtask] = useState(false);
     const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
     const [editingSubtaskTitle, setEditingSubtaskTitle] = useState("");
     const newSubtaskInputRef = useRef<HTMLInputElement>(null);
@@ -215,10 +214,9 @@ export function TaskRow({
         });
     };
 
-    const handleAddSubtask = async () => {
+    const handleAddSubtask = () => {
         const trimmed = newSubtaskTitle.trim();
-        if (!trimmed || isAddingSubtask || !isParentActive || isTempTask) return;
-        setIsAddingSubtask(true);
+        if (!trimmed || !isParentActive || isTempTask) return;
 
         const tempId = `temp-subtask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const nowIso = new Date().toISOString();
@@ -235,25 +233,34 @@ export function TaskRow({
 
         setNewSubtaskTitle("");
 
-        await runOptimisticMutation({
-            captureSnapshot: () => ({ subtasks }),
-            applyOptimistic: () => {
-                setSubtasks((prev) => [...prev, optimisticSubtask]);
-            },
-            runMutation: () => addTaskSubtask(task.id, trimmed),
-            rollback: (snapshot) => {
-                setSubtasks(snapshot.subtasks);
-            },
-            onSuccess: (result) => {
-                if (result && typeof result === 'object' && 'subtask' in result && result.subtask) {
+        setSubtasks((prev) => [...prev, optimisticSubtask]);
+        window.requestAnimationFrame(() => {
+            const input = newSubtaskInputRef.current;
+            if (!input) return;
+            input.focus();
+            try {
+                const cursorPos = input.value.length;
+                input.setSelectionRange(cursorPos, cursorPos);
+            } catch {
+                // Some environments do not support selection ranges on this input.
+            }
+        });
+
+        void addTaskSubtask(task.id, trimmed)
+            .then((result) => {
+                if (result?.error) {
+                    setSubtasks((prev) => prev.filter((s) => s.id !== tempId));
+                    return;
+                }
+                if (result && typeof result === "object" && "subtask" in result && result.subtask) {
                     setSubtasks((prev) =>
                         prev.map((s) => (s.id === tempId ? (result.subtask as typeof s) : s))
                     );
                 }
-            },
-        });
-
-        setIsAddingSubtask(false);
+            })
+            .catch(() => {
+                setSubtasks((prev) => prev.filter((s) => s.id !== tempId));
+            });
     };
 
     const startEditingSubtask = (subtaskId: string, currentTitle: string) => {
@@ -777,9 +784,20 @@ export function TaskRow({
                     })}
                     {canEditSubtasks && (
                         <div className="flex items-center gap-2 pr-2">
-                            <div className="h-10 w-10 flex items-center justify-center shrink-0">
-                                <Plus className="h-[18px] w-[18px] text-slate-500" />
-                            </div>
+                            <button
+                                type="button"
+                                onClick={handleAddSubtask}
+                                disabled={!newSubtaskTitle.trim()}
+                                className={cn(
+                                    "h-10 w-10 flex items-center justify-center shrink-0 rounded transition-colors",
+                                    "text-slate-500 hover:text-slate-200 hover:bg-slate-800/60",
+                                    !newSubtaskTitle.trim() && "cursor-not-allowed opacity-60 hover:text-slate-500 hover:bg-transparent"
+                                )}
+                                aria-label="Add subtask"
+                                title="Add subtask"
+                            >
+                                <Plus className="h-[18px] w-[18px]" />
+                            </button>
                             <input
                                 type="text"
                                 value={newSubtaskTitle}
@@ -787,13 +805,12 @@ export function TaskRow({
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter") {
                                         e.preventDefault();
-                                        void handleAddSubtask();
+                                        handleAddSubtask();
                                     }
                                 }}
                                 autoFocus
                                 placeholder="Add subtask…"
                                 ref={newSubtaskInputRef}
-                                disabled={isAddingSubtask}
                                 className="flex-1 min-w-0 bg-transparent border-b border-slate-700/60 text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-slate-500 py-1"
                             />
                         </div>

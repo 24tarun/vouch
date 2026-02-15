@@ -73,6 +73,9 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
     const [deadlineFinalWarningEnabled, setDeadlineFinalWarningEnabled] = useState(
         profile.deadline_final_warning_enabled ?? true
     );
+    const [voucherCanViewActiveTasksEnabled, setVoucherCanViewActiveTasksEnabled] = useState(
+        profile.voucher_can_view_active_tasks ?? false
+    );
     const [currency, setCurrency] = useState<SupportedCurrency>(
         normalizeCurrency(profile.currency)
     );
@@ -175,6 +178,7 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
         formData.append("strictPomoEnabled", String(strictPomoEnabled));
         formData.append("deadlineOneHourWarningEnabled", String(deadlineOneHourWarningEnabled));
         formData.append("deadlineFinalWarningEnabled", String(deadlineFinalWarningEnabled));
+        formData.append("voucherCanViewActiveTasksEnabled", String(voucherCanViewActiveTasksEnabled));
         formData.append("currency", currency);
 
         const result = await updateUserDefaults(formData);
@@ -478,6 +482,26 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                             </div>
                         </div>
 
+                        <div className="rounded-lg border border-slate-700/70 bg-slate-800/30 px-3 py-3">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="space-y-1">
+                                    <Label htmlFor="voucherCanViewActiveTasksEnabled" className="text-slate-200">
+                                        Allow vouchers to view my active tasks
+                                    </Label>
+                                    <p className="text-xs text-slate-400">
+                                        Controls whether selected vouchers can see your tasks in CREATED or POSTPONED status.
+                                    </p>
+                                </div>
+                                <input
+                                    id="voucherCanViewActiveTasksEnabled"
+                                    type="checkbox"
+                                    checked={voucherCanViewActiveTasksEnabled}
+                                    onChange={(e) => setVoucherCanViewActiveTasksEnabled(e.target.checked)}
+                                    className="h-4 w-4 accent-cyan-400"
+                                />
+                            </div>
+                        </div>
+
                         {defaultsError && <p className="text-sm text-red-400">{defaultsError}</p>}
                         {defaultsSuccess && (
                             <p className="text-sm text-green-400">Defaults updated!</p>
@@ -529,4 +553,3 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
         </div>
     );
 }
-

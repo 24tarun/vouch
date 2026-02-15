@@ -1368,8 +1368,6 @@ export default function TaskDetailClient({
                                                 <Button
                                                     type="submit"
                                                     size="sm"
-                                                    onMouseDown={(e) => e.preventDefault()}
-                                                    onPointerDown={(e) => e.preventDefault()}
                                                     disabled={
                                                         !canManageActionChildren ||
                                                         isAddingSubtask
