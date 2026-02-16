@@ -329,7 +329,7 @@ export async function updateUserDefaults(formData: FormData) {
         return { error: "Default failure cost is invalid." };
     }
 
-    const defaultVoucherId = defaultVoucherIdRaw?.trim() ? defaultVoucherIdRaw.trim() : null;
+    const defaultVoucherId = defaultVoucherIdRaw?.trim() ? defaultVoucherIdRaw.trim() : user.id;
     let strictPomoEnabled: boolean | undefined;
     if (strictPomoEnabledRaw != null && strictPomoEnabledRaw !== "") {
         if (typeof strictPomoEnabledRaw !== "string") {
@@ -378,7 +378,7 @@ export async function updateUserDefaults(formData: FormData) {
         currency = currencyRaw;
     }
 
-    if (defaultVoucherId) {
+    if (defaultVoucherId !== user.id) {
         const { data: friendship } = await supabase
             .from("friendships")
             .select("id")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createTask } from "@/actions/tasks";
 import { Calendar, Check, Loader2, Repeat, User } from "lucide-react";
 import {
@@ -76,6 +76,7 @@ interface TaskInputProps {
     defaultFailureCostEuros: string;
     defaultCurrency: SupportedCurrency;
     defaultVoucherId: string | null;
+    selfUserId: string;
     onCreateTaskOptimistic?: (payload: TaskInputCreatePayload) => void;
 }
 
@@ -97,6 +98,7 @@ export function TaskInput({
     defaultFailureCostEuros,
     defaultCurrency,
     defaultVoucherId,
+    selfUserId,
     onCreateTaskOptimistic,
 }: TaskInputProps) {
     const getDefaultDeadline = () => {
@@ -108,11 +110,17 @@ export function TaskInput({
         return defaultDeadline;
     };
 
+    const resolveVoucherSelection = useCallback((candidate: string | null | undefined) => {
+        if (candidate === selfUserId) return selfUserId;
+        if (candidate && friends.some((friend) => friend.id === candidate)) return candidate;
+        return selfUserId;
+    }, [friends, selfUserId]);
+
     const [title, setTitle] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [hasMounted, setHasMounted] = useState(false);
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-    const [selectedVoucherId, setSelectedVoucherId] = useState<string>(defaultVoucherId ?? "");
+    const [selectedVoucherId, setSelectedVoucherId] = useState<string>(resolveVoucherSelection(defaultVoucherId));
     const [failureCost, setFailureCost] = useState(defaultFailureCostEuros);
     const [isDeadlineManuallyPicked, setIsDeadlineManuallyPicked] = useState(false);
 
@@ -139,8 +147,8 @@ export function TaskInput({
     }, [defaultFailureCostEuros]);
 
     useEffect(() => {
-        setSelectedVoucherId(defaultVoucherId ?? "");
-    }, [defaultVoucherId]);
+        setSelectedVoucherId(resolveVoucherSelection(defaultVoucherId));
+    }, [defaultVoucherId, resolveVoucherSelection]);
 
     useEffect(() => {
         const defaultDeadline = getDefaultDeadline();
@@ -150,12 +158,12 @@ export function TaskInput({
     }, []);
 
     useEffect(() => {
-        if (!selectedVoucherId) return;
+        if (selectedVoucherId === selfUserId) return;
         const isStillFriend = friends.some((friend) => friend.id === selectedVoucherId);
         if (!isStillFriend) {
-            setSelectedVoucherId("");
+            setSelectedVoucherId(selfUserId);
         }
-    }, [friends, selectedVoucherId]);
+    }, [friends, selectedVoucherId, selfUserId]);
 
     useEffect(() => {
         const localValue = toDateTimeLocalValue(selectedDate);
@@ -371,19 +379,23 @@ export function TaskInput({
             }
         }
 
-        const vouchMatch = title.match(/vouch\s+(\w+)/i);
-        if (vouchMatch) {
-            const name = vouchMatch[1].toLowerCase();
-            const friend = friends.find(
-                (f) =>
-                    f.username?.toLowerCase().includes(name) ||
-                    f.email?.toLowerCase().includes(name)
-            );
-            if (friend) {
-                setSelectedVoucherId(friend.id);
+        if (/\bvouch\s+(me|self|myself)\b/i.test(title)) {
+            setSelectedVoucherId(selfUserId);
+        } else {
+            const vouchMatch = title.match(/vouch\s+(\w+)/i);
+            if (vouchMatch) {
+                const name = vouchMatch[1].toLowerCase();
+                const friend = friends.find(
+                    (f) =>
+                        f.username?.toLowerCase().includes(name) ||
+                        f.email?.toLowerCase().includes(name)
+                );
+                if (friend) {
+                    setSelectedVoucherId(friend.id);
+                }
             }
         }
-    }, [title, friends, isDeadlineManuallyPicked]);
+    }, [title, friends, isDeadlineManuallyPicked, selfUserId]);
 
     const stripMetadata = (text: string) => {
         return text
@@ -565,6 +577,7 @@ export function TaskInput({
                                         <SelectValue placeholder="Voucher" />
                                     </SelectTrigger>
                                     <SelectContent className="bg-slate-900 border-slate-800 text-slate-300">
+                                        {selfUserId && <SelectItem value={selfUserId}>Myself</SelectItem>}
                                         {friends.map((friend) => (
                                             <SelectItem key={friend.id} value={friend.id}>
                                                 {friend.username || friend.email}

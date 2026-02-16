@@ -150,10 +150,10 @@ export async function removeFriend(friendId: string) {
         // Don't fail - the first deletion was successful
     }
 
-    // Clear stale default voucher if it was set to the removed friend.
+    // If the removed friend was the default voucher, fall back to self.
     // @ts-ignore
     const { error: clearDefaultError } = await (supabase.from("profiles" as any) as any)
-        .update({ default_voucher_id: null } as any)
+        .update({ default_voucher_id: user.id } as any)
         .eq("id", user.id as any)
         .eq("default_voucher_id", friendId as any);
 

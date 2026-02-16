@@ -130,6 +130,7 @@ export default function TaskDetailClient({
     const userTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
     const canTempDelete = canOwnerTemporarilyDelete(taskState, nowMs);
     const isOwner = taskState.user_id === viewerId;
+    const isSelfVouched = taskState.voucher_id === taskState.user_id;
     const isActiveParentTask = taskState.status === "CREATED" || taskState.status === "POSTPONED";
     const completedSubtasksCount = subtasks.filter((subtask) => subtask.is_completed).length;
     const incompleteSubtasksCount = subtasks.length - completedSubtasksCount;
@@ -666,9 +667,9 @@ export default function TaskDetailClient({
             applyOptimistic: () => {
                 setTaskState((prev) => ({
                     ...prev,
-                    status: "AWAITING_VOUCHER",
+                    status: isSelfVouched ? "COMPLETED" : "AWAITING_VOUCHER",
                     marked_completed_at: now.toISOString(),
-                    voucher_response_deadline: voucherResponseDeadline.toISOString(),
+                    voucher_response_deadline: isSelfVouched ? null : voucherResponseDeadline.toISOString(),
                     updated_at: now.toISOString(),
                 }));
             },
@@ -677,14 +678,18 @@ export default function TaskDetailClient({
                 setTaskState(snapshot.taskState);
             },
             onSuccess: () => {
-                if (!proofIntent) {
+                if (isSelfVouched) {
+                    setTaskProofDraft(null);
+                    setProofUploadError(null);
+                    void purgeLocalProofMedia(taskState.id);
+                } else if (!proofIntent) {
                     void purgeLocalProofMedia(taskState.id);
                 }
                 refreshInBackground();
             },
         });
 
-        if (result.ok && draft) {
+        if (result.ok && draft && !isSelfVouched) {
             const mutationResult = result.result as { proofUploadTarget?: ProofUploadTarget } | undefined;
             const uploadTarget = mutationResult?.proofUploadTarget;
 

@@ -41,8 +41,6 @@ interface SettingsClientProps {
     friends: Profile[];
 }
 
-const NONE_VOUCHER_VALUE = "__none__";
-
 export default function SettingsClient({ profile, friends: initialFriends }: SettingsClientProps) {
     const [friends, setFriends] = useState<Profile[]>(initialFriends);
     const [friendEmail, setFriendEmail] = useState("");
@@ -62,7 +60,7 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
         ((profile.default_failure_cost_cents ?? DEFAULT_FAILURE_COST_CENTS) / 100).toFixed(2)
     );
     const [defaultVoucherId, setDefaultVoucherId] = useState<string | null>(
-        profile.default_voucher_id ?? null
+        profile.default_voucher_id ?? profile.id
     );
     const [strictPomoEnabled, setStrictPomoEnabled] = useState(
         profile.strict_pomo_enabled ?? false
@@ -83,8 +81,9 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
     const [defaultsError, setDefaultsError] = useState<string | null>(null);
     const [defaultsSuccess, setDefaultsSuccess] = useState(false);
     const hasValidDefaultVoucher =
-        !!defaultVoucherId && friends.some((friend) => friend.id === defaultVoucherId);
-    const effectiveDefaultVoucherId = hasValidDefaultVoucher ? defaultVoucherId : null;
+        !!defaultVoucherId &&
+        (defaultVoucherId === profile.id || friends.some((friend) => friend.id === defaultVoucherId));
+    const effectiveDefaultVoucherId = hasValidDefaultVoucher ? (defaultVoucherId as string) : profile.id;
     const currencySymbol = getCurrencySymbol(currency);
 
     async function refreshFriendsList() {
@@ -133,7 +132,7 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
             }
 
             if (defaultVoucherId === friendId) {
-                setDefaultVoucherId(null);
+                setDefaultVoucherId(profile.id);
             }
 
             await refreshFriendsList();
@@ -379,19 +378,17 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                                 Default Voucher
                             </Label>
                             <Select
-                                value={effectiveDefaultVoucherId ?? NONE_VOUCHER_VALUE}
-                                onValueChange={(value) =>
-                                    setDefaultVoucherId(value === NONE_VOUCHER_VALUE ? null : value)
-                                }
+                                value={effectiveDefaultVoucherId}
+                                onValueChange={setDefaultVoucherId}
                             >
                                 <SelectTrigger
                                     id="defaultVoucherId"
                                     className="bg-slate-800/40 border-slate-700 text-white w-full"
                                 >
-                                    <SelectValue placeholder="No default voucher" />
+                                    <SelectValue placeholder="Select default voucher" />
                                 </SelectTrigger>
                                 <SelectContent className="bg-slate-900 border-slate-800 text-white">
-                                    <SelectItem value={NONE_VOUCHER_VALUE}>No default voucher</SelectItem>
+                                    <SelectItem value={profile.id}>Myself</SelectItem>
                                     {friends.map((friend) => (
                                         <SelectItem key={friend.id} value={friend.id}>
                                             {friend.username} ({friend.email})

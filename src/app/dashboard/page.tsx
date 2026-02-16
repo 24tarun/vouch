@@ -51,7 +51,7 @@ export default async function DashboardPage() {
             (profileDefaults?.default_pomo_duration_minutes ?? 0) > 0
             ? (profileDefaults?.default_pomo_duration_minutes as number)
             : DEFAULT_POMO_DURATION_MINUTES;
-    const defaultVoucherId = profileDefaults?.default_voucher_id ?? null;
+    const defaultVoucherId = profileDefaults?.default_voucher_id ?? userId ?? null;
     const currency = normalizeCurrency(profileDefaults?.currency);
     const username =
         profileDefaults?.username?.trim() ||

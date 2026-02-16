@@ -42,15 +42,16 @@ export default function NewTaskPage() {
     const router = useRouter();
     const isIOSDevice = isIOS();
     const [friends, setFriends] = useState<Profile[]>([]);
+    const [selfVoucherId, setSelfVoucherId] = useState("");
     const [selectedVoucherId, setSelectedVoucherId] = useState("");
     const [failureCost, setFailureCost] = useState(DEFAULT_FAILURE_COST_EUROS);
     const [currency, setCurrency] = useState<SupportedCurrency>("EUR");
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const effectiveSelectedVoucherId =
-        selectedVoucherId && friends.some((friend) => friend.id === selectedVoucherId)
+        selectedVoucherId && (selectedVoucherId === selfVoucherId || friends.some((friend) => friend.id === selectedVoucherId))
             ? selectedVoucherId
-            : "";
+            : selfVoucherId;
     const currencySymbol = getCurrencySymbol(currency);
 
     // Set default deadline to tomorrow at noon
@@ -77,11 +78,16 @@ export default function NewTaskPage() {
             setFailureCost((profileFailureCostCents / 100).toFixed(2));
             setCurrency(normalizeCurrency(profile?.currency));
 
-            const profileDefaultVoucher = profile?.default_voucher_id ?? null;
+            const resolvedSelfVoucherId = profile?.id ?? "";
+            setSelfVoucherId(resolvedSelfVoucherId);
+            const profileDefaultVoucher = profile?.default_voucher_id ?? resolvedSelfVoucherId;
             const hasValidVoucher =
                 !!profileDefaultVoucher &&
-                normalizedFriends.some((friend) => friend.id === profileDefaultVoucher);
-            setSelectedVoucherId(hasValidVoucher ? profileDefaultVoucher : "");
+                (
+                    profileDefaultVoucher === resolvedSelfVoucherId ||
+                    normalizedFriends.some((friend) => friend.id === profileDefaultVoucher)
+                );
+            setSelectedVoucherId(hasValidVoucher ? profileDefaultVoucher : resolvedSelfVoucherId);
         }
 
         loadData();
@@ -248,41 +254,37 @@ export default function NewTaskPage() {
                             <Label htmlFor="voucherId" className="text-slate-200">
                                 Select Voucher *
                             </Label>
-                            {friends.length === 0 ? (
-                                <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 text-sm">
-                                    You need to add friends before creating a task.{" "}
-                                    <a
-                                        href="/dashboard/settings"
-                                        className="underline hover:text-yellow-200"
-                                    >
-                                        Add friends →
-                                    </a>
-                                </div>
-                            ) : (
-                                <Select
-                                    name="voucherId"
-                                    required
-                                    value={effectiveSelectedVoucherId}
-                                    onValueChange={setSelectedVoucherId}
-                                >
-                                    <SelectTrigger className="bg-slate-700/50 border-slate-600 text-white">
-                                        <SelectValue placeholder="Choose a friend to vouch" />
-                                    </SelectTrigger>
-                                    <SelectContent className="bg-slate-800 border-slate-700">
-                                        {friends.map((friend) => (
-                                            <SelectItem
-                                                key={friend.id}
-                                                value={friend.id}
-                                                className="text-white hover:bg-slate-700"
-                                            >
-                                                {friend.username} ({friend.email})
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            )}
+                            <Select
+                                name="voucherId"
+                                required
+                                value={effectiveSelectedVoucherId}
+                                onValueChange={setSelectedVoucherId}
+                            >
+                                <SelectTrigger className="bg-slate-700/50 border-slate-600 text-white">
+                                    <SelectValue placeholder="Choose yourself or a friend to vouch" />
+                                </SelectTrigger>
+                                <SelectContent className="bg-slate-800 border-slate-700">
+                                    {selfVoucherId && (
+                                        <SelectItem
+                                            value={selfVoucherId}
+                                            className="text-white hover:bg-slate-700"
+                                        >
+                                            Myself
+                                        </SelectItem>
+                                    )}
+                                    {friends.map((friend) => (
+                                        <SelectItem
+                                            key={friend.id}
+                                            value={friend.id}
+                                            className="text-white hover:bg-slate-700"
+                                        >
+                                            {friend.username} ({friend.email})
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                             <p className="text-xs text-slate-500">
-                                Your voucher will verify task completion
+                                Your voucher can be yourself or a friend
                             </p>
                         </div>
 
@@ -305,7 +307,7 @@ export default function NewTaskPage() {
                             </Button>
                             <Button
                                 type="submit"
-                                disabled={isLoading || friends.length === 0}
+                                disabled={isLoading}
                                 className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
                             >
                                 {isLoading ? "Creating..." : "🚀 Create Task"}
@@ -317,4 +319,3 @@ export default function NewTaskPage() {
         </div>
     );
 }
-

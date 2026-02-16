@@ -409,8 +409,8 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
         .eq("id", user.id)
         .maybeSingle();
 
-    // Default configuration for simple tasks
-    // Use default voucher if valid, otherwise fallback to first friend.
+    // Default configuration for simple tasks.
+    // Use preferred voucher if valid (self/friend), otherwise fallback to self.
     // @ts-ignore
     const { data: friends } = await supabase
         .from("friendships")
@@ -420,17 +420,15 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
     const friendIds = new Set(((friends as any[]) || []).map((f) => f.friend_id));
     const preferredVoucherId = (profileDefaults as any)?.default_voucher_id as string | null | undefined;
     const defaultVoucherId =
-        preferredVoucherId && friendIds.has(preferredVoucherId)
+        preferredVoucherId === user.id
+            ? user.id
+            : preferredVoucherId && friendIds.has(preferredVoucherId)
             ? preferredVoucherId
-            : (friends as any)?.[0]?.friend_id;
+            : user.id;
 
     const defaultFailureCostCents =
         ((profileDefaults as any)?.default_failure_cost_cents as number | undefined) ??
         DEFAULT_FAILURE_COST_CENTS;
-
-    if (!defaultVoucherId) {
-        throw new Error("You need at least one friend to create a task.");
-    }
 
     // Default params: Deadline = End of today
     const deadline = getDefaultTaskDeadline();
@@ -552,17 +550,19 @@ export async function createTask(formData: FormData) {
         return { error: "Failure cost must be between 0.01 and 100." };
     }
 
-    // Verify voucher is a friend
-    // @ts-ignore
-    const { data: friendship } = await supabase
-        .from("friendships")
-        .select("*")
-        .eq("user_id", (user as any).id)
-        .eq("friend_id", voucherId as any)
-        .single();
+    // Verify voucher is self or a friend.
+    if (voucherId !== (user as any).id) {
+        // @ts-ignore
+        const { data: friendship } = await supabase
+            .from("friendships")
+            .select("*")
+            .eq("user_id", (user as any).id)
+            .eq("friend_id", voucherId as any)
+            .single();
 
-    if (!friendship) {
-        return { error: "You can only assign friends as vouchers" };
+        if (!friendship) {
+            return { error: "You can only assign yourself or friends as vouchers" };
+        }
     }
 
     const recurrenceType = formData.get("recurrenceType") as string;
@@ -802,6 +802,55 @@ export async function markTaskCompleteWithProofIntent(
         }
     }
 
+    const isSelfVouched = (task as any).voucher_id === (user as any).id;
+    const nowIso = new Date().toISOString();
+
+    if (isSelfVouched) {
+        const cleanup = await deleteTaskProof(taskId, "self_vouch_auto_accept");
+        if (!cleanup.success) {
+            return { error: cleanup.error || "Could not clear previous proof media." };
+        }
+
+        const { data: updatedRows, error: updateError } = await (supabase.from("tasks") as any)
+            .update({
+                status: "COMPLETED",
+                marked_completed_at: nowIso,
+                voucher_response_deadline: null,
+                updated_at: nowIso,
+            } as any)
+            .eq("id", taskId as any)
+            .eq("user_id", (user as any).id)
+            .in("status", ["CREATED", "POSTPONED"] as any)
+            .gt("deadline", nowIso)
+            .select("id");
+
+        if (updateError) {
+            return { error: updateError.message };
+        }
+
+        if (!updatedRows || updatedRows.length === 0) {
+            return { error: "Task can no longer be marked complete. Please refresh." };
+        }
+
+        await (supabase.from("task_events") as any).insert({
+            task_id: taskId as any,
+            event_type: "MARK_COMPLETE",
+            actor_id: (user as any).id,
+            from_status: (task as any).status,
+            to_status: "COMPLETED",
+            metadata: {
+                self_vouched: true,
+                auto_accepted: true,
+            },
+        });
+
+        invalidateActiveTasksCache((user as any).id);
+        invalidatePendingVoucherRequestsCache((task as any).voucher_id);
+        revalidatePath("/dashboard/friends");
+        revalidatePath(`/dashboard/tasks/${taskId}`);
+        return { success: true };
+    }
+
     const proofValidation = validateProofIntent(rawProofIntent);
     if (proofValidation.error) {
         return { error: proofValidation.error };
@@ -809,7 +858,6 @@ export async function markTaskCompleteWithProofIntent(
 
     const proofIntent = proofValidation.proofIntent;
     const voucherResponseDeadline = getVoucherResponseDeadlineUtc(new Date(), userTimeZone);
-    const nowIso = new Date().toISOString();
 
     // @ts-ignore
     const { data: updatedRows, error } = await (supabase.from("tasks") as any)

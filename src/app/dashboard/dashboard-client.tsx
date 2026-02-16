@@ -448,6 +448,7 @@ export default function DashboardClient({
         setTaskCompleting(task.id, true);
 
         const now = new Date();
+        const isSelfVouched = task.voucher_id === userId;
         const voucherResponseDeadline = getVoucherResponseDeadlineLocal(now);
         const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
         const proofDraft = proofByTaskId[task.id] || null;
@@ -458,9 +459,9 @@ export default function DashboardClient({
         const nowIso = now.toISOString();
         const optimisticTask: Task = {
             ...task,
-            status: "AWAITING_VOUCHER",
+            status: isSelfVouched ? "COMPLETED" : "AWAITING_VOUCHER",
             marked_completed_at: nowIso,
-            voucher_response_deadline: voucherResponseDeadline.toISOString(),
+            voucher_response_deadline: isSelfVouched ? null : voucherResponseDeadline.toISOString(),
             updated_at: nowIso,
         };
 
@@ -481,7 +482,16 @@ export default function DashboardClient({
                 setCompletedTasks(snapshot.completedTasks);
             },
             onSuccess: () => {
-                if (!proofIntent) {
+                if (isSelfVouched) {
+                    setTaskProofDraft(task.id, null);
+                    setProofUploadErrors((prev) => {
+                        if (!prev[task.id]) return prev;
+                        const next = { ...prev };
+                        delete next[task.id];
+                        return next;
+                    });
+                    void purgeLocalProofMedia(task.id);
+                } else if (!proofIntent) {
                     void purgeLocalProofMedia(task.id);
                 }
                 refreshInBackground();
@@ -492,7 +502,7 @@ export default function DashboardClient({
             refreshInBackground();
         }
 
-        if (result.ok && proofDraft) {
+        if (result.ok && proofDraft && !isSelfVouched) {
             const mutationResult = result.result as { proofUploadTarget?: ProofUploadTarget } | undefined;
             const uploadTarget = mutationResult?.proofUploadTarget;
 
@@ -645,6 +655,7 @@ export default function DashboardClient({
                 defaultFailureCostEuros={defaultFailureCostEuros}
                 defaultCurrency={currency}
                 defaultVoucherId={defaultVoucherId}
+                selfUserId={userId}
                 onCreateTaskOptimistic={handleCreateTaskOptimistic}
             />
             {!tipsHidden && (
