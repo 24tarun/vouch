@@ -28,6 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/lib/types";
 import { getCurrencySymbol, type SupportedCurrency } from "@/lib/currency";
+import { toast } from "sonner";
 import {
     fromDateTimeLocalValue,
     toDateTimeLocalValue,
@@ -43,15 +44,21 @@ function parseTimeToken(token: string, allowHourOnly: boolean) {
         hours = Number.parseInt(colonMatch[1], 10);
         minutes = Number.parseInt(colonMatch[2], 10);
     } else {
-        const compactMatch = normalized.match(/^(\d{4})$/);
-        if (compactMatch) {
-            hours = Number.parseInt(compactMatch[1].slice(0, 2), 10);
-            minutes = Number.parseInt(compactMatch[1].slice(2, 4), 10);
-        } else if (allowHourOnly) {
-            const hourOnlyMatch = normalized.match(/^(\d{1,2})$/);
-            if (hourOnlyMatch) {
-                hours = Number.parseInt(hourOnlyMatch[1], 10);
-                minutes = 0;
+        const compactFourMatch = normalized.match(/^(\d{4})$/);
+        if (compactFourMatch) {
+            hours = Number.parseInt(compactFourMatch[1].slice(0, 2), 10);
+            minutes = Number.parseInt(compactFourMatch[1].slice(2, 4), 10);
+        } else {
+            const compactThreeMatch = normalized.match(/^(\d{3})$/);
+            if (compactThreeMatch) {
+                hours = Number.parseInt(compactThreeMatch[1].slice(0, 1), 10);
+                minutes = Number.parseInt(compactThreeMatch[1].slice(1, 3), 10);
+            } else if (allowHourOnly) {
+                const hourOnlyMatch = normalized.match(/^(\d{1,2})$/);
+                if (hourOnlyMatch) {
+                    hours = Number.parseInt(hourOnlyMatch[1], 10);
+                    minutes = 0;
+                }
             }
         }
     }
@@ -69,6 +76,28 @@ function parseTimerMinutesToken(text: string): number | null {
     const parsed = Number.parseInt(match[1], 10);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) return null;
     return parsed;
+}
+
+function formatTimeUntilDeadline(deadline: Date, now: Date = new Date()): string {
+    const diffMs = deadline.getTime() - now.getTime();
+    const totalMinutes = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const remainingAfterDays = totalMinutes % (24 * 60);
+    const hours = Math.floor(remainingAfterDays / 60);
+    const minutes = remainingAfterDays % 60;
+    const parts: string[] = [];
+
+    if (days > 0) {
+        parts.push(`${days} ${days === 1 ? "day" : "days"}`);
+    }
+    if (hours > 0) {
+        parts.push(`${hours} ${hours === 1 ? "hour" : "hours"}`);
+    }
+    if (minutes > 0 || parts.length === 0) {
+        parts.push(`${minutes} ${minutes === 1 ? "min" : "mins"}`);
+    }
+
+    return `${parts.join(" ")} until deadline`;
 }
 
 interface TaskInputProps {
@@ -382,7 +411,7 @@ export function TaskInput({
                 setSelectedDate(timerDeadline);
                 setDeadlineError(null);
             } else {
-                const timeMatch = title.match(/@(\d{1,2}:\d{2}|\d{4}|\d{1,2})/);
+                const timeMatch = title.match(/@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/);
                 if (timeMatch) {
                     const parsed = parseTimeToken(timeMatch[1], true);
                     if (parsed) {
@@ -420,7 +449,7 @@ export function TaskInput({
 
     const stripMetadata = (text: string) => {
         return text
-            .replace(/@(?:\d{1,2}:\d{2}|\d{4}|\d{1,2})/g, "")
+            .replace(/@(?:\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g, "")
             .replace(/\bremind\s+(?:\d{1,2}:\d{2}|\d{4})\b/gi, "")
             .replace(/vouch\s+\w+/gi, "")
             .replace(/\bpomo\s+\d+\b/gi, "")
@@ -506,9 +535,11 @@ export function TaskInput({
             recurrenceDays: recurrenceDaysToUse,
             userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         };
+        const timeUntilDeadline = formatTimeUntilDeadline(deadlineToSubmit);
 
         if (onCreateTaskOptimistic) {
             onCreateTaskOptimistic(payload);
+            toast.success(timeUntilDeadline);
             setTitle("");
             setRecurrenceType("");
             setRecurrenceLabel("");
@@ -548,6 +579,7 @@ export function TaskInput({
             if (result?.error) {
                 console.error("Failed to create task", result.error);
             } else {
+                toast.success(timeUntilDeadline);
                 setTitle("");
                 setRecurrenceType("");
                 setRecurrenceLabel("");
