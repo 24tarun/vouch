@@ -405,6 +405,7 @@ export async function getCachedPendingVouchRequestsForVoucher(voucherId: string)
                     user:profiles!tasks_user_id_fkey(*)
                 `)
                 .eq("voucher_id", voucherId as any)
+                .neq("user_id", voucherId as any)
                 .in("status", PENDING_VOUCH_REQUEST_STATUSES as any)
                 .order("updated_at", { ascending: false });
 
@@ -481,6 +482,7 @@ export async function getCachedPendingVouchCountForVoucher(voucherId: string) {
             const { count, error } = await (supabaseAdmin.from("tasks") as any)
                 .select("*", { count: "exact", head: true })
                 .eq("voucher_id", voucherId as any)
+                .neq("user_id", voucherId as any)
                 .in("status", AWAITING_PENDING_STATUSES as any);
 
             if (error) {
@@ -534,6 +536,7 @@ export async function getAssignedTasksForVoucher() {
       user:profiles!tasks_user_id_fkey(*)
     `)
         .eq("voucher_id", (user as any).id)
+        .neq("user_id", (user as any).id)
         .in("status", allowedStatuses)
         .order("deadline", { ascending: true });
 
@@ -565,6 +568,7 @@ export async function getFailedTasks() {
       user:profiles!tasks_user_id_fkey(*)
     `)
         .eq("voucher_id", (user as any).id)
+        .neq("user_id", (user as any).id)
         .eq("status", "FAILED")
         .order("updated_at", { ascending: false });
 
@@ -611,6 +615,7 @@ export async function getVouchHistoryPage(offsetInput: number, limitInput: numbe
             user:profiles!tasks_user_id_fkey(*)
         `)
         .eq("voucher_id", (user as any).id)
+        .neq("user_id", (user as any).id)
         .in("status", FINAL_HISTORY_STATUSES)
         .order("updated_at", { ascending: false })
         .range(rangeFrom, rangeTo);
@@ -682,6 +687,7 @@ export async function getVouchHistory() {
       user:profiles!tasks_user_id_fkey(*)
     `)
         .eq("voucher_id", (user as any).id)
+        .neq("user_id", (user as any).id)
         .in("status", FINAL_HISTORY_STATUSES)
         .order("updated_at", { ascending: false });
 
