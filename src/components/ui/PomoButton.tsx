@@ -29,6 +29,10 @@ export function PomoButton({
             : DEFAULT_POMO_DURATION_MINUTES;
     const [durationInput, setDurationInput] = useState(String(normalizedDefaultDuration));
     const isActive = session?.task_id === taskId && session?.status === "ACTIVE";
+    const iconButtonClass = cn(
+        "inline-flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+        className
+    );
 
     useEffect(() => {
         setDurationInput(String(normalizedDefaultDuration));
@@ -57,16 +61,16 @@ export function PomoButton({
         await startSession(taskId, minutes);
     };
 
-    if (isActive) {
-        return (
-            <div className={cn("text-cyan-400 animate-pulse flex items-center gap-2", className)}>
-                <Timer className="w-4 h-4" />
-                {variant === "full" && <span className="text-xs font-mono">Running</span>}
-            </div>
-        );
-    }
-
     if (variant === "full") {
+        if (isActive) {
+            return (
+                <div className={cn("text-cyan-400 animate-pulse flex items-center gap-2", className)}>
+                    <Timer className="w-4 h-4" />
+                    <span className="text-xs font-mono">Running</span>
+                </div>
+            );
+        }
+
         return (
             <div
                 className={cn(
@@ -108,13 +112,16 @@ export function PomoButton({
     return (
         <button
             type="button"
-            disabled={isLoading}
+            disabled={isLoading || isActive}
             onClick={() => void startSession(taskId, normalizedDefaultDuration)}
             className={cn(
-                "text-slate-500 hover:text-cyan-400 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed",
-                className
+                iconButtonClass,
+                isActive
+                    ? "text-cyan-400 animate-pulse"
+                    : "text-slate-500 hover:text-cyan-400"
             )}
-            title={`Start ${normalizedDefaultDuration} minute focus session`}
+            title={isActive ? "Pomodoro running" : `Start ${normalizedDefaultDuration} minute focus session`}
+            aria-label={isActive ? "Pomodoro running" : "Start pomodoro"}
         >
             <Timer className="w-4 h-4" />
         </button>
