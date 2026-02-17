@@ -131,6 +131,7 @@ async function insertGeneratedReminders(
     );
 
     if (reminderIsos.length === 0) return;
+    const nowIso = new Date().toISOString();
 
     const { error } = await (supabase.from("task_reminders") as any).insert(
         reminderIsos.map((reminderIso) => ({
@@ -139,6 +140,8 @@ async function insertGeneratedReminders(
             reminder_at: reminderIso,
             source: MANUAL_REMINDER_SOURCE,
             notified_at: null,
+            created_at: nowIso,
+            updated_at: nowIso,
         }))
     );
 
@@ -187,9 +190,15 @@ async function insertDefaultDeadlineRemindersForGeneratedTask(
         now: new Date(),
     });
     if (seededRows.length === 0) return;
+    const nowIso = new Date().toISOString();
+    const seededRowsWithTimestamps = seededRows.map((row) => ({
+        ...row,
+        created_at: row.created_at ?? nowIso,
+        updated_at: row.updated_at ?? nowIso,
+    }));
 
     const { error } = await (supabase.from("task_reminders") as any).upsert(
-        seededRows,
+        seededRowsWithTimestamps,
         {
             onConflict: "parent_task_id,reminder_at",
             ignoreDuplicates: true,

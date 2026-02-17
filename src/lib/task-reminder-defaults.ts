@@ -65,8 +65,8 @@ export function buildDefaultDeadlineReminderRows({
             reminder_at: reminderIso,
             source,
             notified_at: isPast ? seededNowIso : null,
-            created_at: isPast ? seededNowIso : undefined,
-            updated_at: isPast ? seededNowIso : undefined,
+            created_at: seededNowIso,
+            updated_at: seededNowIso,
         });
     };
 

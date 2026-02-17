@@ -371,10 +371,16 @@ async function insertTaskReminderRows(
     options?: { ignoreDuplicates?: boolean }
 ): Promise<{ error?: string }> {
     if (rows.length === 0) return {};
+    const nowIso = new Date().toISOString();
+    const normalizedRows = rows.map((row) => ({
+        ...row,
+        created_at: row.created_at ?? nowIso,
+        updated_at: row.updated_at ?? nowIso,
+    }));
 
     if (options?.ignoreDuplicates) {
         const { error } = await (supabase.from("task_reminders") as any).upsert(
-            rows,
+            normalizedRows,
             {
                 onConflict: "parent_task_id,reminder_at",
                 ignoreDuplicates: true,
@@ -386,7 +392,7 @@ async function insertTaskReminderRows(
         return {};
     }
 
-    const { error } = await (supabase.from("task_reminders") as any).insert(rows);
+    const { error } = await (supabase.from("task_reminders") as any).insert(normalizedRows);
     if (error) {
         return { error: error.message };
     }
@@ -1387,7 +1393,7 @@ export async function replaceTaskReminders(taskId: string, remindersIso: string[
     }
 
     const { data: existingReminders, error: existingError } = await (supabase.from("task_reminders") as any)
-        .select("id, reminder_at, source")
+        .select("id, reminder_at, source, created_at")
         .eq("parent_task_id", taskId as any)
         .eq("user_id", user.id as any);
 
@@ -1401,19 +1407,25 @@ export async function replaceTaskReminders(taskId: string, remindersIso: string[
         .sort((a, b) => a.getTime() - b.getTime());
     const nextFutureIsoSet = new Set(nextFutureReminders.map((date) => date.toISOString()));
     const existingSourceByReminderIso = new Map<string, string>();
-    for (const row of ((existingReminders as Array<{ reminder_at: string; source?: string | null }> | null) || [])) {
+    const existingCreatedAtByReminderIso = new Map<string, string>();
+    for (const row of ((existingReminders as Array<{ reminder_at: string; source?: string | null; created_at: string }> | null) || [])) {
         const reminderDate = new Date(row.reminder_at);
         if (Number.isNaN(reminderDate.getTime())) continue;
-        existingSourceByReminderIso.set(reminderDate.toISOString(), row.source || MANUAL_REMINDER_SOURCE);
+        const reminderIso = reminderDate.toISOString();
+        existingSourceByReminderIso.set(reminderIso, row.source || MANUAL_REMINDER_SOURCE);
+        existingCreatedAtByReminderIso.set(reminderIso, row.created_at);
     }
 
     if (nextFutureReminders.length > 0) {
+        const nowIso = new Date().toISOString();
         const upsertRows = nextFutureReminders.map((reminderDate) => ({
-            parent_task_id: taskId,
-            user_id: user.id,
             reminder_at: reminderDate.toISOString(),
             source: existingSourceByReminderIso.get(reminderDate.toISOString()) || MANUAL_REMINDER_SOURCE,
+            parent_task_id: taskId,
+            user_id: user.id,
             notified_at: null,
+            created_at: existingCreatedAtByReminderIso.get(reminderDate.toISOString()) || nowIso,
+            updated_at: nowIso,
         }));
 
         const { error: upsertError } = await (supabase.from("task_reminders") as any).upsert(
