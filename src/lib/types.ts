@@ -177,6 +177,7 @@ export interface RecurrenceRule {
     rule_config: RecurrenceRuleConfig;
     timezone: string;
     active: boolean;
+    manual_reminder_offsets_ms?: number[] | null;
     last_generated_date: string | null; // YYYY-MM-DD
     created_at: string;
     updated_at: string;

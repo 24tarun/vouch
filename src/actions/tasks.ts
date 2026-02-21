@@ -242,6 +242,25 @@ function normalizeRemindersFromFormData(
     }
 }
 
+function buildManualReminderOffsetsFromDeadline(deadline: Date, reminderDates: Date[]): number[] {
+    const deadlineMs = deadline.getTime();
+    if (Number.isNaN(deadlineMs)) return [];
+
+    const offsets = new Set<number>();
+    for (const reminderDate of reminderDates) {
+        const reminderMs = reminderDate.getTime();
+        if (Number.isNaN(reminderMs)) continue;
+
+        const offsetMs = reminderMs - deadlineMs;
+        if (!Number.isFinite(offsetMs)) continue;
+        if (offsetMs > 0) continue;
+
+        offsets.add(offsetMs);
+    }
+
+    return Array.from(offsets.values()).sort((a, b) => a - b);
+}
+
 function parseRequiredPomoMinutesFromFormData(
     formValue: FormDataEntryValue | null
 ): { requiredPomoMinutes: number | null; error?: string } {
@@ -602,6 +621,10 @@ export async function createTask(formData: FormData) {
     if (remindersInput.error) {
         return { error: remindersInput.error };
     }
+    const manualReminderOffsetsMs = buildManualReminderOffsetsFromDeadline(
+        validatedDeadline,
+        remindersInput.reminderDates
+    );
 
     if (failureCostEuros < 0.01 || failureCostEuros > 100) {
         return { error: "Failure cost must be between 0.01 and 100." };
@@ -668,6 +691,7 @@ export async function createTask(formData: FormData) {
                 rule_config: ruleConfig,
                 timezone: userTimezone,
                 active: true,
+                manual_reminder_offsets_ms: manualReminderOffsetsMs,
                 // Set last_generated_date to the date part of the deadline in user's timezone
                 // This prevents immediate regeneration of the task we are about to create manually
                 last_generated_date: new Intl.DateTimeFormat("en-CA", {

@@ -105,6 +105,31 @@ async function getLatestReminderOffsetsForRule(
     return Array.from(offsets.values()).sort((a, b) => a - b);
 }
 
+function sanitizeManualReminderOffsets(rawOffsets: unknown): number[] {
+    if (!Array.isArray(rawOffsets)) return [];
+
+    const offsets = new Set<number>();
+    for (const value of rawOffsets) {
+        if (typeof value !== "number") continue;
+        if (!Number.isFinite(value)) continue;
+        if (value > 0) continue;
+        offsets.add(value);
+    }
+
+    return Array.from(offsets.values()).sort((a, b) => a - b);
+}
+
+async function getReminderOffsetsForRule(
+    rule: RecurrenceRule,
+    supabase: any
+): Promise<number[]> {
+    if (rule.manual_reminder_offsets_ms != null) {
+        return sanitizeManualReminderOffsets(rule.manual_reminder_offsets_ms);
+    }
+
+    return getLatestReminderOffsetsForRule(rule.id, supabase);
+}
+
 async function insertGeneratedReminders(
     supabase: any,
     taskId: string,
@@ -368,7 +393,7 @@ async function processRule(
 
     if (shouldRun) {
         console.log(`Generating task for rule ${rule.id} on ${currentLocalDateStr}`);
-        const reminderOffsetsMs = await getLatestReminderOffsetsForRule(rule.id, supabase);
+        const reminderOffsetsMs = await getReminderOffsetsForRule(rule, supabase);
 
         // Construct Deadline: Current Local Date + time_of_day -> UTC
         const [hours, minutes] = time_of_day.split(':').map(Number);
