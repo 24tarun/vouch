@@ -13,6 +13,7 @@ import {
 import { setDashboardTipsHidden } from "@/actions/auth";
 import { DashboardHeaderActions, type DashboardSortMode } from "@/components/DashboardHeaderActions";
 import { TaskInput, type TaskInputCreatePayload } from "@/components/TaskInput";
+import { PostponeDeadlineDialog } from "@/components/PostponeDeadlineDialog";
 import { TaskRow } from "@/components/TaskRow";
 import { CollapsibleCompletedList } from "@/components/CollapsibleCompletedList";
 import { TaskDetailPrefetcher } from "@/components/TaskDetailPrefetcher";
@@ -168,6 +169,7 @@ export default function DashboardClient({
     const [completedTasks, setCompletedTasks] = useState<Task[]>(split.completed.slice(0, MAX_COMPLETED_TASKS));
     const [completingTaskIds, setCompletingTaskIds] = useState<Set<string>>(new Set());
     const [postponingTaskIds, setPostponingTaskIds] = useState<Set<string>>(new Set());
+    const [postponeDialogTaskId, setPostponeDialogTaskId] = useState<string | null>(null);
     const [deletingTaskIds, setDeletingTaskIds] = useState<Set<string>>(new Set());
     const [proofByTaskId, setProofByTaskId] = useState<Record<string, TaskProofDraft>>({});
     const [proofUploadErrors, setProofUploadErrors] = useState<Record<string, string>>({});
@@ -178,6 +180,21 @@ export default function DashboardClient({
     const proofByTaskIdRef = useRef<Record<string, TaskProofDraft>>({});
     const proofPickerTaskIdRef = useRef<string | null>(null);
     const sortedActiveTasks = useMemo(() => sortActiveTasks(activeTasks, sortMode), [activeTasks, sortMode]);
+    const postponeDialogTask = useMemo(() => {
+        if (!postponeDialogTaskId) return null;
+        return activeTasks.find((task) => task.id === postponeDialogTaskId) || null;
+    }, [activeTasks, postponeDialogTaskId]);
+    const canPostponeDialogTask = useMemo(() => {
+        if (!postponeDialogTask) return false;
+        return (
+            postponeDialogTask.status === "CREATED" &&
+            !postponeDialogTask.postponed_at
+        );
+    }, [postponeDialogTask]);
+    const isPostponeDialogOpen = Boolean(
+        postponeDialogTask &&
+        canPostponeDialogTask
+    );
 
     useEffect(() => {
         setActiveTasks(split.active);
@@ -614,16 +631,18 @@ export default function DashboardClient({
         setTaskDeleting(task.id, false);
     };
 
-    const handlePostponeTaskOptimistic = async (task: Task) => {
-        if (postponingTaskIds.has(task.id) || task.id.startsWith("temp-")) return;
-        if (!["CREATED", "POSTPONED"].includes(task.status)) return;
-        if (task.postponed_at) return;
+    const handlePostponeTaskOptimistic = async (task: Task, newDeadlineIso: string): Promise<boolean> => {
+        if (postponingTaskIds.has(task.id) || task.id.startsWith("temp-")) return false;
+        if (!["CREATED", "POSTPONED"].includes(task.status)) return false;
+        if (task.postponed_at) return false;
         const currentDeadline = new Date(task.deadline);
-        if (Number.isNaN(currentDeadline.getTime()) || currentDeadline.getTime() <= Date.now()) return;
+        const selectedDeadline = new Date(newDeadlineIso);
+        if (Number.isNaN(currentDeadline.getTime()) || currentDeadline.getTime() <= Date.now()) return false;
+        if (Number.isNaN(selectedDeadline.getTime()) || selectedDeadline.getTime() <= Date.now()) return false;
 
         setTaskPostponing(task.id, true);
         const nowIso = new Date().toISOString();
-        const optimisticDeadlineIso = new Date(currentDeadline.getTime() + 60 * 60 * 1000).toISOString();
+        const optimisticDeadlineIso = selectedDeadline.toISOString();
 
         const result = await runOptimisticMutation({
             captureSnapshot: () => ({
@@ -645,7 +664,7 @@ export default function DashboardClient({
                     )
                 );
             },
-            runMutation: () => postponeTask(task.id),
+            runMutation: () => postponeTask(task.id, optimisticDeadlineIso),
             rollback: (snapshot) => {
                 setActiveTasks(snapshot.activeTasks);
                 setCompletedTasks(snapshot.completedTasks);
@@ -660,6 +679,23 @@ export default function DashboardClient({
         }
 
         setTaskPostponing(task.id, false);
+        return result.ok;
+    };
+
+    const handlePostponeTaskClick = (task: Task) => {
+        if (postponingTaskIds.has(task.id) || task.id.startsWith("temp-")) return;
+        if (task.status !== "CREATED" || task.postponed_at) return;
+        const currentDeadline = new Date(task.deadline);
+        if (Number.isNaN(currentDeadline.getTime()) || currentDeadline.getTime() <= Date.now()) return;
+        setPostponeDialogTaskId(task.id);
+    };
+
+    const handlePostponeConfirm = async (newDeadlineIso: string) => {
+        if (!postponeDialogTask || !canPostponeDialogTask) return;
+        const success = await handlePostponeTaskOptimistic(postponeDialogTask, newDeadlineIso);
+        if (success) {
+            setPostponeDialogTaskId(null);
+        }
     };
 
     const handleToggleTips = async () => {
@@ -742,7 +778,7 @@ export default function DashboardClient({
                             onAttachProof={openTaskProofPicker}
                             hasProofAttached={Boolean(proofByTaskId[task.id])}
                             proofUploadError={proofUploadErrors[task.id] || null}
-                            onPostpone={handlePostponeTaskOptimistic}
+                            onPostpone={handlePostponeTaskClick}
                             isPostponing={postponingTaskIds.has(task.id)}
                             defaultPomoDurationMinutes={defaultPomoDurationMinutes}
                             onDelete={handleDeleteTaskOptimistic}
@@ -759,6 +795,18 @@ export default function DashboardClient({
                 accept="image/*,video/*"
                 className="hidden"
                 onChange={handleProofInputChange}
+            />
+
+            <PostponeDeadlineDialog
+                open={isPostponeDialogOpen}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setPostponeDialogTaskId(null);
+                    }
+                }}
+                currentDeadlineIso={postponeDialogTask?.deadline || null}
+                isSubmitting={postponeDialogTask ? postponingTaskIds.has(postponeDialogTask.id) : false}
+                onConfirm={handlePostponeConfirm}
             />
 
             {completedTasks.length > 0 && (

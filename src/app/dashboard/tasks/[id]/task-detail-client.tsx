@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { PostponeDeadlineDialog } from "@/components/PostponeDeadlineDialog";
 import type { TaskWithRelations, TaskEvent } from "@/lib/types";
 import { PomoButton } from "@/components/ui/PomoButton";
 import { localDateTimeToIso } from "@/lib/datetime-local";
@@ -125,6 +126,7 @@ export default function TaskDetailClient({
     const [proofDraft, setProofDraft] = useState<TaskProofDraft | null>(null);
     const [proofUploadError, setProofUploadError] = useState<string | null>(null);
     const [isStoredProofFullscreen, setIsStoredProofFullscreen] = useState(false);
+    const [isPostponeDialogOpen, setIsPostponeDialogOpen] = useState(false);
     const newSubtaskInputRef = useRef<HTMLInputElement>(null);
     const proofInputRef = useRef<HTMLInputElement>(null);
     const proofPreviewUrlRef = useRef<string | null>(null);
@@ -908,35 +910,40 @@ export default function TaskDetailClient({
         setActionPending("removeStoredProof", false);
     }
 
-    async function handlePostpone() {
-        if (isActionPending("postpone")) return;
+    async function handlePostpone(newDeadlineIso: string): Promise<boolean> {
+        if (isActionPending("postpone")) return false;
         if (isOverdue) {
             toast.error("Cannot postpone an overdue task.");
-            return;
+            return false;
         }
 
         const currentDeadline = new Date(taskState.deadline);
         if (Number.isNaN(currentDeadline.getTime()) || currentDeadline.getTime() <= Date.now()) {
             toast.error("Cannot postpone this task.");
-            return;
+            return false;
         }
-        const newDeadlineIso = new Date(currentDeadline.getTime() + 60 * 60 * 1000).toISOString();
+        const selectedDeadline = new Date(newDeadlineIso);
+        if (Number.isNaN(selectedDeadline.getTime()) || selectedDeadline.getTime() <= Date.now()) {
+            toast.error("Deadline must be in the future.");
+            return false;
+        }
+        const optimisticDeadlineIso = selectedDeadline.toISOString();
 
         setActionPending("postpone", true);
         const optimisticUpdatedAt = new Date().toISOString();
 
-        await runOptimisticMutation({
+        const result = await runOptimisticMutation({
             captureSnapshot: () => ({ taskState }),
             applyOptimistic: () => {
                 setTaskState((prev) => ({
                     ...prev,
                     status: "POSTPONED",
-                    deadline: newDeadlineIso,
+                    deadline: optimisticDeadlineIso,
                     postponed_at: optimisticUpdatedAt,
                     updated_at: optimisticUpdatedAt,
                 }));
             },
-            runMutation: () => postponeTask(taskState.id),
+            runMutation: () => postponeTask(taskState.id, optimisticDeadlineIso),
             rollback: (snapshot) => {
                 setTaskState(snapshot.taskState);
             },
@@ -945,7 +952,14 @@ export default function TaskDetailClient({
             },
         });
 
+        if (!result.ok) {
+            refreshInBackground();
+        } else {
+            setIsPostponeDialogOpen(false);
+        }
+
         setActionPending("postpone", false);
+        return result.ok;
     }
 
     async function handleAddSubtask(e: React.FormEvent<HTMLFormElement>) {
@@ -1656,11 +1670,11 @@ export default function TaskDetailClient({
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    onClick={handlePostpone}
+                                    onClick={() => setIsPostponeDialogOpen(true)}
                                     disabled={isActionPending("postpone")}
                                     className="h-9 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300 disabled:opacity-60"
                                 >
-                                    {isActionPending("postpone") ? "Postponing..." : "Postpone (1x only)"}
+                                    {isActionPending("postpone") ? "Postponing..." : "Postpone deadline (1x only)"}
                                 </Button>
                             )}
 
@@ -1842,6 +1856,14 @@ export default function TaskDetailClient({
                     )}
                 </CardContent>
             </Card>
+
+            <PostponeDeadlineDialog
+                open={isPostponeDialogOpen}
+                onOpenChange={setIsPostponeDialogOpen}
+                currentDeadlineIso={taskState.deadline}
+                isSubmitting={isActionPending("postpone")}
+                onConfirm={(newDeadlineIso) => handlePostpone(newDeadlineIso)}
+            />
 
             {isStoredProofFullscreen && storedProof && storedProofSrc && (
                 <div

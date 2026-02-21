@@ -416,7 +416,7 @@ export function TaskRow({
                         : "text-slate-500 cursor-not-allowed"
                 )}
                 aria-label="Postpone task"
-                title={canPostpone ? "Postpone by 1 hour" : "Postpone unavailable"}
+                title={canPostpone ? "Postpone deadline (1x only)" : "Postpone unavailable"}
             >
                 <TriangleAlert className="h-[18px] w-[18px]" />
             </Button>

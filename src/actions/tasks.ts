@@ -1779,7 +1779,143 @@ export async function deleteTaskSubtask(parentTaskId: string, subtaskId: string)
     return { success: true };
 }
 
-export async function postponeTask(taskId: string, newDeadline?: string) {
+async function realignTaskRemindersAfterPostpone(
+    supabase: SupabaseClient<Database>,
+    taskId: string,
+    userId: string,
+    oldDeadline: Date,
+    newDeadline: Date
+): Promise<{ error?: string }> {
+    const { data: existingReminders, error: existingRemindersError } = await (supabase.from("task_reminders") as any)
+        .select("id, reminder_at, source, created_at, notified_at")
+        .eq("parent_task_id", taskId as any)
+        .eq("user_id", userId as any);
+
+    if (existingRemindersError) {
+        return { error: existingRemindersError.message };
+    }
+
+    const { data: reminderDefaultsProfile, error: reminderDefaultsError } = await (supabase.from("profiles") as any)
+        .select("deadline_one_hour_warning_enabled, deadline_final_warning_enabled")
+        .eq("id", userId as any)
+        .maybeSingle();
+
+    if (reminderDefaultsError) {
+        return { error: reminderDefaultsError.message };
+    }
+
+    const now = new Date();
+    const nowMs = now.getTime();
+    const nowIso = now.toISOString();
+    const deadlineDeltaMs = newDeadline.getTime() - oldDeadline.getTime();
+    const rowsByReminderIso = new Map<string, Database["public"]["Tables"]["task_reminders"]["Insert"]>();
+
+    for (const row of ((existingReminders as Array<{
+        reminder_at: string;
+        source?: string | null;
+        created_at: string;
+    }> | null) || [])) {
+        const reminderMs = new Date(row.reminder_at).getTime();
+        if (Number.isNaN(reminderMs) || reminderMs <= nowMs) {
+            continue;
+        }
+
+        const source = row.source || MANUAL_REMINDER_SOURCE;
+        if (source !== MANUAL_REMINDER_SOURCE) {
+            continue;
+        }
+
+        const shiftedReminderMs = reminderMs + deadlineDeltaMs;
+        if (shiftedReminderMs <= nowMs) {
+            continue;
+        }
+
+        const shiftedReminderIso = new Date(shiftedReminderMs).toISOString();
+        if (rowsByReminderIso.has(shiftedReminderIso)) {
+            continue;
+        }
+
+        rowsByReminderIso.set(shiftedReminderIso, {
+            parent_task_id: taskId,
+            user_id: userId,
+            reminder_at: shiftedReminderIso,
+            source: MANUAL_REMINDER_SOURCE,
+            notified_at: null,
+            created_at: row.created_at || nowIso,
+            updated_at: nowIso,
+        });
+    }
+
+    const defaultReminderRows = buildDefaultDeadlineReminderRows({
+        parentTaskId: taskId,
+        userId,
+        deadline: newDeadline,
+        deadlineOneHourWarningEnabled:
+            ((reminderDefaultsProfile as any)?.deadline_one_hour_warning_enabled as boolean | undefined) ?? true,
+        deadlineFinalWarningEnabled:
+            ((reminderDefaultsProfile as any)?.deadline_final_warning_enabled as boolean | undefined) ?? true,
+        now,
+    });
+
+    for (const row of defaultReminderRows) {
+        const reminderMs = new Date(row.reminder_at).getTime();
+        if (Number.isNaN(reminderMs) || reminderMs <= nowMs) {
+            continue;
+        }
+
+        const reminderIso = new Date(reminderMs).toISOString();
+        if (rowsByReminderIso.has(reminderIso)) {
+            continue;
+        }
+
+        rowsByReminderIso.set(reminderIso, {
+            ...row,
+            notified_at: null,
+            created_at: row.created_at ?? nowIso,
+            updated_at: nowIso,
+        });
+    }
+
+    const nextFutureRows = Array.from(rowsByReminderIso.values());
+    if (nextFutureRows.length > 0) {
+        const { error: upsertError } = await (supabase.from("task_reminders") as any).upsert(
+            nextFutureRows,
+            { onConflict: "parent_task_id,reminder_at" }
+        );
+
+        if (upsertError) {
+            return { error: upsertError.message };
+        }
+    }
+
+    const nextFutureReminderIsoSet = new Set(
+        nextFutureRows.map((row) => new Date(row.reminder_at as string).toISOString())
+    );
+    const reminderIdsToDelete = ((existingReminders as Array<{ id: string; reminder_at: string }> | null) || [])
+        .filter((row) => {
+            const reminderMs = new Date(row.reminder_at).getTime();
+            if (Number.isNaN(reminderMs) || reminderMs <= nowMs) {
+                return false;
+            }
+            return !nextFutureReminderIsoSet.has(new Date(reminderMs).toISOString());
+        })
+        .map((row) => row.id);
+
+    if (reminderIdsToDelete.length > 0) {
+        const { error: deleteError } = await (supabase.from("task_reminders") as any)
+            .delete()
+            .in("id", reminderIdsToDelete as any)
+            .eq("user_id", userId as any);
+
+        if (deleteError) {
+            return { error: deleteError.message };
+        }
+    }
+
+    return {};
+}
+
+export async function postponeTask(taskId: string, newDeadlineIso: string) {
     const supabase = await createClient();
     const {
         data: { user },
@@ -1799,10 +1935,22 @@ export async function postponeTask(taskId: string, newDeadline?: string) {
         return { error: "Task not found" };
     }
 
-    const currentDeadline = new Date((task as any).deadline);
-    let newDeadlineDate = newDeadline ? new Date(newDeadline) : new Date(currentDeadline.getTime() + 60 * 60 * 1000);
+    if (typeof newDeadlineIso !== "string" || !newDeadlineIso.trim()) {
+        return { error: INVALID_DEADLINE_ERROR };
+    }
 
-    if (new Date() >= new Date((task as any).deadline)) {
+    const deadlineValidation = parseAndValidateFutureDeadline(newDeadlineIso);
+    if (!deadlineValidation.deadline) {
+        return { error: deadlineValidation.error || INVALID_DEADLINE_ERROR };
+    }
+    const newDeadlineDate = deadlineValidation.deadline;
+
+    const currentDeadline = new Date((task as any).deadline);
+    if (Number.isNaN(currentDeadline.getTime())) {
+        return { error: INVALID_DEADLINE_ERROR };
+    }
+
+    if (Date.now() >= currentDeadline.getTime()) {
         return { error: "Deadline has passed" };
     }
     if (!canTransition((task as any).status as TaskStatus, "POSTPONE")) {
@@ -1827,6 +1975,17 @@ export async function postponeTask(taskId: string, newDeadline?: string) {
 
     if (error) {
         return { error: error.message };
+    }
+
+    const reminderRealignment = await realignTaskRemindersAfterPostpone(
+        supabase,
+        taskId,
+        user.id,
+        currentDeadline,
+        newDeadlineDate
+    );
+    if (reminderRealignment.error) {
+        return { error: reminderRealignment.error };
     }
 
     await (supabase.from("task_events") as any).insert({
