@@ -28,6 +28,8 @@ import {
     type PreparedTaskProof,
 } from "@/lib/task-proof-client";
 import { purgeLocalProofMedia } from "@/lib/proof-media-warmup";
+import { subscribeRealtimeTaskChanges } from "@/lib/realtime-task-events";
+import { isIncomingNewer, patchTaskScalars } from "@/lib/tasks-realtime-patch";
 
 const MAX_COMPLETED_TASKS = 10;
 
@@ -61,6 +63,10 @@ interface DashboardClientProps {
     initialHideTips: boolean;
 }
 
+function isDashboardActiveStatus(status: Task["status"]): boolean {
+    return status === "CREATED" || status === "POSTPONED";
+}
+
 function isTaskCompletedToday(task: Task, reference: Date = new Date()): boolean {
     const completionTimestamp = task.marked_completed_at || task.updated_at;
     const completedAt = new Date(completionTimestamp);
@@ -75,9 +81,9 @@ function isTaskCompletedToday(task: Task, reference: Date = new Date()): boolean
 }
 
 function splitTasks(tasks: Task[]) {
-    const active = tasks.filter((task) => ["CREATED", "POSTPONED"].includes(task.status));
+    const active = tasks.filter((task) => isDashboardActiveStatus(task.status));
     const completed = tasks.filter((task) =>
-        ["COMPLETED", "AWAITING_VOUCHER", "RECTIFIED", "SETTLED", "FAILED", "DELETED"].includes(task.status) &&
+        !isDashboardActiveStatus(task.status) &&
         isTaskCompletedToday(task)
     );
 
@@ -179,6 +185,8 @@ export default function DashboardClient({
     const proofInputRef = useRef<HTMLInputElement>(null);
     const proofByTaskIdRef = useRef<Record<string, TaskProofDraft>>({});
     const proofPickerTaskIdRef = useRef<string | null>(null);
+    const activeTasksRef = useRef<Task[]>(split.active);
+    const completedTasksRef = useRef<Task[]>(split.completed.slice(0, MAX_COMPLETED_TASKS));
     const sortedActiveTasks = useMemo(() => sortActiveTasks(activeTasks, sortMode), [activeTasks, sortMode]);
     const postponeDialogTask = useMemo(() => {
         if (!postponeDialogTaskId) return null;
@@ -197,8 +205,13 @@ export default function DashboardClient({
     );
 
     useEffect(() => {
-        setActiveTasks(split.active);
-        setCompletedTasks(split.completed.slice(0, MAX_COMPLETED_TASKS));
+        const nextActiveTasks = split.active;
+        const nextCompletedTasks = split.completed.slice(0, MAX_COMPLETED_TASKS);
+
+        activeTasksRef.current = nextActiveTasks;
+        completedTasksRef.current = nextCompletedTasks;
+        setActiveTasks(nextActiveTasks);
+        setCompletedTasks(nextCompletedTasks);
         setCompletingTaskIds((prev) => {
             if (prev.size === 0) return prev;
             const activeIds = new Set(split.active.map((task) => task.id));
@@ -226,6 +239,14 @@ export default function DashboardClient({
     useEffect(() => {
         proofByTaskIdRef.current = proofByTaskId;
     }, [proofByTaskId]);
+
+    useEffect(() => {
+        activeTasksRef.current = activeTasks;
+    }, [activeTasks]);
+
+    useEffect(() => {
+        completedTasksRef.current = completedTasks;
+    }, [completedTasks]);
 
     useEffect(() => {
         return () => {
@@ -297,6 +318,100 @@ export default function DashboardClient({
             };
         });
     };
+
+    useEffect(() => {
+        const clearTaskTransientState = (taskId: string) => {
+            setCompletingTaskIds((prev) => {
+                if (!prev.has(taskId)) return prev;
+                const next = new Set(prev);
+                next.delete(taskId);
+                return next;
+            });
+            setPostponingTaskIds((prev) => {
+                if (!prev.has(taskId)) return prev;
+                const next = new Set(prev);
+                next.delete(taskId);
+                return next;
+            });
+            setDeletingTaskIds((prev) => {
+                if (!prev.has(taskId)) return prev;
+                const next = new Set(prev);
+                next.delete(taskId);
+                return next;
+            });
+            setProofByTaskId((prev) => {
+                const current = prev[taskId];
+                if (!current) return prev;
+                URL.revokeObjectURL(current.previewUrl);
+                const next = { ...prev };
+                delete next[taskId];
+                return next;
+            });
+            setProofUploadErrors((prev) => {
+                if (!prev[taskId]) return prev;
+                const next = { ...prev };
+                delete next[taskId];
+                return next;
+            });
+        };
+
+        const unsubscribe = subscribeRealtimeTaskChanges((change) => {
+            const incoming = change.newRow || change.oldRow;
+            if (!incoming || incoming.user_id !== userId) return;
+
+            const taskId = incoming.id;
+            const currentActiveTasks = activeTasksRef.current;
+            const currentCompletedTasks = completedTasksRef.current;
+            const existingTask =
+                currentActiveTasks.find((task) => task.id === taskId) ||
+                currentCompletedTasks.find((task) => task.id === taskId);
+
+            if (!existingTask) return;
+
+            if (change.eventType === "DELETE") {
+                const nextActiveTasks = currentActiveTasks.filter((task) => task.id !== taskId);
+                const nextCompletedTasks = currentCompletedTasks.filter((task) => task.id !== taskId);
+                activeTasksRef.current = nextActiveTasks;
+                completedTasksRef.current = nextCompletedTasks;
+                setActiveTasks(nextActiveTasks);
+                setCompletedTasks(nextCompletedTasks);
+                clearTaskTransientState(taskId);
+                return;
+            }
+
+            if (!isIncomingNewer(existingTask.updated_at, incoming.updated_at)) return;
+
+            const patchedTask = patchTaskScalars(existingTask, incoming);
+            const nextActiveTasks = currentActiveTasks.filter((task) => task.id !== taskId);
+            const nextCompletedTasks = currentCompletedTasks.filter((task) => task.id !== taskId);
+
+            if (isDashboardActiveStatus(patchedTask.status)) {
+                const mergedActiveTasks = [patchedTask, ...nextActiveTasks];
+                activeTasksRef.current = mergedActiveTasks;
+                completedTasksRef.current = nextCompletedTasks;
+                setActiveTasks(mergedActiveTasks);
+                setCompletedTasks(nextCompletedTasks);
+                return;
+            }
+
+            if (isTaskCompletedToday(patchedTask)) {
+                const mergedCompletedTasks = [patchedTask, ...nextCompletedTasks].slice(0, MAX_COMPLETED_TASKS);
+                activeTasksRef.current = nextActiveTasks;
+                completedTasksRef.current = mergedCompletedTasks;
+                setActiveTasks(nextActiveTasks);
+                setCompletedTasks(mergedCompletedTasks);
+            } else {
+                activeTasksRef.current = nextActiveTasks;
+                completedTasksRef.current = nextCompletedTasks;
+                setActiveTasks(nextActiveTasks);
+                setCompletedTasks(nextCompletedTasks);
+            }
+
+            clearTaskTransientState(taskId);
+        });
+
+        return unsubscribe;
+    }, [userId]);
 
     const processPickedProofFile = async (taskId: string, selectedFile: File) => {
         try {

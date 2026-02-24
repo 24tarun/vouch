@@ -53,6 +53,8 @@ import {
     isDefaultDeadlineReminderSource,
     MANUAL_REMINDER_SOURCE,
 } from "@/lib/task-reminder-defaults";
+import { subscribeRealtimeTaskChanges } from "@/lib/realtime-task-events";
+import { isIncomingNewer, patchTaskScalars } from "@/lib/tasks-realtime-patch";
 
 interface TaskDetailClientProps {
     task: TaskWithRelations;
@@ -98,6 +100,12 @@ function getVoucherResponseDeadlineLocal(baseDate: Date = new Date()): Date {
     return deadline;
 }
 
+function sortTaskReminders(reminders: TaskWithRelations["reminders"] | null | undefined) {
+    return (reminders || []).slice().sort((a, b) =>
+        new Date(a.reminder_at).getTime() - new Date(b.reminder_at).getTime()
+    );
+}
+
 export default function TaskDetailClient({
     task,
     events,
@@ -113,9 +121,7 @@ export default function TaskDetailClient({
     const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
     const [nowMs, setNowMs] = useState(() => Date.now());
     const [subtasks, setSubtasks] = useState(task.subtasks || []);
-    const [reminders, setReminders] = useState((task.reminders || []).slice().sort((a, b) =>
-        new Date(a.reminder_at).getTime() - new Date(b.reminder_at).getTime()
-    ));
+    const [reminders, setReminders] = useState(sortTaskReminders(task.reminders));
     const [remindersSectionOpen, setRemindersSectionOpen] = useState(true);
     const [subtasksSectionOpen, setSubtasksSectionOpen] = useState(true);
     const [newReminderLocal, setNewReminderLocal] = useState("");
@@ -274,15 +280,26 @@ export default function TaskDetailClient({
         };
     }, []);
 
+    /*
+     * This screen keeps local editable copies of task data so optimistic actions (subtasks, reminders,
+     * status transitions) can update instantly without waiting for server round-trips.
+     *
+     * A plain router.refresh() is not enough when local state was initialized from props once, because
+     * refreshed server props do not automatically overwrite those local copies.
+     *
+     * Sync order is deliberate:
+     * 1) Replace the primary task snapshot (`taskState`) from latest server truth.
+     * 2) Replace local subtasks from server-provided relations.
+     * 3) Replace local reminders with sorted server-provided relations.
+     *
+     * This intentionally does NOT reset local-only draft UI state such as proofDraft, form inputs,
+     * dialog toggles, or pending flags.
+     */
     useEffect(() => {
+        setTaskState(task);
         setSubtasks(task.subtasks || []);
-    }, [task.subtasks]);
-
-    useEffect(() => {
-        setReminders((task.reminders || []).slice().sort((a, b) =>
-            new Date(a.reminder_at).getTime() - new Date(b.reminder_at).getTime()
-        ));
-    }, [task.reminders]);
+        setReminders(sortTaskReminders(task.reminders));
+    }, [task]);
 
     useEffect(() => {
         setTaskState((prev) => ({
@@ -332,6 +349,28 @@ export default function TaskDetailClient({
         window.addEventListener("keydown", onKeyDown);
         return () => window.removeEventListener("keydown", onKeyDown);
     }, [isStoredProofFullscreen]);
+
+    useEffect(() => {
+        const unsubscribe = subscribeRealtimeTaskChanges((change) => {
+            const incoming = change.newRow || change.oldRow;
+            if (!incoming || incoming.id !== task.id) return;
+
+            if (change.eventType === "DELETE") {
+                startRefreshTransition(() => {
+                    router.refresh();
+                });
+                return;
+            }
+
+            setTaskState((prev) => {
+                if (prev.id !== incoming.id) return prev;
+                if (!isIncomingNewer(prev.updated_at, incoming.updated_at)) return prev;
+                return patchTaskScalars(prev, incoming);
+            });
+        });
+
+        return unsubscribe;
+    }, [task.id, router, startRefreshTransition]);
 
     const toReminderIso = (value: string) => {
         const parsed = new Date(value);

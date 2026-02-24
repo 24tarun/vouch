@@ -13,6 +13,8 @@ import { HardRefreshButton } from "@/components/HardRefreshButton";
 import { TaskDetailPrefetcher } from "@/components/TaskDetailPrefetcher";
 import { getWarmProofSrc, purgeLocalProofMedia } from "@/lib/proof-media-warmup";
 import { formatCurrencyFromCents, normalizeCurrency } from "@/lib/currency";
+import { subscribeRealtimeTaskChanges, type RealtimeTaskRow } from "@/lib/realtime-task-events";
+import { isIncomingNewer, patchTaskScalars } from "@/lib/tasks-realtime-patch";
 
 interface VoucherDashboardClientProps {
     pendingTasks: VoucherPendingTask[];
@@ -25,6 +27,9 @@ const HISTORY_PAGE_SIZE = 10;
 const RECTIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const VOUCH_HISTORY_OPEN_SESSION_KEY = "voucher.history.open";
 const PENDING_FALLBACK_POLL_MS = 60000;
+const ACTIVE_PENDING_STATUSES = new Set(["CREATED", "POSTPONED"]);
+const ALL_PENDING_STATUSES = new Set(["CREATED", "POSTPONED", "AWAITING_VOUCHER", "MARKED_COMPLETED"]);
+const HISTORY_STATUSES = new Set(["COMPLETED", "FAILED", "RECTIFIED", "SETTLED", "DELETED"]);
 
 function mergeTasksById(
     existing: HistoryTask[],
@@ -48,6 +53,35 @@ function isWithinRectifyWindow(updatedAt: string, referenceTimestamp: number): b
     return referenceTimestamp <= failedAtTs + RECTIFY_WINDOW_MS;
 }
 
+function deriveAwaitingDeadline(task: { voucher_response_deadline: string | null; marked_completed_at: string | null }): string | null {
+    if (task.voucher_response_deadline) return task.voucher_response_deadline;
+    if (!task.marked_completed_at) return null;
+
+    const derived = new Date(task.marked_completed_at);
+    if (Number.isNaN(derived.getTime())) return null;
+    derived.setDate(derived.getDate() + 2);
+    derived.setHours(23, 59, 59, 999);
+    return derived.toISOString();
+}
+
+function toPendingTask(task: VoucherPendingTask, incoming: RealtimeTaskRow): VoucherPendingTask {
+    const patched = patchTaskScalars(task, incoming);
+    const pendingDisplayType = ACTIVE_PENDING_STATUSES.has(patched.status) ? "ACTIVE" : "AWAITING_VOUCHER";
+    const pendingDeadlineAt = ACTIVE_PENDING_STATUSES.has(patched.status)
+        ? patched.deadline
+        : deriveAwaitingDeadline({
+            voucher_response_deadline: patched.voucher_response_deadline,
+            marked_completed_at: patched.marked_completed_at,
+        });
+
+    return {
+        ...patched,
+        pending_display_type: pendingDisplayType,
+        pending_deadline_at: pendingDeadlineAt,
+        pending_actionable: patched.status === "AWAITING_VOUCHER",
+    };
+}
+
 export default function VoucherDashboardClient({
     pendingTasks,
     workingFriends = [],
@@ -58,6 +92,9 @@ export default function VoucherDashboardClient({
     const [pendingState, setPendingState] = useState<VoucherPendingTask[]>(pendingTasks);
     const [historyState, setHistoryState] = useState<HistoryTask[]>([]);
     const [inFlightIds, setInFlightIds] = useState<Set<string>>(new Set());
+    const pendingStateRef = useRef<VoucherPendingTask[]>(pendingTasks);
+    const historyStateRef = useRef<HistoryTask[]>([]);
+    const historyLoadedRef = useRef(false);
     const inFlightIdsRef = useRef<Set<string>>(new Set());
 
     const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(() => {
@@ -116,7 +153,20 @@ export default function VoucherDashboardClient({
 
     useEffect(() => {
         setPendingState(pendingTasks);
+        pendingStateRef.current = pendingTasks;
     }, [pendingTasks]);
+
+    useEffect(() => {
+        pendingStateRef.current = pendingState;
+    }, [pendingState]);
+
+    useEffect(() => {
+        historyStateRef.current = historyState;
+    }, [historyState]);
+
+    useEffect(() => {
+        historyLoadedRef.current = historyLoaded;
+    }, [historyLoaded]);
 
     useEffect(() => {
         inFlightIdsRef.current = inFlightIds;
@@ -135,6 +185,55 @@ export default function VoucherDashboardClient({
             window.clearInterval(intervalId);
         };
     }, [router, startRefreshTransition]);
+
+    useEffect(() => {
+        const unsubscribe = subscribeRealtimeTaskChanges((change) => {
+            const incoming = change.newRow || change.oldRow;
+            if (!incoming) return;
+
+            const taskId = incoming.id;
+            const currentPendingState = pendingStateRef.current;
+            const currentHistoryState = historyStateRef.current;
+            const pendingTask = currentPendingState.find((task) => task.id === taskId);
+            const historyTask = currentHistoryState.find((task) => task.id === taskId);
+
+            if (!pendingTask && !historyTask) return;
+
+            if (change.eventType === "DELETE") {
+                const nextPendingState = currentPendingState.filter((task) => task.id !== taskId);
+                const nextHistoryState = currentHistoryState.filter((task) => task.id !== taskId);
+                pendingStateRef.current = nextPendingState;
+                historyStateRef.current = nextHistoryState;
+                setPendingState(nextPendingState);
+                setHistoryState(nextHistoryState);
+                return;
+            }
+
+            const existingTask = pendingTask || historyTask;
+            if (!existingTask) return;
+            if (!isIncomingNewer(existingTask.updated_at, incoming.updated_at)) return;
+
+            let nextPendingState = currentPendingState.filter((task) => task.id !== taskId);
+            let nextHistoryState = currentHistoryState.filter((task) => task.id !== taskId);
+
+            if (pendingTask && ALL_PENDING_STATUSES.has(incoming.status)) {
+                nextPendingState = [toPendingTask(pendingTask, incoming), ...nextPendingState];
+            }
+
+            if (historyLoadedRef.current && HISTORY_STATUSES.has(incoming.status)) {
+                const historySeed = (historyTask || pendingTask) as HistoryTask;
+                const patchedHistoryTask = patchTaskScalars(historySeed, incoming);
+                nextHistoryState = mergeTasksById(nextHistoryState, [patchedHistoryTask], "prepend");
+            }
+
+            pendingStateRef.current = nextPendingState;
+            historyStateRef.current = nextHistoryState;
+            setPendingState(nextPendingState);
+            setHistoryState(nextHistoryState);
+        });
+
+        return unsubscribe;
+    }, []);
 
     const handleHistoryToggle = () => {
         setIsHistoryOpen((prev) => {

@@ -7,11 +7,15 @@ import { sendNotification } from "@/lib/notifications";
 import { type Database, type VoucherPendingTask } from "@/lib/types";
 import { type SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { pendingVoucherRequestsTag } from "@/lib/cache-tags";
+import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
 import { deleteTaskProof } from "@/lib/task-proof";
 
 function invalidatePendingVoucherRequestsCache(voucherId: string) {
     revalidateTag(pendingVoucherRequestsTag(voucherId), "max");
+}
+
+function invalidateOwnerActiveTasksCache(ownerId: string) {
+    revalidateTag(activeTasksTag(ownerId), "max");
 }
 
 const RECTIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -133,6 +137,10 @@ export async function voucherAccept(taskId: string) {
         to_status: "COMPLETED",
     });
 
+    // Owner dashboard active tasks are cached via getCachedActiveTasksForUser(activeTasksTag).
+    // Voucher decisions mutate owner-visible task state, so invalidate owner tags in addition
+    // to path revalidation and realtime-triggered refresh to avoid stale server payloads.
+    invalidateOwnerActiveTasksCache((task as any).user_id);
     invalidatePendingVoucherRequestsCache((user as any).id);
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/stats");
@@ -225,6 +233,10 @@ export async function voucherDeleteTask(taskId: string) {
         });
     }
 
+    // Owner dashboard active tasks are cached via getCachedActiveTasksForUser(activeTasksTag).
+    // Voucher decisions mutate owner-visible task state, so invalidate owner tags in addition
+    // to path revalidation and realtime-triggered refresh to avoid stale server payloads.
+    invalidateOwnerActiveTasksCache((task as any).user_id);
     invalidatePendingVoucherRequestsCache((user as any).id);
     revalidatePath("/dashboard/friends");
     revalidatePath("/dashboard");
@@ -318,6 +330,10 @@ export async function voucherDeny(taskId: string) {
         });
     }
 
+    // Owner dashboard active tasks are cached via getCachedActiveTasksForUser(activeTasksTag).
+    // Voucher decisions mutate owner-visible task state, so invalidate owner tags in addition
+    // to path revalidation and realtime-triggered refresh to avoid stale server payloads.
+    invalidateOwnerActiveTasksCache((task as any).user_id);
     invalidatePendingVoucherRequestsCache((user as any).id);
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/stats");
@@ -409,6 +425,10 @@ export async function voucherRequestProof(taskId: string) {
         });
     }
 
+    // Owner dashboard active tasks are cached via getCachedActiveTasksForUser(activeTasksTag).
+    // Voucher decisions mutate owner-visible task state, so invalidate owner tags in addition
+    // to path revalidation and realtime-triggered refresh to avoid stale server payloads.
+    invalidateOwnerActiveTasksCache((task as any).user_id);
     invalidatePendingVoucherRequestsCache(user.id);
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/stats");
