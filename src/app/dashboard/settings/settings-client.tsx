@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { deleteAccount, updateUserDefaults, updateUsername } from "@/actions/auth";
 import { addFriend, getFriends, removeFriend } from "@/actions/friends";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import { SignOutMenuForm } from "@/components/SignOutMenuForm";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
 import type { Profile } from "@/lib/types";
 import {
+    getFailureCostBounds,
     getCurrencySymbol,
     normalizeCurrency,
     SUPPORTED_CURRENCIES,
@@ -42,6 +43,14 @@ interface SettingsClientProps {
 }
 
 export default function SettingsClient({ profile, friends: initialFriends }: SettingsClientProps) {
+    const initialCurrency = normalizeCurrency(profile.currency);
+    const initialFailureCostBounds = getFailureCostBounds(initialCurrency);
+    const initialFailureCostMajorRaw = (profile.default_failure_cost_cents ?? DEFAULT_FAILURE_COST_CENTS) / 100;
+    const initialFailureCostMajorClamped = Math.min(
+        initialFailureCostBounds.maxMajor,
+        Math.max(initialFailureCostBounds.minMajor, initialFailureCostMajorRaw)
+    );
+
     const [friends, setFriends] = useState<Profile[]>(initialFriends);
     const [friendEmail, setFriendEmail] = useState("");
     const [isFriendsLoading, setIsFriendsLoading] = useState(false);
@@ -57,7 +66,9 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
         String(profile.default_pomo_duration_minutes ?? DEFAULT_POMO_DURATION_MINUTES)
     );
     const [defaultFailureCostEuros, setDefaultFailureCostEuros] = useState(
-        ((profile.default_failure_cost_cents ?? DEFAULT_FAILURE_COST_CENTS) / 100).toFixed(2)
+        initialFailureCostBounds.step < 1
+            ? initialFailureCostMajorClamped.toFixed(2)
+            : Math.round(initialFailureCostMajorClamped).toString()
     );
     const [defaultVoucherId, setDefaultVoucherId] = useState<string | null>(
         profile.default_voucher_id ?? profile.id
@@ -74,20 +85,91 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
     const [voucherCanViewActiveTasksEnabled, setVoucherCanViewActiveTasksEnabled] = useState(
         profile.voucher_can_view_active_tasks ?? false
     );
-    const [currency, setCurrency] = useState<SupportedCurrency>(
-        normalizeCurrency(profile.currency)
-    );
+    const [currency, setCurrency] = useState<SupportedCurrency>(initialCurrency);
     const [isDefaultsLoading, setIsDefaultsLoading] = useState(false);
     const [defaultsError, setDefaultsError] = useState<string | null>(null);
     const [defaultsSuccess, setDefaultsSuccess] = useState(false);
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
     const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
     const [deleteAccountSuccess, setDeleteAccountSuccess] = useState(false);
+    const hasMountedRef = useRef(false);
+    const saveRequestIdRef = useRef(0);
     const hasValidDefaultVoucher =
         !!defaultVoucherId &&
         (defaultVoucherId === profile.id || friends.some((friend) => friend.id === defaultVoucherId));
     const effectiveDefaultVoucherId = hasValidDefaultVoucher ? (defaultVoucherId as string) : profile.id;
     const currencySymbol = getCurrencySymbol(currency);
+    const failureCostBounds = getFailureCostBounds(currency);
+
+    const clampFailureCostToCurrencyBounds = (rawValue: string, targetCurrency: SupportedCurrency): string => {
+        const targetBounds = getFailureCostBounds(targetCurrency);
+        const parsed = Number(rawValue);
+        const normalized = Number.isFinite(parsed) ? parsed : targetBounds.minMajor;
+        const clamped = Math.min(targetBounds.maxMajor, Math.max(targetBounds.minMajor, normalized));
+
+        return targetBounds.step < 1
+            ? clamped.toFixed(2)
+            : Math.round(clamped).toString();
+    };
+
+    /*
+     * This helper collects every defaults-related state field and writes them into FormData using
+     * the exact keys expected by updateUserDefaults on the server.
+     *
+     * The auto-save effect calls this function immediately before invoking updateUserDefaults(formData),
+     * so this stays as the single source of truth for request payload construction and keeps the new
+     * auto-save behavior aligned with the old manual submit behavior.
+     */
+    const buildDefaultsFormData = () => {
+        const formData = new FormData();
+        formData.append("defaultPomoDurationMinutes", defaultPomoDurationMinutes);
+        formData.append("defaultFailureCost", defaultFailureCostEuros);
+        formData.append("defaultVoucherId", effectiveDefaultVoucherId ?? "");
+        formData.append("strictPomoEnabled", String(strictPomoEnabled));
+        formData.append("deadlineOneHourWarningEnabled", String(deadlineOneHourWarningEnabled));
+        formData.append("deadlineFinalWarningEnabled", String(deadlineFinalWarningEnabled));
+        formData.append("voucherCanViewActiveTasksEnabled", String(voucherCanViewActiveTasksEnabled));
+        formData.append("currency", currency);
+        return formData;
+    };
+
+    /*
+     * This validation helper prevents invalid intermediate values from triggering server writes while
+     * the user is actively typing.
+     *
+     * Validation order:
+     * 1) Check default pomodoro duration is an integer within 1..720.
+     * 2) Check failure cost is parseable to a finite number.
+     * 3) Load per-currency bounds via getFailureCostBounds(currency) and validate rounded cents against
+     *    minCents/maxCents so client logic matches authoritative server-side logic.
+     *
+     * Returning a non-null string means "do not save yet"; the effect will surface this as defaultsError
+     * and skip calling updateUserDefaults.
+     */
+    const validateDefaultsState = () => {
+        const parsedPomo = Number(defaultPomoDurationMinutes);
+        if (
+            !Number.isFinite(parsedPomo) ||
+            !Number.isInteger(parsedPomo) ||
+            parsedPomo < 1 ||
+            parsedPomo > 720
+        ) {
+            return "Default Pomodoro duration must be an integer between 1 and 720.";
+        }
+
+        const parsedFailureMajor = Number(defaultFailureCostEuros);
+        if (!Number.isFinite(parsedFailureMajor)) {
+            return "Default failure cost is invalid.";
+        }
+
+        const bounds = getFailureCostBounds(currency);
+        const parsedFailureCents = Math.round(parsedFailureMajor * 100);
+        if (parsedFailureCents < bounds.minCents || parsedFailureCents > bounds.maxCents) {
+            return `Default failure cost must be between ${currencySymbol}${bounds.minMajor} and ${currencySymbol}${bounds.maxMajor}.`;
+        }
+
+        return null;
+    };
 
     async function refreshFriendsList() {
         const updatedFriends = await getFriends();
@@ -167,32 +249,84 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
         setIsUsernameLoading(false);
     }
 
-    async function handleDefaultsSubmit(e: React.FormEvent) {
-        e.preventDefault();
-        setIsDefaultsLoading(true);
-        setDefaultsError(null);
-        setDefaultsSuccess(false);
+    function handleCurrencyChange(value: string) {
+        const nextCurrency = normalizeCurrency(value);
+        setCurrency(nextCurrency);
+        setDefaultFailureCostEuros((prev) =>
+            clampFailureCostToCurrencyBounds(prev, nextCurrency)
+        );
+    }
 
-        const formData = new FormData();
-        formData.append("defaultPomoDurationMinutes", defaultPomoDurationMinutes);
-        formData.append("defaultFailureCost", defaultFailureCostEuros);
-        formData.append("defaultVoucherId", effectiveDefaultVoucherId ?? "");
-        formData.append("strictPomoEnabled", String(strictPomoEnabled));
-        formData.append("deadlineOneHourWarningEnabled", String(deadlineOneHourWarningEnabled));
-        formData.append("deadlineFinalWarningEnabled", String(deadlineFinalWarningEnabled));
-        formData.append("voucherCanViewActiveTasksEnabled", String(voucherCanViewActiveTasksEnabled));
-        formData.append("currency", currency);
-
-        const result = await updateUserDefaults(formData);
-
-        if (result.error) {
-            setDefaultsError(result.error);
-        } else {
-            setDefaultsSuccess(true);
+    /*
+     * This effect implements debounced auto-save for the Defaults card.
+     *
+     * Sequence of operations:
+     * 1) Skip the very first render with hasMountedRef so initial server-loaded values do not immediately
+     *    trigger a write-back.
+     * 2) Run validateDefaultsState(); if invalid, show defaultsError and stop without network calls.
+     * 3) Increment saveRequestIdRef to mark the newest intended save request.
+     * 4) Wait for the debounce window, then call updateUserDefaults(buildDefaultsFormData()).
+     * 5) When the request resolves, only apply the response if the request id still matches the newest
+     *    id; this discards stale out-of-order responses from earlier edits.
+     * 6) On success, briefly show defaultsSuccess and auto-hide it after 1.5s if no newer request exists.
+     */
+    useEffect(() => {
+        if (!hasMountedRef.current) {
+            hasMountedRef.current = true;
+            return;
         }
 
-        setIsDefaultsLoading(false);
-    }
+        const requestId = saveRequestIdRef.current + 1;
+        saveRequestIdRef.current = requestId;
+
+        const validationError = validateDefaultsState();
+        if (validationError) {
+            setDefaultsError(validationError);
+            setDefaultsSuccess(false);
+            setIsDefaultsLoading(false);
+            return;
+        }
+
+        setDefaultsError(null);
+        setDefaultsSuccess(false);
+        setIsDefaultsLoading(true);
+
+        const debounceTimer = window.setTimeout(async () => {
+            const result = await updateUserDefaults(buildDefaultsFormData());
+
+            if (requestId !== saveRequestIdRef.current) {
+                return;
+            }
+
+            if (result.error) {
+                setDefaultsError(result.error);
+                setDefaultsSuccess(false);
+            } else {
+                setDefaultsError(null);
+                setDefaultsSuccess(true);
+                window.setTimeout(() => {
+                    if (requestId === saveRequestIdRef.current) {
+                        setDefaultsSuccess(false);
+                    }
+                }, 1500);
+            }
+
+            setIsDefaultsLoading(false);
+        }, 600);
+
+        return () => {
+            window.clearTimeout(debounceTimer);
+        };
+    }, [
+        defaultPomoDurationMinutes,
+        defaultFailureCostEuros,
+        effectiveDefaultVoucherId,
+        strictPomoEnabled,
+        deadlineOneHourWarningEnabled,
+        deadlineFinalWarningEnabled,
+        voucherCanViewActiveTasksEnabled,
+        currency,
+    ]);
 
     async function handleDeleteAccount() {
         if (isDeletingAccount || deleteAccountSuccess) return;
@@ -374,7 +508,7 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <form onSubmit={handleDefaultsSubmit} className="space-y-4">
+                    <div className="space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="defaultPomoDurationMinutes" className="text-slate-200">
                                 Default Pomodoro Duration (minutes)
@@ -398,13 +532,16 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                             <Input
                                 id="defaultFailureCost"
                                 type="number"
-                                min="0.01"
-                                max="100"
-                                step="0.01"
+                                min={failureCostBounds.minMajor}
+                                max={failureCostBounds.maxMajor}
+                                step={failureCostBounds.step}
                                 value={defaultFailureCostEuros}
                                 onChange={(e) => setDefaultFailureCostEuros(e.target.value)}
                                 className="bg-slate-800/40 border-slate-700 text-white"
                             />
+                            <p className="text-xs text-slate-500">
+                                {currencySymbol}{failureCostBounds.minMajor} - {currencySymbol}{failureCostBounds.maxMajor}
+                            </p>
                         </div>
 
                         <div className="space-y-2">
@@ -436,7 +573,7 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                             <Label htmlFor="currency" className="text-slate-200">
                                 Currency
                             </Label>
-                            <Select value={currency} onValueChange={(value) => setCurrency(normalizeCurrency(value))}>
+                            <Select value={currency} onValueChange={handleCurrencyChange}>
                                 <SelectTrigger
                                     id="currency"
                                     className="bg-slate-800/40 border-slate-700 text-white w-full"
@@ -452,6 +589,10 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                                 </SelectContent>
                             </Select>
                         </div>
+
+                        {isDefaultsLoading && (
+                            <p className="text-sm text-slate-300">Saving...</p>
+                        )}
 
                         <div className="rounded-lg border border-slate-700/70 bg-slate-800/30 px-3 py-3">
                             <div className="flex items-center justify-between gap-3">
@@ -537,15 +678,7 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                         {defaultsSuccess && (
                             <p className="text-sm text-green-400">Defaults updated!</p>
                         )}
-
-                        <Button
-                            type="submit"
-                            disabled={isDefaultsLoading}
-                            className="bg-slate-100 text-slate-950 hover:bg-white font-semibold"
-                        >
-                            {isDefaultsLoading ? "Saving..." : "Save Defaults"}
-                        </Button>
-                    </form>
+                    </div>
                 </CardContent>
             </Card>
 

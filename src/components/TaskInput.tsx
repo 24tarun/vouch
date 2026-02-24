@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/lib/types";
-import { getCurrencySymbol, type SupportedCurrency } from "@/lib/currency";
+import { getCurrencySymbol, getFailureCostBounds, type SupportedCurrency } from "@/lib/currency";
 import { toast } from "sonner";
 import {
     fromDateTimeLocalValue,
@@ -181,6 +181,7 @@ export function TaskInput({
     const formRef = useRef<HTMLFormElement>(null);
     const lastCalendarTapRef = useRef(0);
     const currencySymbol = getCurrencySymbol(defaultCurrency);
+    const failureCostBounds = getFailureCostBounds(defaultCurrency);
 
     useEffect(() => {
         setFailureCost(defaultFailureCostEuros);
@@ -635,8 +636,9 @@ export function TaskInput({
                                 <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400 text-[9px] font-mono pointer-events-none z-10">{currencySymbol}</span>
                                 <input
                                     type="number"
-                                    step="0.01"
-                                    min="0.01"
+                                    step={failureCostBounds.step}
+                                    min={failureCostBounds.minMajor}
+                                    max={failureCostBounds.maxMajor}
                                     value={failureCost}
                                     onChange={(e) => setFailureCost(e.target.value)}
                                     className="h-9 w-full pl-4 pr-1 bg-slate-800/30 hover:bg-slate-700/30 border border-slate-700/30 rounded-lg text-slate-300 text-[11px] font-mono focus:outline-none focus:border-slate-600 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none text-center"

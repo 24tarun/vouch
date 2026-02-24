@@ -6,7 +6,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types";
-import { isSupportedCurrency, type SupportedCurrency } from "@/lib/currency";
+import {
+    getCurrencySymbol,
+    getFailureCostBounds,
+    isSupportedCurrency,
+    normalizeCurrency,
+    type SupportedCurrency,
+} from "@/lib/currency";
 import { pendingVoucherRequestsTag } from "@/lib/cache-tags";
 import { TASK_PROOFS_BUCKET } from "@/lib/task-proof-shared";
 import {
@@ -404,6 +410,24 @@ export async function updateUserDefaults(formData: FormData) {
     const voucherCanViewActiveTasksEnabledRaw = formData.get("voucherCanViewActiveTasksEnabled");
     const currencyRaw = formData.get("currency");
 
+    let currency: SupportedCurrency | undefined;
+    if (currencyRaw != null && currencyRaw !== "") {
+        if (typeof currencyRaw !== "string" || !isSupportedCurrency(currencyRaw)) {
+            return { error: "Currency value is invalid." };
+        }
+        currency = currencyRaw;
+    }
+
+    const { data: currentProfile, error: currentProfileError } = await supabase
+        .from("profiles")
+        .select("currency")
+        .eq("id", user.id)
+        .maybeSingle();
+
+    if (currentProfileError) {
+        return { error: currentProfileError.message };
+    }
+
     const defaultPomoDurationMinutes = Number(defaultPomoDurationRaw);
     if (
         !Number.isFinite(defaultPomoDurationMinutes) ||
@@ -414,18 +438,24 @@ export async function updateUserDefaults(formData: FormData) {
         return { error: "Default Pomodoro duration must be an integer between 1 and 720." };
     }
 
-    const defaultFailureCostEuros = Number(defaultFailureCostRaw);
+    const nextCurrency = currency ?? normalizeCurrency((currentProfile as { currency?: unknown } | null)?.currency);
+    const failureCostBounds = getFailureCostBounds(nextCurrency);
+    const defaultFailureCostMajor = Number(defaultFailureCostRaw);
     if (
-        !Number.isFinite(defaultFailureCostEuros) ||
-        defaultFailureCostEuros < 0.01 ||
-        defaultFailureCostEuros > 100
+        !Number.isFinite(defaultFailureCostMajor)
     ) {
-        return { error: "Default failure cost must be between 0.01 and 100." };
+        const currencySymbol = getCurrencySymbol(nextCurrency);
+        return {
+            error: `Default failure cost must be between ${currencySymbol}${failureCostBounds.minMajor} and ${currencySymbol}${failureCostBounds.maxMajor}.`,
+        };
     }
 
-    const defaultFailureCostCents = Math.round(defaultFailureCostEuros * 100);
-    if (defaultFailureCostCents < 1 || defaultFailureCostCents > 10000) {
-        return { error: "Default failure cost is invalid." };
+    const defaultFailureCostCents = Math.round(defaultFailureCostMajor * 100);
+    if (defaultFailureCostCents < failureCostBounds.minCents || defaultFailureCostCents > failureCostBounds.maxCents) {
+        const currencySymbol = getCurrencySymbol(nextCurrency);
+        return {
+            error: `Default failure cost must be between ${currencySymbol}${failureCostBounds.minMajor} and ${currencySymbol}${failureCostBounds.maxMajor}.`,
+        };
     }
 
     const defaultVoucherId = defaultVoucherIdRaw?.trim() ? defaultVoucherIdRaw.trim() : user.id;
@@ -469,14 +499,6 @@ export async function updateUserDefaults(formData: FormData) {
         }
         voucherCanViewActiveTasksEnabled = voucherCanViewActiveTasksEnabledRaw === "true";
     }
-    let currency: SupportedCurrency | undefined;
-    if (currencyRaw != null && currencyRaw !== "") {
-        if (typeof currencyRaw !== "string" || !isSupportedCurrency(currencyRaw)) {
-            return { error: "Currency value is invalid." };
-        }
-        currency = currencyRaw;
-    }
-
     if (defaultVoucherId !== user.id) {
         const { data: friendship } = await supabase
             .from("friendships")

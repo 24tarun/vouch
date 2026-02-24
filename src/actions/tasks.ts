@@ -10,6 +10,7 @@ import { sendNotification } from "@/lib/notifications";
 import { DEFAULT_FAILURE_COST_CENTS, MAX_SUBTASKS_PER_TASK } from "@/lib/constants";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
+import { getCurrencySymbol, getFailureCostBounds, normalizeCurrency } from "@/lib/currency";
 import { getOwnerDeleteRemainingMs, isOwnerTempDeletableStatus } from "@/lib/task-delete-window";
 import {
     buildDefaultDeadlineReminderRows,
@@ -590,13 +591,13 @@ export async function createTask(formData: FormData) {
 
     const title = formData.get("title") as string;
     const description = formData.get("description") as string;
-    const failureCostEuros = parseFloat(formData.get("failureCost") as string);
+    const failureCostMajor = Number(formData.get("failureCost"));
     const deadline = formData.get("deadline") as string;
     const voucherId = formData.get("voucherId") as string;
     const subtasksInput = normalizeSubtasksFromFormData(formData.get("subtasks"));
     const requiredPomoInput = parseRequiredPomoMinutesFromFormData(formData.get("requiredPomoMinutes"));
 
-    if (!title || !deadline || !voucherId || isNaN(failureCostEuros)) {
+    if (!title || !deadline || !voucherId || !Number.isFinite(failureCostMajor)) {
         return { error: "Missing required fields" };
     }
     if (subtasksInput.error) {
@@ -608,9 +609,13 @@ export async function createTask(formData: FormData) {
 
     const { data: reminderDefaultsProfile } = await supabase
         .from("profiles")
-        .select("deadline_one_hour_warning_enabled, deadline_final_warning_enabled")
+        .select("deadline_one_hour_warning_enabled, deadline_final_warning_enabled, currency")
         .eq("id", user.id as any)
         .maybeSingle();
+
+    const ownerCurrency = normalizeCurrency((reminderDefaultsProfile as { currency?: unknown } | null)?.currency);
+    const failureCostBounds = getFailureCostBounds(ownerCurrency);
+    const failureCostCents = Math.round(failureCostMajor * 100);
 
     const deadlineValidation = parseAndValidateFutureDeadline(deadline);
     if (!deadlineValidation.deadline) {
@@ -626,8 +631,11 @@ export async function createTask(formData: FormData) {
         remindersInput.reminderDates
     );
 
-    if (failureCostEuros < 0.01 || failureCostEuros > 100) {
-        return { error: "Failure cost must be between 0.01 and 100." };
+    if (failureCostCents < failureCostBounds.minCents || failureCostCents > failureCostBounds.maxCents) {
+        const currencySymbol = getCurrencySymbol(ownerCurrency);
+        return {
+            error: `Failure cost must be between ${currencySymbol}${failureCostBounds.minMajor} and ${currencySymbol}${failureCostBounds.maxMajor}.`,
+        };
     }
 
     // Verify voucher is self or a friend.
@@ -686,7 +694,7 @@ export async function createTask(formData: FormData) {
                 voucher_id: voucherId,
                 title,
                 description: description || null,
-                failure_cost_cents: Math.round(failureCostEuros * 100),
+                failure_cost_cents: failureCostCents,
                 required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,
                 rule_config: ruleConfig,
                 timezone: userTimezone,
@@ -717,7 +725,7 @@ export async function createTask(formData: FormData) {
             voucher_id: voucherId,
             title,
             description: description || null,
-            failure_cost_cents: Math.round(failureCostEuros * 100),
+            failure_cost_cents: failureCostCents,
             required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,
             deadline: validatedDeadline.toISOString(),
             status: "CREATED",
@@ -780,7 +788,7 @@ export async function createTask(formData: FormData) {
         metadata: {
             title,
             deadline: validatedDeadline.toISOString(),
-            failure_cost_cents: Math.round(failureCostEuros * 100),
+            failure_cost_cents: failureCostCents,
             recurrence_rule_id: recurrenceRuleId,
             reminder_count: remindersInput.reminderDates.length,
             required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,

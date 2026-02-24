@@ -6,6 +6,14 @@ export const DEFAULT_CURRENCY: SupportedCurrency = "EUR";
 
 const SUPPORTED_CURRENCY_SET = new Set<string>(SUPPORTED_CURRENCIES);
 
+export interface FailureCostBounds {
+    minMajor: number;
+    maxMajor: number;
+    minCents: number;
+    maxCents: number;
+    step: number;
+}
+
 interface FormatCurrencyFromCentsOptions {
     locale?: string;
     absolute?: boolean;
@@ -20,6 +28,29 @@ export function normalizeCurrency(
     fallback: SupportedCurrency = DEFAULT_CURRENCY
 ): SupportedCurrency {
     return isSupportedCurrency(value) ? value : fallback;
+}
+
+export function getFailureCostBounds(currency: SupportedCurrency): FailureCostBounds {
+    switch (currency) {
+        case "INR":
+            return {
+                minMajor: 50,
+                maxMajor: 1000,
+                minCents: 5000,
+                maxCents: 100000,
+                step: 1,
+            };
+        case "USD":
+        case "EUR":
+        default:
+            return {
+                minMajor: 1,
+                maxMajor: 100,
+                minCents: 100,
+                maxCents: 10000,
+                step: 0.01,
+            };
+    }
 }
 
 export function getCurrencyFormatter(

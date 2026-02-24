@@ -26,7 +26,12 @@ import {
     DEFAULT_FAILURE_COST_CENTS,
     DEFAULT_FAILURE_COST_EUROS,
 } from "@/lib/constants";
-import { getCurrencySymbol, normalizeCurrency, type SupportedCurrency } from "@/lib/currency";
+import {
+    getCurrencySymbol,
+    getFailureCostBounds,
+    normalizeCurrency,
+    type SupportedCurrency,
+} from "@/lib/currency";
 import type { Profile } from "@/lib/types";
 import { isIOS } from "@/lib/platform";
 import {
@@ -53,6 +58,7 @@ export default function NewTaskPage() {
             ? selectedVoucherId
             : selfVoucherId;
     const currencySymbol = getCurrencySymbol(currency);
+    const failureCostBounds = getFailureCostBounds(currency);
 
     // Set default deadline to tomorrow at noon
     const tomorrow = new Date();
@@ -75,8 +81,20 @@ export default function NewTaskPage() {
             setFriends(normalizedFriends);
 
             const profileFailureCostCents = profile?.default_failure_cost_cents ?? DEFAULT_FAILURE_COST_CENTS;
-            setFailureCost((profileFailureCostCents / 100).toFixed(2));
-            setCurrency(normalizeCurrency(profile?.currency));
+            const nextCurrency = normalizeCurrency(profile?.currency);
+            const nextBounds = getFailureCostBounds(nextCurrency);
+            const profileFailureCostMajor = profileFailureCostCents / 100;
+            const clampedFailureCostMajor = Math.min(
+                nextBounds.maxMajor,
+                Math.max(nextBounds.minMajor, profileFailureCostMajor)
+            );
+
+            setFailureCost(
+                nextBounds.step < 1
+                    ? clampedFailureCostMajor.toFixed(2)
+                    : Math.round(clampedFailureCostMajor).toString()
+            );
+            setCurrency(nextCurrency);
 
             const resolvedSelfVoucherId = profile?.id ?? "";
             setSelfVoucherId(resolvedSelfVoucherId);
@@ -235,9 +253,9 @@ export default function NewTaskPage() {
                                 id="failureCost"
                                 name="failureCost"
                                 type="number"
-                                min="0.01"
-                                max="100"
-                                step="0.01"
+                                min={failureCostBounds.minMajor}
+                                max={failureCostBounds.maxMajor}
+                                step={failureCostBounds.step}
                                 value={failureCost}
                                 onChange={(e) => setFailureCost(e.target.value)}
                                 placeholder={DEFAULT_FAILURE_COST_EUROS}
@@ -245,7 +263,7 @@ export default function NewTaskPage() {
                                 className="bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-400"
                             />
                             <p className="text-xs text-slate-500">
-                                {currencySymbol}0.01 - {currencySymbol}100.00. Donated to charity if you fail.
+                                {currencySymbol}{failureCostBounds.minMajor} - {currencySymbol}{failureCostBounds.maxMajor}. Donated to charity if you fail.
                             </p>
                         </div>
 
