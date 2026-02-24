@@ -3,10 +3,12 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types";
 import { isSupportedCurrency, type SupportedCurrency } from "@/lib/currency";
 import { pendingVoucherRequestsTag } from "@/lib/cache-tags";
+import { TASK_PROOFS_BUCKET } from "@/lib/task-proof-shared";
 import {
     DEFAULT_FAILURE_COST_CENTS,
     DEFAULT_POMO_DURATION_MINUTES,
@@ -259,6 +261,103 @@ export async function signOut() {
     await supabase.auth.signOut();
     revalidatePath("/", "layout");
     redirect("https://tas.tarunh.com");
+}
+
+export async function deleteAccount(): Promise<{ success: true } | { error: string }> {
+    const supabase = await createClient();
+    const {
+        data: { user },
+        error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+        return { error: "Not authenticated" };
+    }
+
+    const userId = user.id;
+    const supabaseAdmin = createAdminClient();
+
+    const [ownerProofRowsResult, voucherProofRowsResult] = await Promise.all([
+        (supabaseAdmin.from("task_completion_proofs") as any)
+            .select("bucket, object_path")
+            .eq("owner_id", userId as any),
+        (supabaseAdmin.from("task_completion_proofs") as any)
+            .select("bucket, object_path")
+            .eq("voucher_id", userId as any),
+    ]);
+
+    if (ownerProofRowsResult.error) {
+        return { error: ownerProofRowsResult.error.message };
+    }
+
+    if (voucherProofRowsResult.error) {
+        return { error: voucherProofRowsResult.error.message };
+    }
+
+    const { error: recurrenceRulesDeleteError } = await (supabaseAdmin.from("recurrence_rules") as any)
+        .delete()
+        .eq("voucher_id", userId as any);
+
+    if (recurrenceRulesDeleteError) {
+        return { error: recurrenceRulesDeleteError.message };
+    }
+
+    const { error: taskEventsUpdateError } = await (supabaseAdmin.from("task_events") as any)
+        .update({ actor_id: null } as any)
+        .eq("actor_id", userId as any);
+
+    if (taskEventsUpdateError) {
+        return { error: taskEventsUpdateError.message };
+    }
+
+    const { error: rectifyPassesUpdateError } = await (supabaseAdmin.from("rectify_passes") as any)
+        .update({ authorized_by: null } as any)
+        .eq("authorized_by", userId as any);
+
+    if (rectifyPassesUpdateError) {
+        return { error: rectifyPassesUpdateError.message };
+    }
+
+    const proofRows = [
+        ...(((ownerProofRowsResult.data as Array<{ bucket: string | null; object_path: string | null }> | null) || [])),
+        ...(((voucherProofRowsResult.data as Array<{ bucket: string | null; object_path: string | null }> | null) || [])),
+    ];
+
+    const bucketToPaths = new Map<string, Set<string>>();
+    for (const row of proofRows) {
+        const objectPath = row.object_path?.trim();
+        if (!objectPath) continue;
+
+        const bucket = (row.bucket?.trim() || TASK_PROOFS_BUCKET);
+        const existing = bucketToPaths.get(bucket) || new Set<string>();
+        existing.add(objectPath);
+        bucketToPaths.set(bucket, existing);
+    }
+
+    const STORAGE_REMOVE_CHUNK_SIZE = 100;
+    for (const [bucket, pathSet] of bucketToPaths.entries()) {
+        const paths = Array.from(pathSet.values());
+        for (let i = 0; i < paths.length; i += STORAGE_REMOVE_CHUNK_SIZE) {
+            const chunk = paths.slice(i, i + STORAGE_REMOVE_CHUNK_SIZE);
+            const { error: storageRemoveError } = await supabaseAdmin.storage.from(bucket).remove(chunk);
+            if (storageRemoveError) {
+                console.error(`Failed deleting proof media from storage bucket ${bucket}:`, storageRemoveError);
+            }
+        }
+    }
+
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) {
+        return { error: signOutError.message };
+    }
+
+    const { error: deleteUserError } = await supabaseAdmin.auth.admin.deleteUser(userId, false);
+    if (deleteUserError) {
+        return { error: deleteUserError.message };
+    }
+
+    revalidatePath("/", "layout");
+    return { success: true };
 }
 
 export async function getUser() {

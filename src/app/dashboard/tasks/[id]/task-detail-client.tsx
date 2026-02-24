@@ -109,7 +109,7 @@ export default function TaskDetailClient({
     const router = useRouter();
     const [, startRefreshTransition] = useTransition();
     const [taskState, setTaskState] = useState<TaskWithRelations>(task);
-    const [isRepetitionStopped, setIsRepetitionStopped] = useState(task.recurrence_rule?.active === false);
+    const [isRepetitionStopped, setIsRepetitionStopped] = useState(false);
     const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
     const [nowMs, setNowMs] = useState(() => Date.now());
     const [subtasks, setSubtasks] = useState(task.subtasks || []);
@@ -1137,9 +1137,8 @@ export default function TaskDetailClient({
                 setIsRepetitionStopped(true);
                 setTaskState((prev) => ({
                     ...prev,
-                    recurrence_rule: prev.recurrence_rule
-                        ? { ...prev.recurrence_rule, active: false }
-                        : prev.recurrence_rule,
+                    recurrence_rule_id: null,
+                    recurrence_rule: null,
                 }));
             },
             runMutation: () => cancelRepetition(taskState.id),
@@ -1723,7 +1722,7 @@ export default function TaskDetailClient({
                         </Button>
                     )}
 
-                    {taskState.recurrence_rule_id && (
+                    {(taskState.recurrence_rule_id || isRepetitionStopped) && (
                         <Button
                             variant="destructive"
                             onClick={handleCancelRepetition}

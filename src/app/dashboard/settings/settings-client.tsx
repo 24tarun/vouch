@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { updateUserDefaults, updateUsername } from "@/actions/auth";
+import { deleteAccount, updateUserDefaults, updateUsername } from "@/actions/auth";
 import { addFriend, getFriends, removeFriend } from "@/actions/friends";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +80,9 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
     const [isDefaultsLoading, setIsDefaultsLoading] = useState(false);
     const [defaultsError, setDefaultsError] = useState<string | null>(null);
     const [defaultsSuccess, setDefaultsSuccess] = useState(false);
+    const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+    const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
+    const [deleteAccountSuccess, setDeleteAccountSuccess] = useState(false);
     const hasValidDefaultVoucher =
         !!defaultVoucherId &&
         (defaultVoucherId === profile.id || friends.some((friend) => friend.id === defaultVoucherId));
@@ -189,6 +192,37 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
         }
 
         setIsDefaultsLoading(false);
+    }
+
+    async function handleDeleteAccount() {
+        if (isDeletingAccount || deleteAccountSuccess) return;
+
+        const confirmed = window.confirm(
+            "This permanently deletes your account and all associated data. This action cannot be undone. Continue?"
+        );
+        if (!confirmed) return;
+
+        setIsDeletingAccount(true);
+        setDeleteAccountError(null);
+
+        try {
+            const result = await deleteAccount();
+            if ("error" in result) {
+                setDeleteAccountError(result.error);
+                setIsDeletingAccount(false);
+                return;
+            }
+
+            setDeleteAccountSuccess(true);
+            setIsDeletingAccount(false);
+            window.setTimeout(() => {
+                window.location.href = "https://tas.tarunh.com";
+            }, 3000);
+        } catch (error) {
+            console.error(error);
+            setDeleteAccountError("Failed to delete account.");
+            setIsDeletingAccount(false);
+        }
     }
 
     return (
@@ -526,6 +560,39 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                             {new Date(profile.created_at).toLocaleDateString()}
                         </span>
                     </div>
+                </CardContent>
+            </Card>
+
+            <Card className="bg-red-950/20 border-red-900/60">
+                <CardHeader>
+                    <CardTitle className="text-red-300">Danger Zone</CardTitle>
+                    <CardDescription className="text-red-200/80">
+                        Permanently delete your account and associated data.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <p className="text-sm text-red-100/90">
+                        This action is irreversible. Your profile, tasks, reminders, friendships, and related records will be deleted.
+                    </p>
+                    {deleteAccountError && (
+                        <p className="text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded px-3 py-2">
+                            {deleteAccountError}
+                        </p>
+                    )}
+                    {deleteAccountSuccess && (
+                        <p className="text-sm text-green-300 bg-green-500/10 border border-green-500/30 rounded px-3 py-2">
+                            Account successfully deleted. Redirecting...
+                        </p>
+                    )}
+                    <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={handleDeleteAccount}
+                        disabled={isDeletingAccount || deleteAccountSuccess}
+                        className="bg-red-700 hover:bg-red-600 text-white"
+                    >
+                        {deleteAccountSuccess ? "Account Deleted" : isDeletingAccount ? "Deleting Account..." : "Delete Account"}
+                    </Button>
                 </CardContent>
             </Card>
 

@@ -814,12 +814,13 @@ export async function cancelRepetition(taskId: string) {
         return { error: "Task is not repetitive" };
     }
 
-    // Disable the rule
+    // Delete the rule so only active rules remain in recurrence_rules.
+    // tasks.recurrence_rule_id is ON DELETE SET NULL, so linked tasks are detached automatically.
     const ruleId = (task as any).recurrence_rule_id;
 
     // @ts-ignore
     const { error } = await (supabase.from(RecurrenceRuleTable) as any)
-        .update({ active: false })
+        .delete()
         .eq("id", ruleId)
         .eq("user_id", user.id);
 

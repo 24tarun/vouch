@@ -113,7 +113,7 @@ export interface RectifyPass {
     id: string;
     user_id: string;
     task_id: string;
-    authorized_by: string;
+    authorized_by: string | null;
     period: string; // YYYY-MM
     created_at: string;
 }
@@ -188,7 +188,7 @@ export interface TaskWithRelations extends Task {
     user?: Profile;
     voucher?: Profile;
     events?: TaskEvent[];
-    recurrence_rule?: RecurrenceRule;
+    recurrence_rule?: RecurrenceRule | null;
     subtasks?: TaskSubtask[];
     reminders?: TaskReminder[];
     completion_proof?: TaskCompletionProof | null;
