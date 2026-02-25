@@ -43,3 +43,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 PRD.md
+
+# agent skills
+.agents/
+.agent/

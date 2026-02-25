@@ -369,7 +369,10 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                         Signed in as <span className="text-slate-300">{profile.email}</span>
                     </p>
                 </div>
-                <HardRefreshButton />
+                <div className="flex items-center gap-2">
+                    <HardRefreshButton />
+                    <SignOutMenuForm variant="nav" />
+                </div>
             </div>
 
             <PushInitializer />
@@ -744,9 +747,6 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                 </CardContent>
             </Card>
 
-            <div className="border-t border-slate-800 pt-6">
-                <SignOutMenuForm variant="menu" />
-            </div>
         </div>
     );
 }
