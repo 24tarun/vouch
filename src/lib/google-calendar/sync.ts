@@ -23,7 +23,6 @@ const GOOGLE_SCOPES = [
 const ACTIVE_SYNC_TASK_STATUSES = new Set(["CREATED", "POSTPONED", "AWAITING_VOUCHER", "MARKED_COMPLETED"]);
 const SOFT_DELETEABLE_STATUSES = new Set(["CREATED", "POSTPONED"]);
 const DEFAULT_GOOGLE_SYNC_KIND: GoogleSyncKind = "TASK";
-const GOOGLE_TASKS_SYNC_MIN_INTERVAL_MS = 5 * 60 * 1000;
 
 export interface GoogleCalendarListItem {
     id: string;
@@ -1393,21 +1392,12 @@ export async function processGoogleCalendarDeltaForUser(userId: string): Promise
     }
 }
 
-export async function processGoogleTasksDeltaForUser(
-    userId: string,
-    options?: { force?: boolean }
-): Promise<void> {
+export async function processGoogleTasksDeltaForUser(userId: string): Promise<void> {
     const supabase = createAdminClient();
     const connection = await getConnectionByUserId(supabase, userId);
 
     if (!connection || !connection.sync_enabled) {
         return;
-    }
-    if (!options?.force && connection.google_tasks_updated_min) {
-        const lastSyncedTs = parseIsoTimestamp(connection.google_tasks_updated_min);
-        if (lastSyncedTs > 0 && Date.now() - lastSyncedTs < GOOGLE_TASKS_SYNC_MIN_INTERVAL_MS) {
-            return;
-        }
     }
 
     const runStartedIso = new Date().toISOString();
@@ -1612,12 +1602,10 @@ export async function processGoogleTasksDeltaForUser(
 
 export async function syncGoogleTasksForEnabledConnections(limit: number = 200): Promise<void> {
     const supabase = createAdminClient();
-    const dueBeforeIso = new Date(Date.now() - GOOGLE_TASKS_SYNC_MIN_INTERVAL_MS).toISOString();
 
     const { data: rows } = await (supabase.from("google_calendar_connections") as any)
         .select("user_id")
         .eq("sync_enabled", true as any)
-        .or(`google_tasks_updated_min.is.null,google_tasks_updated_min.lte.${dueBeforeIso}`)
         .limit(limit);
 
     for (const row of (rows as Array<{ user_id: string }> | null) || []) {
