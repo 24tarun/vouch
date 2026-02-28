@@ -12,6 +12,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
 import { getCurrencySymbol, getFailureCostBounds, normalizeCurrency } from "@/lib/currency";
 import { getOwnerDeleteRemainingMs, isOwnerTempDeletableStatus } from "@/lib/task-delete-window";
+import { enqueueGoogleCalendarOutbox } from "@/lib/google-calendar/sync";
 import {
     buildDefaultDeadlineReminderRows,
     MANUAL_REMINDER_SOURCE,
@@ -111,6 +112,22 @@ function invalidateActiveTasksCache(userId: string) {
 
 function invalidatePendingVoucherRequestsCache(voucherId: string) {
     revalidateTag(pendingVoucherRequestsTag(voucherId), "max");
+}
+
+async function enqueueGoogleCalendarUpsert(userId: string, taskId: string) {
+    try {
+        await enqueueGoogleCalendarOutbox(userId, taskId, "UPSERT");
+    } catch (error) {
+        console.error(`Failed to enqueue Google Calendar UPSERT for task ${taskId}:`, error);
+    }
+}
+
+async function enqueueGoogleCalendarDelete(userId: string, taskId: string) {
+    try {
+        await enqueueGoogleCalendarOutbox(userId, taskId, "DELETE");
+    } catch (error) {
+        console.error(`Failed to enqueue Google Calendar DELETE for task ${taskId}:`, error);
+    }
 }
 
 function parseAndValidateFutureDeadline(rawDeadline: string): { deadline?: Date; error?: string } {
@@ -541,6 +558,8 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
         metadata: { title, type: "simple" },
     });
 
+    await enqueueGoogleCalendarUpsert(user.id, (task as any).id);
+
     invalidatePendingVoucherRequestsCache(defaultVoucherId);
     revalidatePath("/dashboard/friends");
     revalidateTaskSurfaces((task as any).id, user.id);
@@ -795,6 +814,8 @@ export async function createTask(formData: FormData) {
         },
     });
 
+    await enqueueGoogleCalendarUpsert((user as any).id, (task as any).id);
+
     invalidatePendingVoucherRequestsCache(voucherId);
     revalidatePath("/dashboard/friends");
     revalidateTaskSurfaces((task as any).id, (user as any).id);
@@ -958,6 +979,7 @@ export async function markTaskCompleteWithProofIntent(
 
         invalidateActiveTasksCache((user as any).id);
         invalidatePendingVoucherRequestsCache((task as any).voucher_id);
+        await enqueueGoogleCalendarDelete((user as any).id, taskId);
         revalidatePath("/dashboard");
         revalidatePath("/dashboard/stats");
         revalidatePath("/dashboard/friends");
@@ -1106,6 +1128,7 @@ export async function markTaskCompleteWithProofIntent(
 
     invalidateActiveTasksCache((user as any).id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
+    await enqueueGoogleCalendarUpsert((user as any).id, taskId);
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/stats");
     // Mirror accept/deny behavior so voucher list cache is invalidated on new request.
@@ -1415,6 +1438,8 @@ export async function revertTaskCompletionAfterProofFailure(taskId: string) {
         to_status: restoredStatus,
     });
 
+    await enqueueGoogleCalendarUpsert(user.id, taskId);
+
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
     revalidatePath("/dashboard");
@@ -1493,6 +1518,8 @@ export async function undoTaskComplete(taskId: string) {
         from_status: "AWAITING_VOUCHER",
         to_status: restoredStatus,
     });
+
+    await enqueueGoogleCalendarUpsert(user.id, taskId);
 
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
@@ -2030,6 +2057,8 @@ export async function postponeTask(taskId: string, newDeadlineIso: string) {
         metadata: { new_deadline: newDeadlineDate.toISOString() },
     });
 
+    await enqueueGoogleCalendarUpsert(user.id, taskId);
+
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
     revalidatePath("/dashboard/friends");
     revalidateTaskSurfaces(taskId, user.id);
@@ -2079,6 +2108,8 @@ export async function ownerTempDeleteTask(taskId: string) {
     if (!deletedRows || deletedRows.length === 0) {
         return { error: "Task can no longer be deleted. Please refresh." };
     }
+
+    await enqueueGoogleCalendarDelete(user.id, taskId);
 
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
@@ -2161,6 +2192,8 @@ export async function forceMajeureTask(taskId: string) {
         to_status: "SETTLED",
     });
 
+    await enqueueGoogleCalendarDelete(user.id, taskId);
+
     revalidatePath(`/dashboard/tasks/${taskId}`);
     revalidatePath("/dashboard");
     return { success: true };
@@ -2224,6 +2257,8 @@ export async function getTask(taskId: string) {
                     to_status: "FAILED",
                     metadata: { reason: "Deadline passed without completion" },
                 });
+
+                await enqueueGoogleCalendarDelete((task as any).user_id, taskId);
 
                 (task as any).status = "FAILED";
                 (task as any).updated_at = now.toISOString();

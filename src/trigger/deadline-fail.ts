@@ -9,6 +9,7 @@
  */
 import { schedules } from "@trigger.dev/sdk/v3";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enqueueGoogleCalendarOutbox } from "@/lib/google-calendar/sync";
 
 export const deadlineFail = schedules.task({
     id: "deadline-fail",
@@ -59,6 +60,8 @@ export const deadlineFail = schedules.task({
                 to_status: "FAILED",
                 metadata: { reason: "Deadline passed without completion" },
             });
+
+            await enqueueGoogleCalendarOutbox(task.user_id, task.id, "DELETE");
 
             console.log(`Failed task ${task.id} due to passed deadline`);
         }

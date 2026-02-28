@@ -14,6 +14,7 @@ import {
     buildDefaultDeadlineReminderRows,
     MANUAL_REMINDER_SOURCE,
 } from "@/lib/task-reminder-defaults";
+import { enqueueGoogleCalendarOutbox } from "@/lib/google-calendar/sync";
 
 export const recurrenceGenerator = schedules.task({
     id: "recurrence-generator",
@@ -533,6 +534,7 @@ async function processRule(
                 createdTask.deadline || deadlineIso,
                 reminderDefaultsByUser
             );
+            await enqueueGoogleCalendarOutbox(rule.user_id, createdTask.id, "UPSERT");
         }
 
         // Update Rule

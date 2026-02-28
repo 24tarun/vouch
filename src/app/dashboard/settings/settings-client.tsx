@@ -3,6 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { deleteAccount, updateUserDefaults, updateUsername } from "@/actions/auth";
 import { addFriend, getFriends, removeFriend } from "@/actions/friends";
+import {
+    disconnectGoogleCalendar,
+    listGoogleCalendarsForSettings,
+    setGoogleCalendarCalendar,
+    setGoogleCalendarSyncEnabled,
+    startGoogleCalendarConnect,
+    type GoogleCalendarIntegrationState,
+} from "@/actions/google-calendar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,9 +48,14 @@ import {
 interface SettingsClientProps {
     profile: Profile;
     friends: Profile[];
+    googleCalendarIntegration: GoogleCalendarIntegrationState;
 }
 
-export default function SettingsClient({ profile, friends: initialFriends }: SettingsClientProps) {
+export default function SettingsClient({
+    profile,
+    friends: initialFriends,
+    googleCalendarIntegration,
+}: SettingsClientProps) {
     const initialCurrency = normalizeCurrency(profile.currency);
     const initialFailureCostBounds = getFailureCostBounds(initialCurrency);
     const initialFailureCostMajorRaw = (profile.default_failure_cost_cents ?? DEFAULT_FAILURE_COST_CENTS) / 100;
@@ -92,6 +105,21 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
     const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
     const [deleteAccountSuccess, setDeleteAccountSuccess] = useState(false);
+    const [googleConnected, setGoogleConnected] = useState(googleCalendarIntegration.connected);
+    const [googleSyncEnabled, setGoogleSyncEnabled] = useState(googleCalendarIntegration.syncEnabled);
+    const [googleAccountEmail, setGoogleAccountEmail] = useState<string | null>(googleCalendarIntegration.accountEmail);
+    const [googleSelectedCalendarId, setGoogleSelectedCalendarId] = useState<string>(
+        googleCalendarIntegration.selectedCalendarId ?? ""
+    );
+    const [googleSelectedCalendarSummary, setGoogleSelectedCalendarSummary] = useState<string | null>(
+        googleCalendarIntegration.selectedCalendarSummary
+    );
+    const [googleLastSyncAt, setGoogleLastSyncAt] = useState<string | null>(googleCalendarIntegration.lastSyncAt);
+    const [googleLastError, setGoogleLastError] = useState<string | null>(googleCalendarIntegration.lastError);
+    const [googleCalendars, setGoogleCalendars] = useState<Array<{ id: string; summary: string; primary?: boolean }>>([]);
+    const [isGoogleCalendarsLoading, setIsGoogleCalendarsLoading] = useState(false);
+    const [isGoogleActionLoading, setIsGoogleActionLoading] = useState(false);
+    const [googleActionSuccess, setGoogleActionSuccess] = useState<string | null>(null);
     const hasMountedRef = useRef(false);
     const saveRequestIdRef = useRef(0);
     const hasValidDefaultVoucher =
@@ -327,6 +355,147 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
         voucherCanViewActiveTasksEnabled,
         currency,
     ]);
+
+    useEffect(() => {
+        if (!googleConnected) return;
+        setIsGoogleCalendarsLoading(true);
+        listGoogleCalendarsForSettings()
+            .then((result) => {
+                setGoogleCalendars(result.calendars || []);
+                setGoogleLastError(null);
+            })
+            .catch((error) => {
+                console.error(error);
+                setGoogleLastError("Could not load Google calendars.");
+            })
+            .finally(() => {
+                setIsGoogleCalendarsLoading(false);
+            });
+    }, [googleConnected]);
+
+    async function handleGoogleConnect() {
+        if (isGoogleActionLoading) return;
+        setIsGoogleActionLoading(true);
+        setGoogleActionSuccess(null);
+        setGoogleLastError(null);
+
+        try {
+            const result = await startGoogleCalendarConnect();
+            if ("error" in result && result.error) {
+                setGoogleLastError(result.error);
+                setIsGoogleActionLoading(false);
+                return;
+            }
+
+            if (!result.url) {
+                setGoogleLastError("Google OAuth URL could not be generated.");
+                setIsGoogleActionLoading(false);
+                return;
+            }
+
+            window.location.href = result.url;
+        } catch (error) {
+            console.error(error);
+            setGoogleLastError("Failed to start Google connection.");
+            setIsGoogleActionLoading(false);
+        }
+    }
+
+    async function handleGoogleDisconnect() {
+        if (isGoogleActionLoading) return;
+        setIsGoogleActionLoading(true);
+        setGoogleActionSuccess(null);
+        setGoogleLastError(null);
+
+        try {
+            const result = await disconnectGoogleCalendar();
+            if (result.error) {
+                setGoogleLastError(result.error);
+                return;
+            }
+
+            setGoogleConnected(false);
+            setGoogleSyncEnabled(false);
+            setGoogleAccountEmail(null);
+            setGoogleSelectedCalendarId("");
+            setGoogleSelectedCalendarSummary(null);
+            setGoogleCalendars([]);
+            setGoogleLastSyncAt(null);
+            setGoogleActionSuccess("Google Calendar disconnected.");
+        } catch (error) {
+            console.error(error);
+            setGoogleLastError("Failed to disconnect Google Calendar.");
+        } finally {
+            setIsGoogleActionLoading(false);
+        }
+    }
+
+    async function handleGoogleRefreshCalendars() {
+        if (isGoogleActionLoading) return;
+        setIsGoogleActionLoading(true);
+        setGoogleActionSuccess(null);
+        setGoogleLastError(null);
+
+        try {
+            const result = await listGoogleCalendarsForSettings();
+            setGoogleCalendars(result.calendars || []);
+            setGoogleActionSuccess("Calendars refreshed.");
+        } catch (error) {
+            console.error(error);
+            setGoogleLastError("Could not refresh Google calendars.");
+        } finally {
+            setIsGoogleActionLoading(false);
+        }
+    }
+
+    async function handleGoogleCalendarSelection(nextCalendarId: string) {
+        if (isGoogleActionLoading) return;
+        setIsGoogleActionLoading(true);
+        setGoogleActionSuccess(null);
+        setGoogleLastError(null);
+
+        try {
+            const result = await setGoogleCalendarCalendar(nextCalendarId);
+            if (result.error) {
+                setGoogleLastError(result.error);
+                return;
+            }
+
+            const selected = googleCalendars.find((calendar) => calendar.id === nextCalendarId);
+            setGoogleSelectedCalendarId(nextCalendarId);
+            setGoogleSelectedCalendarSummary(selected?.summary || null);
+            setGoogleActionSuccess("Google calendar selected.");
+        } catch (error) {
+            console.error(error);
+            setGoogleLastError("Could not set Google calendar.");
+        } finally {
+            setIsGoogleActionLoading(false);
+        }
+    }
+
+    async function handleGoogleSyncToggle(enabled: boolean) {
+        if (isGoogleActionLoading) return;
+        setIsGoogleActionLoading(true);
+        setGoogleActionSuccess(null);
+        setGoogleLastError(null);
+
+        try {
+            const result = await setGoogleCalendarSyncEnabled(enabled);
+            if (result.error) {
+                setGoogleLastError(result.error);
+                return;
+            }
+
+            setGoogleSyncEnabled(enabled);
+            setGoogleLastSyncAt(new Date().toISOString());
+            setGoogleActionSuccess(enabled ? "Google Calendar sync enabled." : "Google Calendar sync disabled.");
+        } catch (error) {
+            console.error(error);
+            setGoogleLastError("Could not update sync setting.");
+        } finally {
+            setIsGoogleActionLoading(false);
+        }
+    }
 
     async function handleDeleteAccount() {
         if (isDeletingAccount || deleteAccountSuccess) return;
@@ -682,6 +851,131 @@ export default function SettingsClient({ profile, friends: initialFriends }: Set
                             <p className="text-sm text-green-400">Defaults updated!</p>
                         )}
                     </div>
+                </CardContent>
+            </Card>
+
+            <Card className="bg-slate-900/40 border-slate-800">
+                <CardHeader>
+                    <CardTitle className="text-white">Google Calendar</CardTitle>
+                    <CardDescription className="text-slate-400">
+                        Optional two-way sync for tasks and calendar events. Disabled by default.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {!googleConnected ? (
+                            <Button
+                                type="button"
+                                onClick={handleGoogleConnect}
+                                disabled={isGoogleActionLoading}
+                                className="bg-slate-100 text-slate-950 hover:bg-white font-semibold"
+                            >
+                                {isGoogleActionLoading ? "Connecting..." : "Connect Google"}
+                            </Button>
+                        ) : (
+                            <>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={handleGoogleRefreshCalendars}
+                                    disabled={isGoogleActionLoading}
+                                    className="border-slate-700 text-slate-200 hover:bg-slate-800"
+                                >
+                                    {isGoogleActionLoading ? "Working..." : "Refresh Calendars"}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    onClick={handleGoogleDisconnect}
+                                    disabled={isGoogleActionLoading}
+                                    className="text-red-300 hover:text-red-200 hover:bg-red-500/10"
+                                >
+                                    Disconnect
+                                </Button>
+                            </>
+                        )}
+                    </div>
+
+                    {googleAccountEmail && (
+                        <p className="text-xs text-slate-400">
+                            Connected as <span className="text-slate-200">{googleAccountEmail}</span>
+                        </p>
+                    )}
+
+                    {googleConnected && (
+                        <>
+                            <div className="space-y-2">
+                                <Label htmlFor="googleCalendarSelect" className="text-slate-200">
+                                    Sync Calendar
+                                </Label>
+                                <Select
+                                    value={googleSelectedCalendarId || undefined}
+                                    onValueChange={handleGoogleCalendarSelection}
+                                >
+                                    <SelectTrigger
+                                        id="googleCalendarSelect"
+                                        className="bg-slate-800/40 border-slate-700 text-white w-full"
+                                    >
+                                        <SelectValue
+                                            placeholder={
+                                                isGoogleCalendarsLoading ? "Loading calendars..." : "Select a Google calendar"
+                                            }
+                                        />
+                                    </SelectTrigger>
+                                    <SelectContent className="bg-slate-900 border-slate-800 text-white">
+                                        {googleCalendars.map((calendar) => (
+                                            <SelectItem key={calendar.id} value={calendar.id}>
+                                                {calendar.summary}{calendar.primary ? " (Primary)" : ""}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {googleSelectedCalendarSummary && (
+                                    <p className="text-xs text-slate-500">
+                                        Selected: {googleSelectedCalendarSummary}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="rounded-lg border border-slate-700/70 bg-slate-800/30 px-3 py-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="space-y-1">
+                                        <Label htmlFor="googleSyncEnabled" className="text-slate-200">
+                                            Enable Google Calendar sync
+                                        </Label>
+                                        <p className="text-xs text-slate-400">
+                                            Uses your default voucher and default failure cost for Google-created tasks.
+                                        </p>
+                                    </div>
+                                    <input
+                                        id="googleSyncEnabled"
+                                        type="checkbox"
+                                        checked={googleSyncEnabled}
+                                        disabled={!googleSelectedCalendarId || isGoogleActionLoading}
+                                        onChange={(e) => handleGoogleSyncToggle(e.target.checked)}
+                                        className="h-4 w-4 accent-cyan-400"
+                                    />
+                                </div>
+                            </div>
+                        </>
+                    )}
+
+                    {googleLastSyncAt && (
+                        <p className="text-xs text-slate-500">
+                            Last sync: {new Date(googleLastSyncAt).toLocaleString()}
+                        </p>
+                    )}
+
+                    {googleLastError && (
+                        <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded px-3 py-2">
+                            {googleLastError}
+                        </p>
+                    )}
+                    {googleActionSuccess && (
+                        <p className="text-sm text-green-400 bg-green-500/10 border border-green-500/30 rounded px-3 py-2">
+                            {googleActionSuccess}
+                        </p>
+                    )}
                 </CardContent>
             </Card>
 

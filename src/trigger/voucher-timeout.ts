@@ -10,12 +10,14 @@
 import { schedules } from "@trigger.dev/sdk/v3";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { deleteTaskProof } from "@/lib/task-proof";
+import { enqueueGoogleCalendarOutbox } from "@/lib/google-calendar/sync";
 
 const VOUCHER_TIMEOUT_PENALTY_CENTS = 30;
 
 interface TimeoutTask {
     id: string;
     voucher_id: string;
+    user_id: string;
 }
 
 export const voucherTimeout = schedules.task({
@@ -27,7 +29,7 @@ export const voucherTimeout = schedules.task({
 
         const { data, error } = await (supabase
             .from("tasks")
-            .select("id, voucher_id")
+            .select("id, voucher_id, user_id")
             .eq("status", "AWAITING_VOUCHER")
             .lt("voucher_response_deadline", now) as any);
 
@@ -92,6 +94,8 @@ export const voucherTimeout = schedules.task({
                 if (eventError) {
                     console.error(`Failed to insert VOUCHER_TIMEOUT event for task ${task.id}:`, eventError);
                 }
+
+                await enqueueGoogleCalendarOutbox(task.user_id, task.id, "DELETE");
 
                 console.log(`Auto-accepted task ${task.id} due to voucher timeout`);
             } catch (taskError) {

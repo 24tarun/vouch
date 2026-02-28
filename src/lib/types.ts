@@ -157,6 +157,53 @@ export interface VoucherReminderLog {
     created_at: string;
 }
 
+export interface GoogleCalendarConnection {
+    user_id: string;
+    sync_enabled: boolean;
+    google_account_email: string | null;
+    selected_calendar_id: string | null;
+    selected_calendar_summary: string | null;
+    encrypted_access_token: string | null;
+    encrypted_refresh_token: string | null;
+    token_expires_at: string | null;
+    watch_channel_id: string | null;
+    watch_resource_id: string | null;
+    watch_expires_at: string | null;
+    sync_token: string | null;
+    last_webhook_at: string | null;
+    last_sync_at: string | null;
+    last_error: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface GoogleCalendarTaskLink {
+    task_id: string;
+    user_id: string;
+    calendar_id: string;
+    google_event_id: string;
+    last_google_etag: string | null;
+    last_google_updated_at: string | null;
+    last_app_updated_at: string | null;
+    last_origin: "APP" | "GOOGLE";
+    created_at: string;
+    updated_at: string;
+}
+
+export interface GoogleCalendarSyncOutbox {
+    id: number;
+    user_id: string;
+    task_id: string | null;
+    intent: "UPSERT" | "DELETE";
+    status: "PENDING" | "PROCESSING" | "DONE" | "FAILED";
+    attempt_count: number;
+    next_attempt_at: string;
+    payload: Json | null;
+    last_error: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
 export type RecurrenceFrequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | "WEEKDAYS" | "CUSTOM";
 
 export interface RecurrenceRuleConfig {
@@ -293,6 +340,21 @@ export interface Database {
                 Row: WebPushSubscription
                 Insert: Omit<WebPushSubscription, "id" | "created_at" | "updated_at">
                 Update: Partial<WebPushSubscription>
+            }
+            google_calendar_connections: {
+                Row: GoogleCalendarConnection
+                Insert: Omit<GoogleCalendarConnection, "created_at" | "updated_at">
+                Update: Partial<GoogleCalendarConnection>
+            }
+            google_calendar_task_links: {
+                Row: GoogleCalendarTaskLink
+                Insert: Omit<GoogleCalendarTaskLink, "created_at" | "updated_at">
+                Update: Partial<GoogleCalendarTaskLink>
+            }
+            google_calendar_sync_outbox: {
+                Row: GoogleCalendarSyncOutbox
+                Insert: Omit<GoogleCalendarSyncOutbox, "id" | "created_at" | "updated_at">
+                Update: Partial<GoogleCalendarSyncOutbox>
             }
             voucher_reminder_logs: {
                 Row: VoucherReminderLog
