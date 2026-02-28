@@ -1059,19 +1059,33 @@ export async function processGoogleCalendarDeltaForUser(userId: string): Promise
             if (event.status === "cancelled") {
                 if (existingLink?.task_id) {
                     const { data: task } = await (supabase.from("tasks") as any)
-                        .select("id, status")
+                        .select("id, status, google_sync_for_task")
                         .eq("id", existingLink.task_id as any)
                         .eq("user_id", userId as any)
                         .maybeSingle();
 
-                    if (task && SOFT_DELETEABLE_STATUSES.has((task as any).status)) {
+                    if (task) {
+                        const nowIso = new Date().toISOString();
                         await (supabase.from("tasks") as any)
                             .update({
-                                status: "DELETED",
-                                updated_at: new Date().toISOString(),
+                                google_sync_for_task: false,
+                                updated_at: nowIso,
                             } as any)
                             .eq("id", existingLink.task_id as any)
                             .eq("user_id", userId as any);
+
+                        await (supabase.from("task_events") as any).insert({
+                            task_id: existingLink.task_id,
+                            event_type: "GOOGLE_EVENT_CANCELLED",
+                            actor_id: null,
+                            from_status: (task as any).status,
+                            to_status: (task as any).status,
+                            metadata: {
+                                source: "google_calendar",
+                                google_event_id: event.id,
+                                app_task_retained: true,
+                            },
+                        });
                     }
 
                     await (supabase.from("google_calendar_task_links") as any)

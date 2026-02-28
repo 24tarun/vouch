@@ -157,7 +157,6 @@ export function RealtimeListener({ userId }: { userId: string }) {
             const outboxRow = toGoogleCalendarOutboxRow(payload.new);
             if (!outboxRow) return;
             if (outboxRow.user_id !== userId) return;
-            if (outboxRow.intent !== "UPSERT") return;
             if (outboxRow.status !== "DONE" && outboxRow.status !== "FAILED") return;
 
             const dedupeKey = `${outboxRow.id}:${outboxRow.status}`;
@@ -174,12 +173,20 @@ export function RealtimeListener({ userId }: { userId: string }) {
             }
 
             if (outboxRow.status === "DONE") {
-                toast.success("Task synced to Google.");
+                if (outboxRow.intent === "DELETE") {
+                    toast.success("Task removed from Google Calendar.");
+                } else {
+                    toast.success("Task synced to Google Calendar.");
+                }
                 return;
             }
 
             const detail = outboxRow.last_error?.trim();
-            toast.error(detail ? `Google sync failed: ${detail}` : "Google sync failed.");
+            if (outboxRow.intent === "DELETE") {
+                toast.error(detail ? `Google delete failed: ${detail}` : "Google delete failed.");
+            } else {
+                toast.error(detail ? `Google sync failed: ${detail}` : "Google sync failed.");
+            }
         };
 
         // Subscribe to tasks relevant to the current user as owner or voucher.
