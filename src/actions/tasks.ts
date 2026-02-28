@@ -122,9 +122,13 @@ async function enqueueGoogleCalendarUpsert(userId: string, taskId: string) {
     }
 }
 
-async function enqueueGoogleCalendarDelete(userId: string, taskId: string) {
+async function enqueueGoogleCalendarDelete(
+    userId: string,
+    taskId: string,
+    payload?: { google_event_id?: string; calendar_id?: string }
+) {
     try {
-        await enqueueGoogleCalendarOutbox(userId, taskId, "DELETE");
+        await enqueueGoogleCalendarOutbox(userId, taskId, "DELETE", payload);
     } catch (error) {
         console.error(`Failed to enqueue Google Calendar DELETE for task ${taskId}:`, error);
     }
@@ -2094,6 +2098,25 @@ export async function ownerTempDeleteTask(taskId: string) {
     }
 
     const supabaseAdmin = createAdminClient();
+    let googleDeletePayload: { google_event_id?: string; calendar_id?: string } | undefined;
+
+    // Snapshot Google identifiers before hard-delete so outbox DELETE can still
+    // remove the remote event after ON DELETE CASCADE removes task link rows.
+    const { data: googleLink, error: googleLinkError } = await (supabaseAdmin.from("google_calendar_task_links") as any)
+        .select("google_event_id, calendar_id")
+        .eq("task_id", taskId as any)
+        .eq("user_id", user.id as any)
+        .maybeSingle();
+
+    if (googleLinkError) {
+        console.error("Failed to read Google Calendar link before ownerTempDeleteTask:", googleLinkError);
+    } else if ((googleLink as any)?.google_event_id || (googleLink as any)?.calendar_id) {
+        googleDeletePayload = {
+            google_event_id: (googleLink as any).google_event_id ?? undefined,
+            calendar_id: (googleLink as any).calendar_id ?? undefined,
+        };
+    }
+
     const { data: deletedRows, error } = await (supabaseAdmin.from("tasks") as any)
         .delete()
         .eq("id", taskId as any)
@@ -2109,7 +2132,7 @@ export async function ownerTempDeleteTask(taskId: string) {
         return { error: "Task can no longer be deleted. Please refresh." };
     }
 
-    await enqueueGoogleCalendarDelete(user.id, taskId);
+    await enqueueGoogleCalendarDelete(user.id, taskId, googleDeletePayload);
 
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);

@@ -68,6 +68,11 @@ interface GoogleConnectionContext {
     accessToken: string;
 }
 
+interface GoogleCalendarOutboxPayload {
+    google_event_id?: string;
+    calendar_id?: string;
+}
+
 function getRequiredEnv(name: string): string {
     const value = process.env[name];
     if (!value) {
@@ -740,6 +745,19 @@ async function getLinkForTask(
 
     return (data as GoogleCalendarTaskLink | null) || null;
 }
+
+function parseGoogleCalendarOutboxPayload(payload: unknown): GoogleCalendarOutboxPayload {
+    if (!payload || typeof payload !== "object") {
+        return {};
+    }
+
+    const row = payload as Record<string, unknown>;
+    return {
+        google_event_id: typeof row.google_event_id === "string" ? row.google_event_id : undefined,
+        calendar_id: typeof row.calendar_id === "string" ? row.calendar_id : undefined,
+    };
+}
+
 export async function processGoogleCalendarOutboxItem(outboxId: number): Promise<void> {
     const supabase = createAdminClient();
 
@@ -768,6 +786,7 @@ export async function processGoogleCalendarOutboxItem(outboxId: number): Promise
         const userId = (outbox as any).user_id as string;
         const taskId = (outbox as any).task_id as string | null;
         const intent = (outbox as any).intent as "UPSERT" | "DELETE";
+        const outboxPayload = parseGoogleCalendarOutboxPayload((outbox as any).payload);
 
         if (!taskId) {
             await markOutboxDone(supabase, outboxId);
@@ -794,8 +813,15 @@ export async function processGoogleCalendarOutboxItem(outboxId: number): Promise
             !ACTIVE_SYNC_TASK_STATUSES.has((task as any).status);
 
         if (isDelete) {
-            if (link?.google_event_id) {
-                await googleDeleteEvent(fresh.accessToken, connection.selected_calendar_id, link.google_event_id);
+            const deleteEventId = link?.google_event_id || outboxPayload.google_event_id || null;
+            const deleteCalendarId =
+                link?.calendar_id ||
+                outboxPayload.calendar_id ||
+                connection.selected_calendar_id ||
+                null;
+
+            if (deleteEventId && deleteCalendarId) {
+                await googleDeleteEvent(fresh.accessToken, deleteCalendarId, deleteEventId);
             }
 
             await (supabase.from("google_calendar_task_links") as any)
