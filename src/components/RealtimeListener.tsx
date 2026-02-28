@@ -174,12 +174,12 @@ export function RealtimeListener({ userId }: { userId: string }) {
             }
 
             if (outboxRow.status === "DONE") {
-                toast.success("Task synced to Google Calendar.");
+                toast.success("Task synced to Google.");
                 return;
             }
 
             const detail = outboxRow.last_error?.trim();
-            toast.error(detail ? `Google Calendar sync failed: ${detail}` : "Google Calendar sync failed.");
+            toast.error(detail ? `Google sync failed: ${detail}` : "Google sync failed.");
         };
 
         // Subscribe to tasks relevant to the current user as owner or voucher.

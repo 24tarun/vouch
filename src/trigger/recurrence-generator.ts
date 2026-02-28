@@ -489,6 +489,7 @@ async function processRule(
                 required_pomo_minutes: rule.required_pomo_minutes ?? null,
                 deadline: deadlineIso,
                 status: "CREATED",
+                google_sync_kind: rule.google_sync_kind || "TASK",
                 recurrence_rule_id: rule.id
             })
             .select("id, deadline")

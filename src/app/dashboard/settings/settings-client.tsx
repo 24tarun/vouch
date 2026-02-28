@@ -403,6 +403,11 @@ export default function SettingsClient({
 
     async function handleGoogleDisconnect() {
         if (isGoogleActionLoading) return;
+        const confirmed = window.confirm(
+            "Disconnect & Forget will revoke Google access and remove all Google sync data from this app. Existing tasks will remain. Continue?"
+        );
+        if (!confirmed) return;
+
         setIsGoogleActionLoading(true);
         setGoogleActionSuccess(null);
         setGoogleLastError(null);
@@ -421,10 +426,11 @@ export default function SettingsClient({
             setGoogleSelectedCalendarSummary(null);
             setGoogleCalendars([]);
             setGoogleLastSyncAt(null);
-            setGoogleActionSuccess("Google Calendar disconnected.");
+            setGoogleLastError(null);
+            setGoogleActionSuccess("Google Calendar disconnected and forgotten.");
         } catch (error) {
             console.error(error);
-            setGoogleLastError("Failed to disconnect Google Calendar.");
+            setGoogleLastError("Failed to disconnect and forget Google Calendar.");
         } finally {
             setIsGoogleActionLoading(false);
         }
@@ -890,7 +896,7 @@ export default function SettingsClient({
                                     disabled={isGoogleActionLoading}
                                     className="text-red-300 hover:text-red-200 hover:bg-red-500/10"
                                 >
-                                    Disconnect
+                                    Disconnect & Forget
                                 </Button>
                             </>
                         )}

@@ -1,5 +1,7 @@
 import type { TaskStatus } from "./xstate/task-machine";
 
+export type GoogleSyncKind = "TASK" | "EVENT";
+
 // Database types matching Supabase schema
 export interface Profile {
     id: string;
@@ -38,6 +40,7 @@ export interface Task {
     marked_completed_at: string | null;
     voucher_response_deadline: string | null;
     recurrence_rule_id: string | null;
+    google_sync_kind?: GoogleSyncKind;
     created_at: string;
     updated_at: string;
     proof_request_open?: boolean;
@@ -182,6 +185,7 @@ export interface GoogleCalendarTaskLink {
     user_id: string;
     calendar_id: string;
     google_event_id: string;
+    google_item_kind?: GoogleSyncKind;
     last_google_etag: string | null;
     last_google_updated_at: string | null;
     last_app_updated_at: string | null;
@@ -224,6 +228,7 @@ export interface RecurrenceRule {
     rule_config: RecurrenceRuleConfig;
     timezone: string;
     active: boolean;
+    google_sync_kind?: GoogleSyncKind;
     manual_reminder_offsets_ms?: number[] | null;
     last_generated_date: string | null; // YYYY-MM-DD
     created_at: string;

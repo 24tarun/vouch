@@ -117,6 +117,10 @@ Voucher review window:
 - Vouchers have 7 days to respond after task submission.
 - No immediate push/email is sent at submission time.
 
+Google Calendar integration controls:
+- `Enable Google Calendar sync` toggles sync on/off while keeping the connection.
+- `Disconnect & Forget` revokes Google access and purges Google integration rows (`google_calendar_connections`, `google_calendar_task_links`, `google_calendar_sync_outbox`) while keeping existing tasks.
+
 
 
 VISIT tas.tarunh.com to see the app

@@ -4,7 +4,7 @@ import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { canTransition, type TaskStatus } from "@/lib/xstate/task-machine";
-import { type Database } from "@/lib/types";
+import { type Database, type GoogleSyncKind } from "@/lib/types";
 import { type SupabaseClient } from "@supabase/supabase-js";
 import { sendNotification } from "@/lib/notifications";
 import { DEFAULT_FAILURE_COST_CENTS, MAX_SUBTASKS_PER_TASK } from "@/lib/constants";
@@ -40,6 +40,7 @@ const INVALID_REQUIRED_POMO_ERROR = "Required pomodoro minutes must be an intege
 const INVALID_TASK_PROOF_ERROR = "Invalid proof payload.";
 const TASK_PROOF_TOO_LARGE_ERROR = "Proof must be 5MB or less.";
 const TASK_PROOF_VIDEO_TOO_LONG_ERROR = "Video proof must be 15 seconds or less.";
+const TITLE_REQUIRED_ERROR = "Title cannot be empty.";
 
 function isValidTimeZone(timeZone: string): boolean {
     try {
@@ -125,13 +126,30 @@ async function enqueueGoogleCalendarUpsert(userId: string, taskId: string) {
 async function enqueueGoogleCalendarDelete(
     userId: string,
     taskId: string,
-    payload?: { google_event_id?: string; calendar_id?: string }
+    payload?: {
+        google_event_id?: string;
+        calendar_id?: string;
+        google_item_kind?: GoogleSyncKind;
+    }
 ) {
     try {
         await enqueueGoogleCalendarOutbox(userId, taskId, "DELETE", payload);
     } catch (error) {
         console.error(`Failed to enqueue Google Calendar DELETE for task ${taskId}:`, error);
     }
+}
+
+function normalizeTaskTitleAndSyncKind(rawTitle: string): { normalizedTitle: string; googleSyncKind: GoogleSyncKind } {
+    const hasEventToken = /(^|\s)-event(?=\s|$)/i.test(rawTitle);
+    const normalizedTitle = rawTitle
+        .replace(/(^|\s)-event(?=\s|$)/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    return {
+        normalizedTitle,
+        googleSyncKind: hasEventToken ? "EVENT" : "TASK",
+    };
 }
 
 function parseAndValidateFutureDeadline(rawDeadline: string): { deadline?: Date; error?: string } {
@@ -469,6 +487,11 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
 
     if (!user) return { error: "Not authenticated" };
 
+    const normalizedTitle = normalizeTaskTitleAndSyncKind(title);
+    if (!normalizedTitle.normalizedTitle) {
+        return { error: TITLE_REQUIRED_ERROR };
+    }
+
     const normalizedSubtasks = normalizeSubtaskTitles(subtasksInput ?? []);
     if (normalizedSubtasks.error) {
         return { error: normalizedSubtasks.error };
@@ -511,11 +534,12 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
         .insert({
             user_id: user.id,
             voucher_id: defaultVoucherId,
-            title,
+            title: normalizedTitle.normalizedTitle,
             description: null,
             failure_cost_cents: defaultFailureCostCents,
             deadline: deadline.toISOString(),
             status: "CREATED",
+            google_sync_kind: normalizedTitle.googleSyncKind,
         })
         .select()
         .single();
@@ -559,7 +583,7 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
         actor_id: user.id,
         from_status: "CREATED",
         to_status: "CREATED",
-        metadata: { title, type: "simple" },
+        metadata: { title: normalizedTitle.normalizedTitle, type: "simple" },
     });
 
     await enqueueGoogleCalendarUpsert(user.id, (task as any).id);
@@ -612,7 +636,9 @@ export async function createTask(formData: FormData) {
         return { error: "Not authenticated" };
     }
 
-    const title = formData.get("title") as string;
+    const rawTitle = formData.get("title") as string;
+    const titleSelection = normalizeTaskTitleAndSyncKind(rawTitle || "");
+    const title = titleSelection.normalizedTitle;
     const description = formData.get("description") as string;
     const failureCostMajor = Number(formData.get("failureCost"));
     const deadline = formData.get("deadline") as string;
@@ -620,7 +646,11 @@ export async function createTask(formData: FormData) {
     const subtasksInput = normalizeSubtasksFromFormData(formData.get("subtasks"));
     const requiredPomoInput = parseRequiredPomoMinutesFromFormData(formData.get("requiredPomoMinutes"));
 
-    if (!title || !deadline || !voucherId || !Number.isFinite(failureCostMajor)) {
+    if (!title) {
+        return { error: TITLE_REQUIRED_ERROR };
+    }
+
+    if (!deadline || !voucherId || !Number.isFinite(failureCostMajor)) {
         return { error: "Missing required fields" };
     }
     if (subtasksInput.error) {
@@ -722,6 +752,7 @@ export async function createTask(formData: FormData) {
                 rule_config: ruleConfig,
                 timezone: userTimezone,
                 active: true,
+                google_sync_kind: titleSelection.googleSyncKind,
                 manual_reminder_offsets_ms: manualReminderOffsetsMs,
                 // Set last_generated_date to the date part of the deadline in user's timezone
                 // This prevents immediate regeneration of the task we are about to create manually
@@ -752,6 +783,7 @@ export async function createTask(formData: FormData) {
             required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,
             deadline: validatedDeadline.toISOString(),
             status: "CREATED",
+            google_sync_kind: titleSelection.googleSyncKind,
             recurrence_rule_id: recurrenceRuleId
         })
         .select()
@@ -2098,22 +2130,27 @@ export async function ownerTempDeleteTask(taskId: string) {
     }
 
     const supabaseAdmin = createAdminClient();
-    let googleDeletePayload: { google_event_id?: string; calendar_id?: string } | undefined;
+    let googleDeletePayload: {
+        google_event_id?: string;
+        calendar_id?: string;
+        google_item_kind?: GoogleSyncKind;
+    } | undefined;
 
     // Snapshot Google identifiers before hard-delete so outbox DELETE can still
-    // remove the remote event after ON DELETE CASCADE removes task link rows.
+    // finalize linked Google items after ON DELETE CASCADE removes task link rows.
     const { data: googleLink, error: googleLinkError } = await (supabaseAdmin.from("google_calendar_task_links") as any)
-        .select("google_event_id, calendar_id")
+        .select("google_event_id, calendar_id, google_item_kind")
         .eq("task_id", taskId as any)
         .eq("user_id", user.id as any)
         .maybeSingle();
 
     if (googleLinkError) {
         console.error("Failed to read Google Calendar link before ownerTempDeleteTask:", googleLinkError);
-    } else if ((googleLink as any)?.google_event_id || (googleLink as any)?.calendar_id) {
+    } else if ((googleLink as any)?.google_event_id || (googleLink as any)?.calendar_id || (googleLink as any)?.google_item_kind) {
         googleDeletePayload = {
             google_event_id: (googleLink as any).google_event_id ?? undefined,
             calendar_id: (googleLink as any).calendar_id ?? undefined,
+            google_item_kind: ((googleLink as any).google_item_kind as GoogleSyncKind | undefined) ?? undefined,
         };
     }
 
