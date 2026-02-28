@@ -148,7 +148,7 @@ async function googleFetch<T>(
 }
 
 export function buildGoogleOAuthUrl(state: string): string {
-    const clientId = getRequiredEnv("GOOGLE_CLIENT_ID");
+    const clientId = getRequiredEnv("GOOGLE_OAUTH_CLIENT_ID");
     const redirectUri = getRequiredEnv("GOOGLE_OAUTH_REDIRECT_URI");
 
     const params = new URLSearchParams({
@@ -166,8 +166,8 @@ export function buildGoogleOAuthUrl(state: string): string {
 }
 
 export async function exchangeGoogleCodeForTokens(code: string): Promise<GoogleTokenExchangeResult> {
-    const clientId = getRequiredEnv("GOOGLE_CLIENT_ID");
-    const clientSecret = getRequiredEnv("GOOGLE_CLIENT_SECRET");
+    const clientId = getRequiredEnv("GOOGLE_OAUTH_CLIENT_ID");
+    const clientSecret = getRequiredEnv("GOOGLE_OAUTH_CLIENT_SECRET");
     const redirectUri = getRequiredEnv("GOOGLE_OAUTH_REDIRECT_URI");
 
     const body = new URLSearchParams({
@@ -190,8 +190,8 @@ export async function exchangeGoogleCodeForTokens(code: string): Promise<GoogleT
 }
 
 async function refreshGoogleAccessToken(refreshToken: string): Promise<GoogleTokenExchangeResult> {
-    const clientId = getRequiredEnv("GOOGLE_CLIENT_ID");
-    const clientSecret = getRequiredEnv("GOOGLE_CLIENT_SECRET");
+    const clientId = getRequiredEnv("GOOGLE_OAUTH_CLIENT_ID");
+    const clientSecret = getRequiredEnv("GOOGLE_OAUTH_CLIENT_SECRET");
 
     const body = new URLSearchParams({
         client_id: clientId,
