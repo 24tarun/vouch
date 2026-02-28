@@ -23,10 +23,6 @@ interface PendingVoucherTask {
 }
 
 type VoucherReminderLogInsert = Database["public"]["Tables"]["voucher_reminder_logs"]["Insert"];
-type VoucherReminderLogsUpsert = (
-    values: VoucherReminderLogInsert,
-    options: { onConflict?: string }
-) => Promise<{ error: unknown }>;
 
 export const voucherDeadlineWarning = schedules.task({
     id: "voucher-deadline-warning",
@@ -82,26 +78,30 @@ export const voucherDeadlineWarning = schedules.task({
         for (const [voucherId, summary] of countsByVoucher.entries()) {
             if (summary.count <= 0) continue;
 
-            const existingLog = await supabase
-                .from("voucher_reminder_logs")
-                .select("id")
-                .eq("voucher_id", voucherId)
-                .eq("reminder_date", utcDate)
-                .maybeSingle();
-
-            if (existingLog.error) {
-                console.error(`Failed to check reminder log for voucher ${voucherId}:`, existingLog.error);
-                continue;
-            }
-
-            if (existingLog.data) {
-                continue;
-            }
-
             const body =
                 summary.count === 1
                     ? "You have 1 vouch request."
                     : `You have ${summary.count} vouch requests.`;
+
+            const reminderLogPayload: VoucherReminderLogInsert = {
+                voucher_id: voucherId,
+                reminder_date: utcDate,
+                pending_count: summary.count,
+            };
+
+            // Reserve today's digest slot before sending to prevent duplicate sends
+            // across overlapping trigger executions.
+            const { error: reserveError } = await (supabase.from("voucher_reminder_logs") as any)
+                .insert(reminderLogPayload as any);
+            if (reserveError) {
+                const code = (reserveError as { code?: string }).code;
+                if (code === "23505") {
+                    continue;
+                }
+
+                console.error(`Failed to reserve reminder log for voucher ${voucherId}:`, reserveError);
+                continue;
+            }
 
             try {
                 await sendNotification({
@@ -124,24 +124,17 @@ export const voucherDeadlineWarning = schedules.task({
                         reminder_date: utcDate,
                     },
                 });
-
-                const reminderLogPayload: VoucherReminderLogInsert = {
-                    voucher_id: voucherId,
-                    reminder_date: utcDate,
-                    pending_count: summary.count,
-                };
-                const reminderLogsTable = supabase.from("voucher_reminder_logs") as unknown as {
-                    upsert: VoucherReminderLogsUpsert;
-                };
-                const reminderLogRes = await reminderLogsTable.upsert(reminderLogPayload, {
-                    onConflict: "voucher_id,reminder_date",
-                });
-
-                if (reminderLogRes.error) {
-                    console.error(`Failed to insert reminder log for voucher ${voucherId}:`, reminderLogRes.error);
-                }
             } catch (error) {
                 console.error(`Failed to send digest reminder for voucher ${voucherId}:`, error);
+
+                // Release reservation so a later run can retry the digest.
+                const { error: releaseError } = await (supabase.from("voucher_reminder_logs") as any)
+                    .delete()
+                    .eq("voucher_id", voucherId as any)
+                    .eq("reminder_date", utcDate as any);
+                if (releaseError) {
+                    console.error(`Failed to release reminder-log reservation for voucher ${voucherId}:`, releaseError);
+                }
             }
         }
     },

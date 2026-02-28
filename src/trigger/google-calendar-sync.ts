@@ -2,9 +2,11 @@ import { schedules, task } from "@trigger.dev/sdk/v3";
 import {
     processGoogleCalendarDeltaForUser,
     processGoogleCalendarOutboxItem,
+    processGoogleTasksDeltaForUser,
     reconcileStaleGoogleCalendarConnections,
     renewExpiringGoogleCalendarWatches,
     retryPendingGoogleCalendarOutbox,
+    syncGoogleTasksForEnabledConnections,
 } from "@/lib/google-calendar/sync";
 
 /**
@@ -59,6 +61,18 @@ export const googleCalendarSyncConnection = task({
     run: async (payload: { userId: string; reason?: string }) => {
         if (!payload?.userId) return;
         await processGoogleCalendarDeltaForUser(payload.userId);
+        const forceTasksSync = payload.reason === "manual" || payload.reason === "backfill";
+        await processGoogleTasksDeltaForUser(payload.userId, { force: forceTasksSync });
+    },
+});
+
+// Google Tasks has no native webhook/watch API, so we run a lightweight
+// incremental sweep as a reliability fallback for inbound task mirroring.
+export const googleTasksSyncSweeper = schedules.task({
+    id: "google-tasks-sync-sweeper",
+    cron: "*/5 * * * *",
+    run: async () => {
+        await syncGoogleTasksForEnabledConnections(200);
     },
 });
 

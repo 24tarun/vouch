@@ -26,6 +26,7 @@ export const voucherTimeout = schedules.task({
     run: async () => {
         const supabase = createAdminClient();
         const now = new Date().toISOString();
+        const currentPeriod = new Date().toISOString().slice(0, 7);
 
         const { data, error } = await (supabase
             .from("tasks")
@@ -38,70 +39,79 @@ export const voucherTimeout = schedules.task({
             return;
         }
 
-        const tasks = (data || []) as TimeoutTask[];
-        console.log(`Found ${tasks.length} tasks to timeout`);
+        const candidates = (data || []) as TimeoutTask[];
+        if (candidates.length === 0) {
+            return;
+        }
 
-        for (const task of tasks) {
+        const byId = new Map(candidates.map((task) => [task.id, task]));
+        const candidateIds = candidates.map((task) => task.id);
+        const { data: updatedRows, error: bulkUpdateError } = await (supabase
+            .from("tasks") as any)
+            .update({ status: "COMPLETED", updated_at: now })
+            .in("id", candidateIds as any)
+            .eq("status", "AWAITING_VOUCHER" as any)
+            .select("id");
+
+        if (bulkUpdateError) {
+            console.error("Failed bulk update for voucher-timeout:", bulkUpdateError);
+            return;
+        }
+
+        const claimedIds = ((updatedRows as Array<{ id: string }> | null) || []).map((row) => row.id);
+        const claimedTasks = claimedIds
+            .map((taskId) => byId.get(taskId))
+            .filter((task): task is TimeoutTask => Boolean(task));
+
+        if (claimedTasks.length === 0) {
+            return;
+        }
+
+        const ledgerRows = claimedTasks.map((task) => ({
+            user_id: task.voucher_id,
+            task_id: task.id,
+            period: currentPeriod,
+            amount_cents: VOUCHER_TIMEOUT_PENALTY_CENTS,
+            entry_type: "voucher_timeout_penalty",
+        }));
+        const eventRows = claimedTasks.map((task) => ({
+            task_id: task.id,
+            event_type: "VOUCHER_TIMEOUT",
+            actor_id: null,
+            from_status: "AWAITING_VOUCHER",
+            to_status: "COMPLETED",
+            metadata: {
+                reason: "Voucher did not respond in time; task auto-accepted",
+                voucher_penalty_cents: VOUCHER_TIMEOUT_PENALTY_CENTS,
+                auto_accepted: true,
+            },
+        }));
+
+        const [{ error: ledgerError }, { error: eventError }] = await Promise.all([
+            (supabase.from("ledger_entries") as any).insert(ledgerRows as any),
+            (supabase.from("task_events") as any).insert(eventRows as any),
+        ]);
+        if (ledgerError) {
+            console.error("Failed bulk voucher-timeout ledger insert:", ledgerError);
+        }
+        if (eventError) {
+            console.error("Failed bulk voucher-timeout event insert:", eventError);
+        }
+
+        await Promise.all(claimedTasks.map(async (task) => {
             try {
-                const { data: updatedTask, error: updateError } = await (supabase
-                    .from("tasks") as any)
-                    .update({ status: "COMPLETED", updated_at: now })
-                    .eq("id", task.id)
-                    .eq("status", "AWAITING_VOUCHER")
-                    .select("id")
-                    .maybeSingle();
-
-                if (updateError) {
-                    console.error(`Failed to auto-accept task ${task.id}:`, updateError);
-                    continue;
-                }
-                if (!updatedTask) {
-                    continue;
-                }
-
                 const cleanup = await deleteTaskProof(task.id, "voucher_timeout_auto_accept");
                 if (!cleanup.success) {
                     console.error(`Failed to cleanup proof for timed-out task ${task.id}:`, cleanup.error);
                 }
 
-                const currentPeriod = new Date().toISOString().slice(0, 7);
-
-                const { error: voucherPenaltyError } = await (supabase.from("ledger_entries") as any).insert({
-                    user_id: task.voucher_id,
-                    task_id: task.id,
-                    period: currentPeriod,
-                    amount_cents: VOUCHER_TIMEOUT_PENALTY_CENTS,
-                    entry_type: "voucher_timeout_penalty",
-                });
-
-                if (voucherPenaltyError) {
-                    console.error(`Failed to add voucher timeout penalty for task ${task.id}:`, voucherPenaltyError);
-                }
-
-                const { error: eventError } = await (supabase.from("task_events") as any).insert({
-                    task_id: task.id,
-                    event_type: "VOUCHER_TIMEOUT",
-                    actor_id: null,
-                    from_status: "AWAITING_VOUCHER",
-                    to_status: "COMPLETED",
-                    metadata: {
-                        reason: "Voucher did not respond in time; task auto-accepted",
-                        voucher_penalty_cents: VOUCHER_TIMEOUT_PENALTY_CENTS,
-                        auto_accepted: true,
-                    },
-                });
-
-                if (eventError) {
-                    console.error(`Failed to insert VOUCHER_TIMEOUT event for task ${task.id}:`, eventError);
-                }
-
                 await enqueueGoogleCalendarOutbox(task.user_id, task.id, "DELETE");
-
-                console.log(`Auto-accepted task ${task.id} due to voucher timeout`);
             } catch (taskError) {
                 console.error(`Unexpected error while processing task ${task.id}:`, taskError);
             }
-        }
+        }));
+
+        console.log(`Auto-accepted ${claimedTasks.length} tasks due to voucher timeout`);
     },
 });
 

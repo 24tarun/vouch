@@ -175,6 +175,7 @@ export interface GoogleCalendarConnection {
     sync_token: string | null;
     last_webhook_at: string | null;
     last_sync_at: string | null;
+    google_tasks_updated_min?: string | null;
     last_error: string | null;
     created_at: string;
     updated_at: string;

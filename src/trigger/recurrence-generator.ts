@@ -27,7 +27,9 @@ export const recurrenceGenerator = schedules.task({
         // @ts-ignore
         const { data: rules, error } = await supabase
             .from("recurrence_rules")
-            .select("*")
+            .select(
+                "id, user_id, voucher_id, title, description, failure_cost_cents, required_pomo_minutes, rule_config, timezone, last_generated_date, created_at, manual_reminder_offsets_ms, google_sync_kind"
+            )
             .eq("active", true) as { data: RecurrenceRule[] | null, error: any };
 
         if (error) {
