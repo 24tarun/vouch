@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import SettingsClient from "./settings-client";
 import { getFriends } from "@/actions/friends";
+import { getGoogleCalendarIntegrationState } from "@/actions/google-calendar";
 
 export default async function SettingsPage() {
     const supabase = await createClient();
@@ -26,7 +27,16 @@ export default async function SettingsPage() {
         redirect("/login?error=profile_missing");
     }
 
-    const friends = await getFriends();
+    const [friends, googleCalendarIntegration] = await Promise.all([
+        getFriends(),
+        getGoogleCalendarIntegrationState(),
+    ]);
 
-    return <SettingsClient profile={profile} friends={friends} />;
+    return (
+        <SettingsClient
+            profile={profile}
+            friends={friends}
+            googleCalendarIntegration={googleCalendarIntegration}
+        />
+    );
 }

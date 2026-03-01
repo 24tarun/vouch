@@ -17,6 +17,7 @@ import { pendingVoucherRequestsTag } from "@/lib/cache-tags";
 import { TASK_PROOFS_BUCKET } from "@/lib/task-proof-shared";
 import {
     DEFAULT_FAILURE_COST_CENTS,
+    DEFAULT_EVENT_DURATION_MINUTES,
     DEFAULT_POMO_DURATION_MINUTES,
 } from "@/lib/constants";
 
@@ -402,6 +403,7 @@ export async function updateUserDefaults(formData: FormData) {
     }
 
     const defaultPomoDurationRaw = formData.get("defaultPomoDurationMinutes") as string;
+    const defaultEventDurationRaw = formData.get("defaultEventDurationMinutes");
     const defaultFailureCostRaw = formData.get("defaultFailureCost") as string;
     const defaultVoucherIdRaw = formData.get("defaultVoucherId") as string;
     const strictPomoEnabledRaw = formData.get("strictPomoEnabled");
@@ -420,7 +422,7 @@ export async function updateUserDefaults(formData: FormData) {
 
     const { data: currentProfile, error: currentProfileError } = await supabase
         .from("profiles")
-        .select("currency")
+        .select("currency, default_event_duration_minutes")
         .eq("id", user.id)
         .maybeSingle();
 
@@ -436,6 +438,24 @@ export async function updateUserDefaults(formData: FormData) {
         defaultPomoDurationMinutes > 720
     ) {
         return { error: "Default Pomodoro duration must be an integer between 1 and 720." };
+    }
+
+    let defaultEventDurationMinutes: number;
+    if (typeof defaultEventDurationRaw === "string" && defaultEventDurationRaw.trim() !== "") {
+        defaultEventDurationMinutes = Number(defaultEventDurationRaw);
+    } else {
+        defaultEventDurationMinutes = Number(
+            (currentProfile as { default_event_duration_minutes?: unknown } | null)?.default_event_duration_minutes
+            ?? DEFAULT_EVENT_DURATION_MINUTES
+        );
+    }
+    if (
+        !Number.isFinite(defaultEventDurationMinutes) ||
+        !Number.isInteger(defaultEventDurationMinutes) ||
+        defaultEventDurationMinutes < 1 ||
+        defaultEventDurationMinutes > 720
+    ) {
+        return { error: "Default event duration must be an integer between 1 and 720 minutes." };
     }
 
     const nextCurrency = currency ?? normalizeCurrency((currentProfile as { currency?: unknown } | null)?.currency);
@@ -514,6 +534,7 @@ export async function updateUserDefaults(formData: FormData) {
 
     const profileUpdate: Record<string, unknown> = {
         default_pomo_duration_minutes: defaultPomoDurationMinutes ?? DEFAULT_POMO_DURATION_MINUTES,
+        default_event_duration_minutes: defaultEventDurationMinutes ?? DEFAULT_EVENT_DURATION_MINUTES,
         default_failure_cost_cents: defaultFailureCostCents ?? DEFAULT_FAILURE_COST_CENTS,
         default_voucher_id: defaultVoucherId,
     };

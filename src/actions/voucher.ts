@@ -9,6 +9,7 @@ import { type SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
 import { deleteTaskProof } from "@/lib/task-proof";
+import { enqueueGoogleCalendarOutbox } from "@/lib/google-calendar/sync";
 
 function invalidatePendingVoucherRequestsCache(voucherId: string) {
     revalidateTag(pendingVoucherRequestsTag(voucherId), "max");
@@ -16,6 +17,14 @@ function invalidatePendingVoucherRequestsCache(voucherId: string) {
 
 function invalidateOwnerActiveTasksCache(ownerId: string) {
     revalidateTag(activeTasksTag(ownerId), "max");
+}
+
+async function enqueueGoogleCalendarDelete(userId: string, taskId: string) {
+    try {
+        await enqueueGoogleCalendarOutbox(userId, taskId, "DELETE");
+    } catch (error) {
+        console.error(`Failed to enqueue Google Calendar DELETE for task ${taskId}:`, error);
+    }
 }
 
 const RECTIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -137,6 +146,8 @@ export async function voucherAccept(taskId: string) {
         to_status: "COMPLETED",
     });
 
+    await enqueueGoogleCalendarDelete((task as any).user_id, taskId);
+
     // Owner dashboard active tasks are cached via getCachedActiveTasksForUser(activeTasksTag).
     // Voucher decisions mutate owner-visible task state, so invalidate owner tags in addition
     // to path revalidation and realtime-triggered refresh to avoid stale server payloads.
@@ -214,6 +225,8 @@ export async function voucherDeleteTask(taskId: string) {
         from_status: (task as any).status,
         to_status: "DELETED",
     } as any);
+
+    await enqueueGoogleCalendarDelete((task as any).user_id, taskId);
 
     // Notify the task owner via email (and push in tandem)
     if ((task as any).user?.email) {
@@ -309,6 +322,8 @@ export async function voucherDeny(taskId: string) {
         from_status: (task as any).status,
         to_status: "FAILED",
     });
+
+    await enqueueGoogleCalendarDelete((task as any).user_id, taskId);
 
     if ((task as any).user?.email) {
         await sendNotification({
@@ -518,6 +533,8 @@ export async function authorizeRectify(taskId: string) {
         from_status: "FAILED",
         to_status: "RECTIFIED",
     });
+
+    await enqueueGoogleCalendarDelete((task as any).user_id, taskId);
 
     revalidatePath("/dashboard/friends");
     revalidatePath(`/dashboard/tasks/${taskId}`);

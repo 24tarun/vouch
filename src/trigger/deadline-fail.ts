@@ -9,6 +9,7 @@
  */
 import { schedules } from "@trigger.dev/sdk/v3";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enqueueGoogleCalendarOutbox } from "@/lib/google-calendar/sync";
 
 export const deadlineFail = schedules.task({
     id: "deadline-fail",
@@ -17,50 +18,101 @@ export const deadlineFail = schedules.task({
         const supabase = createAdminClient();
         const now = new Date();
         const nowIso = now.toISOString();
+        const currentPeriod = nowIso.slice(0, 7);
 
-        // Find tasks that are in CREATED or POSTPONED and have passed the deadline
+        // Find candidates first, then claim by status group to avoid duplicate processing
+        // across overlapping runs.
         const { data, error } = await supabase
             .from("tasks")
-            .select("*")
+            .select("id, user_id, status, failure_cost_cents")
             .in("status", ["CREATED", "POSTPONED"])
             .lt("deadline", nowIso) as any;
 
-        const tasks = data || [];
+        const candidates = (data || []) as Array<{
+            id: string;
+            user_id: string;
+            status: "CREATED" | "POSTPONED";
+            failure_cost_cents: number;
+        }>;
 
         if (error) {
             console.error("Error fetching tasks:", error);
             return;
         }
 
-        console.log(`Found ${tasks.length} tasks to fail due to passed deadline`);
-
-        for (const task of tasks) {
-            // Fail the task
-            await (supabase.from("tasks") as any)
-                .update({ status: "FAILED", updated_at: nowIso })
-                .eq("id", task.id);
-
-            // Add failure cost to ledger
-            const currentPeriod = nowIso.slice(0, 7);
-            await (supabase.from("ledger_entries") as any).insert({
-                user_id: task.user_id,
-                task_id: task.id,
-                period: currentPeriod,
-                amount_cents: task.failure_cost_cents,
-                entry_type: "failure",
-            });
-
-            // Log event
-            await (supabase.from("task_events") as any).insert({
-                task_id: task.id,
-                event_type: "DEADLINE_MISSED",
-                actor_id: null, // System event
-                from_status: task.status,
-                to_status: "FAILED",
-                metadata: { reason: "Deadline passed without completion" },
-            });
-
-            console.log(`Failed task ${task.id} due to passed deadline`);
+        if (candidates.length === 0) {
+            return;
         }
+
+        const byId = new Map(candidates.map((task) => [task.id, task]));
+        const createdIds = candidates.filter((task) => task.status === "CREATED").map((task) => task.id);
+        const postponedIds = candidates.filter((task) => task.status === "POSTPONED").map((task) => task.id);
+
+        const claimedIds: string[] = [];
+        if (createdIds.length > 0) {
+            const { data: updatedCreated } = await (supabase.from("tasks") as any)
+                .update({ status: "FAILED", updated_at: nowIso })
+                .in("id", createdIds as any)
+                .eq("status", "CREATED" as any)
+                .select("id");
+            for (const row of (updatedCreated as Array<{ id: string }> | null) || []) {
+                claimedIds.push(row.id);
+            }
+        }
+        if (postponedIds.length > 0) {
+            const { data: updatedPostponed } = await (supabase.from("tasks") as any)
+                .update({ status: "FAILED", updated_at: nowIso })
+                .in("id", postponedIds as any)
+                .eq("status", "POSTPONED" as any)
+                .select("id");
+            for (const row of (updatedPostponed as Array<{ id: string }> | null) || []) {
+                claimedIds.push(row.id);
+            }
+        }
+
+        if (claimedIds.length === 0) {
+            return;
+        }
+
+        const claimedTasks = claimedIds
+            .map((taskId) => byId.get(taskId))
+            .filter((task): task is NonNullable<typeof task> => Boolean(task));
+
+        const ledgerRows = claimedTasks.map((task) => ({
+            user_id: task.user_id,
+            task_id: task.id,
+            period: currentPeriod,
+            amount_cents: task.failure_cost_cents,
+            entry_type: "failure",
+        }));
+        const eventRows = claimedTasks.map((task) => ({
+            task_id: task.id,
+            event_type: "DEADLINE_MISSED",
+            actor_id: null,
+            from_status: task.status,
+            to_status: "FAILED",
+            metadata: { reason: "Deadline passed without completion" },
+        }));
+
+        const [{ error: ledgerError }, { error: eventError }] = await Promise.all([
+            (supabase.from("ledger_entries") as any).insert(ledgerRows as any),
+            (supabase.from("task_events") as any).insert(eventRows as any),
+        ]);
+        if (ledgerError) {
+            console.error("Failed inserting deadline-fail ledger entries:", ledgerError);
+        }
+        if (eventError) {
+            console.error("Failed inserting deadline-fail events:", eventError);
+        }
+
+        await Promise.all(claimedTasks.map(async (task) => {
+            try {
+                await enqueueGoogleCalendarOutbox(task.user_id, task.id, "DELETE");
+            } catch (error) {
+                console.error(`Failed to enqueue Google finalize for task ${task.id}:`, error);
+            }
+        }));
+
+        console.log(`Failed ${claimedTasks.length} tasks due to passed deadline`);
     },
 });

@@ -12,6 +12,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { deleteTaskProof } from "@/lib/task-proof";
 
 const STALE_PENDING_UPLOAD_MS = 20 * 60 * 1000;
+const CLEANUP_BATCH_SIZE = 20;
 
 interface ProofCandidate {
     task_id: string;
@@ -47,6 +48,7 @@ export const taskProofCleanup = schedules.task({
         const candidates = ((data as ProofCandidate[] | null) || []);
         if (candidates.length === 0) return;
 
+        const cleanupTaskIds = new Set<string>();
         for (const candidate of candidates) {
             const task = candidate.task;
             const stalePending =
@@ -62,10 +64,22 @@ export const taskProofCleanup = schedules.task({
                 continue;
             }
 
-            const cleanup = await deleteTaskProof(candidate.task_id, "scheduled_cleanup");
-            if (!cleanup.success) {
-                console.error(`Failed to cleanup proof for task ${candidate.task_id}:`, cleanup.error);
-            }
+            cleanupTaskIds.add(candidate.task_id);
+        }
+
+        const taskIds = Array.from(cleanupTaskIds.values());
+        for (let index = 0; index < taskIds.length; index += CLEANUP_BATCH_SIZE) {
+            const batch = taskIds.slice(index, index + CLEANUP_BATCH_SIZE);
+            await Promise.all(batch.map(async (taskId) => {
+                try {
+                    const cleanup = await deleteTaskProof(taskId, "scheduled_cleanup");
+                    if (!cleanup.success) {
+                        console.error(`Failed to cleanup proof for task ${taskId}:`, cleanup.error);
+                    }
+                } catch (error) {
+                    console.error(`Unexpected proof cleanup failure for task ${taskId}:`, error);
+                }
+            }));
         }
     },
 });

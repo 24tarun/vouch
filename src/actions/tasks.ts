@@ -7,11 +7,16 @@ import { canTransition, type TaskStatus } from "@/lib/xstate/task-machine";
 import { type Database } from "@/lib/types";
 import { type SupabaseClient } from "@supabase/supabase-js";
 import { sendNotification } from "@/lib/notifications";
-import { DEFAULT_FAILURE_COST_CENTS, MAX_SUBTASKS_PER_TASK } from "@/lib/constants";
+import {
+    DEFAULT_EVENT_DURATION_MINUTES,
+    DEFAULT_FAILURE_COST_CENTS,
+    MAX_SUBTASKS_PER_TASK,
+} from "@/lib/constants";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
 import { getCurrencySymbol, getFailureCostBounds, normalizeCurrency } from "@/lib/currency";
 import { getOwnerDeleteRemainingMs, isOwnerTempDeletableStatus } from "@/lib/task-delete-window";
+import { enqueueGoogleCalendarOutbox } from "@/lib/google-calendar/sync";
 import {
     buildDefaultDeadlineReminderRows,
     MANUAL_REMINDER_SOURCE,
@@ -39,6 +44,9 @@ const INVALID_REQUIRED_POMO_ERROR = "Required pomodoro minutes must be an intege
 const INVALID_TASK_PROOF_ERROR = "Invalid proof payload.";
 const TASK_PROOF_TOO_LARGE_ERROR = "Proof must be 5MB or less.";
 const TASK_PROOF_VIDEO_TOO_LONG_ERROR = "Video proof must be 15 seconds or less.";
+const TITLE_REQUIRED_ERROR = "Title cannot be empty.";
+const EVENT_END_INVALID_ERROR = "Event end time is invalid.";
+const EVENT_END_BEFORE_START_ERROR = "Event end time must be after start time.";
 
 function isValidTimeZone(timeZone: string): boolean {
     try {
@@ -111,6 +119,90 @@ function invalidateActiveTasksCache(userId: string) {
 
 function invalidatePendingVoucherRequestsCache(voucherId: string) {
     revalidateTag(pendingVoucherRequestsTag(voucherId), "max");
+}
+
+async function enqueueGoogleCalendarUpsert(userId: string, taskId: string) {
+    try {
+        await enqueueGoogleCalendarOutbox(userId, taskId, "UPSERT");
+    } catch (error) {
+        console.error(`Failed to enqueue Google Calendar UPSERT for task ${taskId}:`, error);
+    }
+}
+
+async function enqueueGoogleCalendarDelete(
+    userId: string,
+    taskId: string,
+    payload?: {
+        google_event_id?: string;
+        calendar_id?: string;
+    }
+) {
+    try {
+        await enqueueGoogleCalendarOutbox(userId, taskId, "DELETE", payload);
+    } catch (error) {
+        console.error(`Failed to enqueue Google Calendar DELETE for task ${taskId}:`, error);
+    }
+}
+
+function normalizeTaskTitleAndSyncKind(rawTitle: string): { normalizedTitle: string; googleSyncForTask: boolean } {
+    const hasEventToken = /(^|\s)-event(?=\s|$)/i.test(rawTitle);
+    const normalizedTitle = rawTitle
+        .replace(/(^|\s)-event(?=\s|$)/gi, " ")
+        .replace(/(?:^|\s)-?end(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    return {
+        normalizedTitle,
+        googleSyncForTask: hasEventToken,
+    };
+}
+
+function parseEventEndTimeToken(token: string): { hours: number; minutes: number } | null {
+    const normalized = token.trim();
+    let hours = Number.NaN;
+    let minutes = Number.NaN;
+
+    const colonMatch = normalized.match(/^(\d{1,2}):(\d{2})$/);
+    if (colonMatch) {
+        hours = Number.parseInt(colonMatch[1], 10);
+        minutes = Number.parseInt(colonMatch[2], 10);
+    } else {
+        const compactFourMatch = normalized.match(/^(\d{4})$/);
+        if (compactFourMatch) {
+            hours = Number.parseInt(compactFourMatch[1].slice(0, 2), 10);
+            minutes = Number.parseInt(compactFourMatch[1].slice(2, 4), 10);
+        } else {
+            const compactThreeMatch = normalized.match(/^(\d{3})$/);
+            if (compactThreeMatch) {
+                hours = Number.parseInt(compactThreeMatch[1].slice(0, 1), 10);
+                minutes = Number.parseInt(compactThreeMatch[1].slice(1, 3), 10);
+            } else {
+                const hourOnlyMatch = normalized.match(/^(\d{1,2})$/);
+                if (hourOnlyMatch) {
+                    hours = Number.parseInt(hourOnlyMatch[1], 10);
+                    minutes = 0;
+                }
+            }
+        }
+    }
+
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+
+    return { hours, minutes };
+}
+
+function parseEventEndFromRawTitle(rawTitle: string, startDate: Date): { found: boolean; endDate: Date | null } {
+    const endTokenMatch = rawTitle.match(/(?:^|\s)-?end(\d{1,2}:\d{2}|\d{1,4})\b/i);
+    if (!endTokenMatch) return { found: false, endDate: null };
+
+    const parsed = parseEventEndTimeToken(endTokenMatch[1]);
+    if (!parsed) return { found: true, endDate: null };
+
+    const endDate = new Date(startDate);
+    endDate.setHours(parsed.hours, parsed.minutes, 0, 0);
+    return { found: true, endDate };
 }
 
 function parseAndValidateFutureDeadline(rawDeadline: string): { deadline?: Date; error?: string } {
@@ -448,6 +540,11 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
 
     if (!user) return { error: "Not authenticated" };
 
+    const normalizedTitle = normalizeTaskTitleAndSyncKind(title);
+    if (!normalizedTitle.normalizedTitle) {
+        return { error: TITLE_REQUIRED_ERROR };
+    }
+
     const normalizedSubtasks = normalizeSubtaskTitles(subtasksInput ?? []);
     if (normalizedSubtasks.error) {
         return { error: normalizedSubtasks.error };
@@ -481,20 +578,32 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
     const defaultFailureCostCents =
         ((profileDefaults as any)?.default_failure_cost_cents as number | undefined) ??
         DEFAULT_FAILURE_COST_CENTS;
+    const defaultEventDurationMinutesRaw = Number((profileDefaults as any)?.default_event_duration_minutes);
+    const defaultEventDurationMinutes =
+        Number.isInteger(defaultEventDurationMinutesRaw) &&
+            defaultEventDurationMinutesRaw >= 1 &&
+            defaultEventDurationMinutesRaw <= 720
+            ? defaultEventDurationMinutesRaw
+            : DEFAULT_EVENT_DURATION_MINUTES;
 
     // Default params: Deadline = End of today
     const deadline = getDefaultTaskDeadline();
+    const eventEndAtIso = normalizedTitle.googleSyncForTask
+        ? new Date(deadline.getTime() + defaultEventDurationMinutes * 60 * 1000).toISOString()
+        : null;
 
     // @ts-ignore
     const { data: task, error } = await (supabase.from("tasks") as any)
         .insert({
             user_id: user.id,
             voucher_id: defaultVoucherId,
-            title,
+            title: normalizedTitle.normalizedTitle,
             description: null,
             failure_cost_cents: defaultFailureCostCents,
             deadline: deadline.toISOString(),
             status: "CREATED",
+            google_sync_for_task: normalizedTitle.googleSyncForTask,
+            google_event_end_at: eventEndAtIso,
         })
         .select()
         .single();
@@ -538,8 +647,10 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
         actor_id: user.id,
         from_status: "CREATED",
         to_status: "CREATED",
-        metadata: { title, type: "simple" },
+        metadata: { title: normalizedTitle.normalizedTitle, type: "simple" },
     });
+
+    await enqueueGoogleCalendarUpsert(user.id, (task as any).id);
 
     invalidatePendingVoucherRequestsCache(defaultVoucherId);
     revalidatePath("/dashboard/friends");
@@ -589,15 +700,22 @@ export async function createTask(formData: FormData) {
         return { error: "Not authenticated" };
     }
 
-    const title = formData.get("title") as string;
+    const rawTitle = formData.get("title") as string;
+    const titleSelection = normalizeTaskTitleAndSyncKind(rawTitle || "");
+    const title = titleSelection.normalizedTitle;
     const description = formData.get("description") as string;
     const failureCostMajor = Number(formData.get("failureCost"));
     const deadline = formData.get("deadline") as string;
+    const eventEndIsoRaw = formData.get("eventEndIso");
     const voucherId = formData.get("voucherId") as string;
     const subtasksInput = normalizeSubtasksFromFormData(formData.get("subtasks"));
     const requiredPomoInput = parseRequiredPomoMinutesFromFormData(formData.get("requiredPomoMinutes"));
 
-    if (!title || !deadline || !voucherId || !Number.isFinite(failureCostMajor)) {
+    if (!title) {
+        return { error: TITLE_REQUIRED_ERROR };
+    }
+
+    if (!deadline || !voucherId || !Number.isFinite(failureCostMajor)) {
         return { error: "Missing required fields" };
     }
     if (subtasksInput.error) {
@@ -609,7 +727,7 @@ export async function createTask(formData: FormData) {
 
     const { data: reminderDefaultsProfile } = await supabase
         .from("profiles")
-        .select("deadline_one_hour_warning_enabled, deadline_final_warning_enabled, currency")
+        .select("deadline_one_hour_warning_enabled, deadline_final_warning_enabled, currency, default_event_duration_minutes")
         .eq("id", user.id as any)
         .maybeSingle();
 
@@ -622,6 +740,40 @@ export async function createTask(formData: FormData) {
         return { error: deadlineValidation.error || INVALID_DEADLINE_ERROR };
     }
     const validatedDeadline = deadlineValidation.deadline;
+    let eventEndAtIso: string | null = null;
+    const defaultEventDurationMinutesRaw = Number(
+        (reminderDefaultsProfile as { default_event_duration_minutes?: unknown } | null)?.default_event_duration_minutes
+    );
+    const defaultEventDurationMinutes =
+        Number.isInteger(defaultEventDurationMinutesRaw) &&
+            defaultEventDurationMinutesRaw >= 1 &&
+            defaultEventDurationMinutesRaw <= 720
+            ? defaultEventDurationMinutesRaw
+            : DEFAULT_EVENT_DURATION_MINUTES;
+
+    if (titleSelection.googleSyncForTask) {
+        let parsedEventEnd: Date | null = null;
+        if (typeof eventEndIsoRaw === "string" && eventEndIsoRaw.trim()) {
+            parsedEventEnd = new Date(eventEndIsoRaw);
+            if (Number.isNaN(parsedEventEnd.getTime())) {
+                return { error: EVENT_END_INVALID_ERROR };
+            }
+        } else {
+            const parsedEventEndFromTitle = parseEventEndFromRawTitle(rawTitle || "", validatedDeadline);
+            if (parsedEventEndFromTitle.found && !parsedEventEndFromTitle.endDate) {
+                return { error: EVENT_END_INVALID_ERROR };
+            }
+            parsedEventEnd =
+                parsedEventEndFromTitle.endDate ||
+                new Date(validatedDeadline.getTime() + defaultEventDurationMinutes * 60 * 1000);
+        }
+
+        if (parsedEventEnd.getTime() <= validatedDeadline.getTime()) {
+            return { error: EVENT_END_BEFORE_START_ERROR };
+        }
+
+        eventEndAtIso = parsedEventEnd.toISOString();
+    }
     const remindersInput = normalizeRemindersFromFormData(formData.get("reminders"), validatedDeadline);
     if (remindersInput.error) {
         return { error: remindersInput.error };
@@ -630,6 +782,9 @@ export async function createTask(formData: FormData) {
         validatedDeadline,
         remindersInput.reminderDates
     );
+    const eventDurationMinutes = eventEndAtIso
+        ? Math.max(1, Math.round((new Date(eventEndAtIso).getTime() - validatedDeadline.getTime()) / (1000 * 60)))
+        : null;
 
     if (failureCostCents < failureCostBounds.minCents || failureCostCents > failureCostBounds.maxCents) {
         const currencySymbol = getCurrencySymbol(ownerCurrency);
@@ -699,6 +854,8 @@ export async function createTask(formData: FormData) {
                 rule_config: ruleConfig,
                 timezone: userTimezone,
                 active: true,
+                google_sync_for_rule: titleSelection.googleSyncForTask,
+                google_event_duration_minutes: eventDurationMinutes,
                 manual_reminder_offsets_ms: manualReminderOffsetsMs,
                 // Set last_generated_date to the date part of the deadline in user's timezone
                 // This prevents immediate regeneration of the task we are about to create manually
@@ -729,6 +886,8 @@ export async function createTask(formData: FormData) {
             required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,
             deadline: validatedDeadline.toISOString(),
             status: "CREATED",
+            google_sync_for_task: titleSelection.googleSyncForTask,
+            google_event_end_at: eventEndAtIso,
             recurrence_rule_id: recurrenceRuleId
         })
         .select()
@@ -794,6 +953,8 @@ export async function createTask(formData: FormData) {
             required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,
         },
     });
+
+    await enqueueGoogleCalendarUpsert((user as any).id, (task as any).id);
 
     invalidatePendingVoucherRequestsCache(voucherId);
     revalidatePath("/dashboard/friends");
@@ -958,6 +1119,7 @@ export async function markTaskCompleteWithProofIntent(
 
         invalidateActiveTasksCache((user as any).id);
         invalidatePendingVoucherRequestsCache((task as any).voucher_id);
+        await enqueueGoogleCalendarDelete((user as any).id, taskId);
         revalidatePath("/dashboard");
         revalidatePath("/dashboard/stats");
         revalidatePath("/dashboard/friends");
@@ -1106,6 +1268,7 @@ export async function markTaskCompleteWithProofIntent(
 
     invalidateActiveTasksCache((user as any).id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
+    await enqueueGoogleCalendarUpsert((user as any).id, taskId);
     revalidatePath("/dashboard");
     revalidatePath("/dashboard/stats");
     // Mirror accept/deny behavior so voucher list cache is invalidated on new request.
@@ -1415,6 +1578,8 @@ export async function revertTaskCompletionAfterProofFailure(taskId: string) {
         to_status: restoredStatus,
     });
 
+    await enqueueGoogleCalendarUpsert(user.id, taskId);
+
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
     revalidatePath("/dashboard");
@@ -1493,6 +1658,8 @@ export async function undoTaskComplete(taskId: string) {
         from_status: "AWAITING_VOUCHER",
         to_status: restoredStatus,
     });
+
+    await enqueueGoogleCalendarUpsert(user.id, taskId);
 
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
@@ -2030,6 +2197,8 @@ export async function postponeTask(taskId: string, newDeadlineIso: string) {
         metadata: { new_deadline: newDeadlineDate.toISOString() },
     });
 
+    await enqueueGoogleCalendarUpsert(user.id, taskId);
+
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
     revalidatePath("/dashboard/friends");
     revalidateTaskSurfaces(taskId, user.id);
@@ -2065,6 +2234,28 @@ export async function ownerTempDeleteTask(taskId: string) {
     }
 
     const supabaseAdmin = createAdminClient();
+    let googleDeletePayload: {
+        google_event_id?: string;
+        calendar_id?: string;
+    } | undefined;
+
+    // Snapshot Google identifiers before hard-delete so outbox DELETE can still
+    // finalize linked Google items after ON DELETE CASCADE removes task link rows.
+    const { data: googleLink, error: googleLinkError } = await (supabaseAdmin.from("google_calendar_task_links") as any)
+        .select("google_event_id, calendar_id")
+        .eq("task_id", taskId as any)
+        .eq("user_id", user.id as any)
+        .maybeSingle();
+
+    if (googleLinkError) {
+        console.error("Failed to read Google Calendar link before ownerTempDeleteTask:", googleLinkError);
+    } else if ((googleLink as any)?.google_event_id || (googleLink as any)?.calendar_id) {
+        googleDeletePayload = {
+            google_event_id: (googleLink as any).google_event_id ?? undefined,
+            calendar_id: (googleLink as any).calendar_id ?? undefined,
+        };
+    }
+
     const { data: deletedRows, error } = await (supabaseAdmin.from("tasks") as any)
         .delete()
         .eq("id", taskId as any)
@@ -2079,6 +2270,8 @@ export async function ownerTempDeleteTask(taskId: string) {
     if (!deletedRows || deletedRows.length === 0) {
         return { error: "Task can no longer be deleted. Please refresh." };
     }
+
+    await enqueueGoogleCalendarDelete(user.id, taskId, googleDeletePayload);
 
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
@@ -2161,6 +2354,8 @@ export async function forceMajeureTask(taskId: string) {
         to_status: "SETTLED",
     });
 
+    await enqueueGoogleCalendarDelete(user.id, taskId);
+
     revalidatePath(`/dashboard/tasks/${taskId}`);
     revalidatePath("/dashboard");
     return { success: true };
@@ -2224,6 +2419,8 @@ export async function getTask(taskId: string) {
                     to_status: "FAILED",
                     metadata: { reason: "Deadline passed without completion" },
                 });
+
+                await enqueueGoogleCalendarDelete((task as any).user_id, taskId);
 
                 (task as any).status = "FAILED";
                 (task as any).updated_at = now.toISOString();

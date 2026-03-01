@@ -14,6 +14,7 @@ import {
     buildDefaultDeadlineReminderRows,
     MANUAL_REMINDER_SOURCE,
 } from "@/lib/task-reminder-defaults";
+import { enqueueGoogleCalendarOutbox } from "@/lib/google-calendar/sync";
 
 export const recurrenceGenerator = schedules.task({
     id: "recurrence-generator",
@@ -26,7 +27,9 @@ export const recurrenceGenerator = schedules.task({
         // @ts-ignore
         const { data: rules, error } = await supabase
             .from("recurrence_rules")
-            .select("*")
+            .select(
+                "id, user_id, voucher_id, title, description, failure_cost_cents, required_pomo_minutes, rule_config, timezone, last_generated_date, created_at, manual_reminder_offsets_ms, google_sync_for_rule, google_event_duration_minutes"
+            )
             .eq("active", true) as { data: RecurrenceRule[] | null, error: any };
 
         if (error) {
@@ -488,6 +491,15 @@ async function processRule(
                 required_pomo_minutes: rule.required_pomo_minutes ?? null,
                 deadline: deadlineIso,
                 status: "CREATED",
+                google_sync_for_task: Boolean(rule.google_sync_for_rule),
+                google_event_end_at:
+                    Boolean(rule.google_sync_for_rule) &&
+                        Number.isFinite((rule as any).google_event_duration_minutes)
+                        ? new Date(
+                            new Date(deadlineIso).getTime() +
+                            Number((rule as any).google_event_duration_minutes) * 60 * 1000
+                        ).toISOString()
+                        : null,
                 recurrence_rule_id: rule.id
             })
             .select("id, deadline")
@@ -533,6 +545,9 @@ async function processRule(
                 createdTask.deadline || deadlineIso,
                 reminderDefaultsByUser
             );
+            if (rule.google_sync_for_rule) {
+                await enqueueGoogleCalendarOutbox(rule.user_id, createdTask.id, "UPSERT");
+            }
         }
 
         // Update Rule

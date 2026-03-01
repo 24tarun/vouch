@@ -40,10 +40,6 @@ interface ReminderUser {
     username: string | null;
 }
 
-interface SupabaseUpdateError {
-    message?: string;
-}
-
 const ACTIVE_STATUSES: TaskStatus[] = ["CREATED", "POSTPONED"];
 const ONE_HOUR_REMINDER_EVENT = "DEADLINE_WARNING_1H";
 const FIVE_MIN_REMINDER_EVENT = "DEADLINE_WARNING_5M";
@@ -107,8 +103,27 @@ async function processDueTaskReminders(
         return;
     }
 
-    const taskIds = Array.from(new Set(dueReminders.map((reminder) => reminder.parent_task_id)));
-    const userIds = Array.from(new Set(dueReminders.map((reminder) => reminder.user_id)));
+    const dueReminderIds = dueReminders.map((reminder) => reminder.id);
+    const claimIso = new Date().toISOString();
+    const taskReminders = supabase.from("task_reminders") as any;
+    const claimResponse = await taskReminders
+        .update({ notified_at: claimIso } as any)
+        .in("id", dueReminderIds as any)
+        .is("notified_at", null)
+        .select("id, parent_task_id, user_id, reminder_at, source");
+
+    if (claimResponse.error) {
+        console.error("Failed to claim due task reminders:", claimResponse.error);
+        return;
+    }
+
+    const claimedReminders = ((claimResponse.data as DueReminder[] | null) || []);
+    if (claimedReminders.length === 0) {
+        return;
+    }
+
+    const taskIds = Array.from(new Set(claimedReminders.map((reminder) => reminder.parent_task_id)));
+    const userIds = Array.from(new Set(claimedReminders.map((reminder) => reminder.user_id)));
 
     const [tasksResponse, usersResponse] = await Promise.all([
         supabase.from("tasks")
@@ -139,7 +154,7 @@ async function processDueTaskReminders(
         usersById.set(user.id, user);
     }
 
-    for (const reminder of dueReminders) {
+    for (const reminder of claimedReminders) {
         const task = tasksById.get(reminder.parent_task_id);
         const owner = usersById.get(reminder.user_id);
 
@@ -202,19 +217,6 @@ async function processDueTaskReminders(
             }
         } catch (error) {
             console.error(`Failed to send task reminder ${reminder.id}:`, error);
-        } finally {
-            const taskReminders = supabase.from("task_reminders") as unknown as {
-                update: (values: { notified_at: string }) => {
-                    eq: (column: "id", value: string) => Promise<{ error: SupabaseUpdateError | null }>;
-                };
-            };
-            const { error: markNotifiedError } = await taskReminders
-                .update({ notified_at: new Date().toISOString() })
-                .eq("id", reminder.id);
-
-            if (markNotifiedError) {
-                console.error(`Failed to mark reminder ${reminder.id} as notified:`, markNotifiedError);
-            }
         }
     }
 }
