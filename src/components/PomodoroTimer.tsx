@@ -131,12 +131,15 @@ export function PomodoroTimer({ session, taskTitle, minimized, serverClockOffset
         };
     }, [isFullscreen]);
 
-    // Format HH:MM or MM:SS
+    const isLongSession = session.duration_minutes >= 100;
+
+    // Format HH:MM:SS for long sessions, MM:SS otherwise
     const formatTime = (seconds: number) => {
-        if (seconds >= 6000) {
+        if (isLongSession) {
             const h = Math.floor(seconds / 3600);
             const m = Math.floor((seconds % 3600) / 60);
-            return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+            const s = seconds % 60;
+            return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
         }
 
         const m = Math.floor(seconds / 60);
@@ -188,7 +191,9 @@ export function PomodoroTimer({ session, taskTitle, minimized, serverClockOffset
                             />
                         </svg>
                         <div className={cn("absolute inset-0 flex items-center justify-center text-xs font-bold font-mono", vfdColor)}>
-                            {Math.ceil(timeLeft / 60)}
+                            {isLongSession
+                                ? `${Math.floor(timeLeft / 3600)}h${Math.floor((timeLeft % 3600) / 60)}m`
+                                : Math.ceil(timeLeft / 60)}
                         </div>
                     </div>
 
@@ -232,7 +237,7 @@ export function PomodoroTimer({ session, taskTitle, minimized, serverClockOffset
                 {/* Main Clock */}
                 <div className="relative min-h-[170px] flex items-center justify-center">
                     {/* VFD Display */}
-                    <div className={cn("seven-seg-display z-10", vfdColor)} aria-label={`Time remaining ${formattedTime}`}>
+                    <div className={cn("seven-seg-display z-10", isLongSession && "seven-seg-display-long", vfdColor)} aria-label={`Time remaining ${formattedTime}`}>
                         {formattedTime.split("").map((char, i) =>
                             char === ":" ? <SevenSegmentColon key={`colon-${i}`} /> : <SevenSegmentDigit key={`digit-${i}-${char}`} digit={char} />
                         )}
