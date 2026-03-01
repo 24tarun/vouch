@@ -8,6 +8,7 @@ import type { Task } from "@/lib/types";
 import { Camera, Check, ChevronDown, ChevronRight, ExternalLink, Plus, Repeat, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "./ui/button";
 import { PomoButton } from "./ui/PomoButton";
+import { usePomodoro } from "@/components/PomodoroProvider";
 import { cn } from "@/lib/utils";
 import { canOwnerTemporarilyDelete } from "@/lib/task-delete-window";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
@@ -45,6 +46,7 @@ export function TaskRow({
     layoutVariant = "active",
 }: TaskRowProps) {
     const router = useRouter();
+    const { session } = usePomodoro();
     const hasPrefetchedRef = useRef(false);
     const [nowMs, setNowMs] = useState(() => Date.now());
     const [subtasks, setSubtasks] = useState(task.subtasks || []);
@@ -70,11 +72,14 @@ export function TaskRow({
     const pomoTotalSeconds = task.pomo_total_seconds || 0;
     const hasIncompletePomoRequirement =
         requiredPomoSeconds > 0 && pomoTotalSeconds < requiredPomoSeconds;
+    const hasRunningPomoForTask = session?.status === "ACTIVE" && session.task_id === task.id;
     const disabledCompleteTitle = hasIncompleteSubtasks
         ? "Complete all subtasks first"
-        : hasIncompletePomoRequirement
-            ? `Log ${Math.ceil((requiredPomoSeconds - pomoTotalSeconds) / 60)} more focus minute(s) first`
-            : "Mark complete";
+        : hasRunningPomoForTask
+            ? "Stop the running pomodoro first"
+            : hasIncompletePomoRequirement
+                ? `Log ${Math.ceil((requiredPomoSeconds - pomoTotalSeconds) / 60)} more focus minute(s) first`
+                : "Mark complete";
     const canEditSubtasks = isParentActive && !isTempTask;
     const canDeleteWindowOpen = canOwnerTemporarilyDelete(task, nowMs);
     const canDelete = Boolean(
@@ -104,7 +109,8 @@ export function TaskRow({
         isOverdue ||
         !onComplete ||
         hasIncompleteSubtasks ||
-        hasIncompletePomoRequirement;
+        hasIncompletePomoRequirement ||
+        hasRunningPomoForTask;
 
     const subtaskExpandStorageKey = `task-subtasks-expanded:${task.id}`;
 
@@ -121,7 +127,7 @@ export function TaskRow({
     };
 
     const handleCheck = () => {
-        if (!onComplete || isCompleting || isActuallyCompleted || isOverdue || hasIncompleteSubtasks || hasIncompletePomoRequirement) return;
+        if (!onComplete || isCompleting || isActuallyCompleted || isOverdue || hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask) return;
         onComplete(task);
     };
 
@@ -366,7 +372,7 @@ export function TaskRow({
             disabled={isCompleteActionDisabled}
             className={cn(
                 `${quickActionButtonClass} group flex items-center justify-center`,
-                (hasIncompleteSubtasks || hasIncompletePomoRequirement) && !isActuallyCompleted && "opacity-60 cursor-not-allowed"
+                (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask) && !isActuallyCompleted && "opacity-60 cursor-not-allowed"
             )}
             title={disabledCompleteTitle}
             aria-label="Mark complete"
@@ -497,10 +503,10 @@ export function TaskRow({
                 >
                     <button
                         onClick={handleCheck}
-                        disabled={isActuallyCompleted || isCompleting || isOverdue || !onComplete || hasIncompleteSubtasks || hasIncompletePomoRequirement}
+                        disabled={isActuallyCompleted || isCompleting || isOverdue || !onComplete || hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask}
                         className={cn(
                             "flex-shrink-0 h-10 w-10 p-0 flex items-center justify-center transition-all",
-                            (hasIncompleteSubtasks || hasIncompletePomoRequirement) && !isActuallyCompleted && "opacity-50 cursor-not-allowed"
+                            (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask) && !isActuallyCompleted && "opacity-50 cursor-not-allowed"
                         )}
                         title={disabledCompleteTitle}
                     >

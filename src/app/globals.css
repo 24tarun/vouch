@@ -306,6 +306,75 @@
   box-shadow: 0 0 10px rgba(0, 217, 255, 0.7);
 }
 
+/* Long format (HH:MM:SS) — scale down to fit 6 digits + 2 colons */
+.seven-seg-display-long {
+  gap: 0.4rem;
+}
+
+.seven-seg-display-long .seven-seg-digit {
+  width: 2.85rem;
+  height: 4.9rem;
+}
+
+.seven-seg-display-long .seven-seg-a,
+.seven-seg-display-long .seven-seg-g,
+.seven-seg-display-long .seven-seg-d {
+  left: 0.45rem;
+  width: 1.95rem;
+  height: 0.34rem;
+}
+
+.seven-seg-display-long .seven-seg-a {
+  top: 0.16rem;
+}
+
+.seven-seg-display-long .seven-seg-g {
+  top: 2.3rem;
+}
+
+.seven-seg-display-long .seven-seg-d {
+  top: 4.44rem;
+}
+
+.seven-seg-display-long .seven-seg-b,
+.seven-seg-display-long .seven-seg-c,
+.seven-seg-display-long .seven-seg-e,
+.seven-seg-display-long .seven-seg-f {
+  width: 0.34rem;
+  height: 1.8rem;
+}
+
+.seven-seg-display-long .seven-seg-b {
+  right: 0.16rem;
+  top: 0.4rem;
+}
+
+.seven-seg-display-long .seven-seg-c {
+  right: 0.16rem;
+  top: 2.65rem;
+}
+
+.seven-seg-display-long .seven-seg-e {
+  left: 0.16rem;
+  top: 2.65rem;
+}
+
+.seven-seg-display-long .seven-seg-f {
+  left: 0.16rem;
+  top: 0.4rem;
+}
+
+.seven-seg-display-long .seven-seg-colon {
+  width: 0.5rem;
+  height: 4.9rem;
+  gap: 0.85rem;
+}
+
+.seven-seg-display-long .seven-seg-colon-dot {
+  width: 0.34rem;
+  height: 0.34rem;
+}
+
 @media (max-width: 640px) {
   .seven-seg-display {
     gap: 0.55rem;

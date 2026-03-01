@@ -37,6 +37,7 @@ const ACTIVE_PARENT_TASK_STATUSES: TaskStatus[] = ["CREATED", "POSTPONED"];
 const SUBTASK_LIMIT_ERROR = `A task can have at most ${MAX_SUBTASKS_PER_TASK} subtasks.`;
 const INCOMPLETE_SUBTASKS_ERROR = "Complete all subtasks before marking this task complete.";
 const INCOMPLETE_POMO_REQUIREMENT_ERROR = "Log enough pomodoro time before marking this task complete.";
+const ACTIVE_POMO_RUNNING_ERROR = "Stop the running pomodoro for this task before marking it complete.";
 const INVALID_REMINDERS_ERROR = "Invalid reminders payload.";
 const PAST_REMINDER_ERROR = "All reminders must be in the future.";
 const REMINDER_AFTER_DEADLINE_ERROR = "Reminders must be before or at the deadline.";
@@ -572,8 +573,8 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
         preferredVoucherId === user.id
             ? user.id
             : preferredVoucherId && friendIds.has(preferredVoucherId)
-            ? preferredVoucherId
-            : user.id;
+                ? preferredVoucherId
+                : user.id;
 
     const defaultFailureCostCents =
         ((profileDefaults as any)?.default_failure_cost_cents as number | undefined) ??
@@ -1047,19 +1048,25 @@ export async function markTaskCompleteWithProofIntent(
         return { error: INCOMPLETE_SUBTASKS_ERROR };
     }
 
+    const { data: pomoRows, error: pomoError } = await (supabase.from("pomo_sessions") as any)
+        .select("elapsed_seconds, status")
+        .eq("task_id", taskId as any)
+        .eq("user_id", (user as any).id as any)
+        .neq("status", "DELETED");
+
+    if (pomoError) {
+        return { error: pomoError.message };
+    }
+
+    const normalizedPomoRows = ((pomoRows as Array<{ elapsed_seconds: number; status: string }> | null) || []);
+    const hasRunningPomoForTask = normalizedPomoRows.some((row) => row.status === "ACTIVE");
+    if (hasRunningPomoForTask) {
+        return { error: ACTIVE_POMO_RUNNING_ERROR };
+    }
+
     const requiredPomoMinutes = Number((task as any).required_pomo_minutes || 0);
     if (Number.isInteger(requiredPomoMinutes) && requiredPomoMinutes > 0) {
-        const { data: pomoRows, error: pomoError } = await (supabase.from("pomo_sessions") as any)
-            .select("elapsed_seconds")
-            .eq("task_id", taskId as any)
-            .eq("user_id", (user as any).id as any)
-            .neq("status", "DELETED");
-
-        if (pomoError) {
-            return { error: pomoError.message };
-        }
-
-        const totalPomoSeconds = ((pomoRows as Array<{ elapsed_seconds: number }> | null) || [])
+        const totalPomoSeconds = normalizedPomoRows
             .reduce((sum, row) => sum + (row.elapsed_seconds || 0), 0);
         const requiredPomoSeconds = requiredPomoMinutes * 60;
 
@@ -2765,24 +2772,22 @@ export async function endPomoSession(
                 },
             });
 
-            if (source === "timer_completed") {
-                await sendNotification({
-                    to: user.email || undefined,
-                    userId: user.id,
-                    subject: `Pomodoro complete: ${task.title}`,
-                    title: "Pomodoro completed",
-                    text: `Your pomodoro has ended and has been logged for ${task.title}.`,
-                    email: false,
-                    push: true,
-                    url: `/dashboard/tasks/${task.id}`,
-                    tag: `pomo-completed-${session.id}`,
-                    data: {
-                        taskId: task.id,
-                        sessionId: session.id,
-                        kind: "POMO_COMPLETED",
-                    },
-                });
-            }
+            await sendNotification({
+                to: user.email || undefined,
+                userId: user.id,
+                subject: `Pomodoro complete: ${task.title}`,
+                title: "Pomodoro completed",
+                text: `Your pomodoro has ended and has been logged for ${task.title}.`,
+                email: false,
+                push: true,
+                url: `/dashboard/tasks/${task.id}`,
+                tag: `pomo-completed-${session.id}`,
+                data: {
+                    taskId: task.id,
+                    sessionId: session.id,
+                    kind: "POMO_COMPLETED",
+                },
+            });
         }
     }
 

@@ -37,6 +37,7 @@ import { PomoButton } from "@/components/ui/PomoButton";
 import { localDateTimeToIso } from "@/lib/datetime-local";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
+import { usePomodoro } from "@/components/PomodoroProvider";
 import { canOwnerTemporarilyDelete } from "@/lib/task-delete-window";
 import { MAX_SUBTASKS_PER_TASK } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -115,6 +116,7 @@ export default function TaskDetailClient({
     viewerCurrency,
 }: TaskDetailClientProps) {
     const router = useRouter();
+    const { session } = usePomodoro();
     const [, startRefreshTransition] = useTransition();
     const [taskState, setTaskState] = useState<TaskWithRelations>(task);
     const [isRepetitionStopped, setIsRepetitionStopped] = useState(false);
@@ -156,6 +158,7 @@ export default function TaskDetailClient({
     const remainingRequiredPomoSeconds = Math.max(0, requiredPomoSeconds - totalPomoSeconds);
     const hasIncompletePomoRequirement =
         requiredPomoSeconds > 0 && remainingRequiredPomoSeconds > 0;
+    const hasRunningPomoForTask = session?.status === "ACTIVE" && session.task_id === taskState.id;
     const canManageActionChildren = isOwner && isActiveParentTask;
     const ownerCurrency = normalizeCurrency(taskState.user?.currency ?? viewerCurrency);
     const formattedFailureCost = formatCurrencyFromCents(taskState.failure_cost_cents, ownerCurrency);
@@ -599,9 +602,38 @@ export default function TaskDetailClient({
                 const prepared = await prepareTaskProof(selectedFile);
                 const previewUrl = URL.createObjectURL(prepared.file);
                 const awaitingDraft = { proof: prepared, previewUrl };
-                setTaskProofDraft(awaitingDraft);
+
+                // Optimistic UI: immediately show proof as uploaded
+                const optimisticProof = {
+                    media_kind: prepared.mediaKind,
+                    mime_type: prepared.mimeType,
+                    size_bytes: prepared.sizeBytes,
+                    duration_ms: prepared.durationMs,
+                    upload_state: "UPLOADED" as const,
+                    updated_at: new Date().toISOString(),
+                };
+                const snapshotCompletionProof = taskState.completion_proof;
+                setTaskState((prev) => ({
+                    ...prev,
+                    completion_proof: optimisticProof as any,
+                    proof_request_open: false,
+                    proof_requested_at: null,
+                    proof_requested_by: null,
+                    updated_at: new Date().toISOString(),
+                }));
+                setTaskProofDraft(null);
                 setProofUploadError(null);
-                await uploadAwaitingProofInBackground(taskState.id, awaitingDraft);
+
+                // Run the real upload in background
+                try {
+                    await uploadAwaitingProofInBackground(taskState.id, awaitingDraft);
+                } catch (uploadErr) {
+                    // Revert optimistic state on failure
+                    setTaskState((prev) => ({
+                        ...prev,
+                        completion_proof: snapshotCompletionProof,
+                    }));
+                }
             } catch (error) {
                 const message = error instanceof Error ? error.message : "Could not process proof file.";
                 toast.error(message);
@@ -809,6 +841,10 @@ export default function TaskDetailClient({
         if (hasIncompletePomoRequirement) {
             const remainingMinutes = Math.ceil(remainingRequiredPomoSeconds / 60);
             toast.error(`Log ${remainingMinutes} more focus minute${remainingMinutes === 1 ? "" : "s"} before marking this task complete.`);
+            return;
+        }
+        if (hasRunningPomoForTask) {
+            toast.error("Stop the running pomodoro for this task before marking it complete.");
             return;
         }
         setActionPending("markComplete", true);
@@ -1628,242 +1664,250 @@ export default function TaskDetailClient({
                     )}
 
                     <div className="flex flex-wrap items-center gap-3">
-                    {(taskState.status === "CREATED" || taskState.status === "POSTPONED") && (
-                        <>
-                            <PomoButton
-                                taskId={taskState.id}
-                                variant="full"
-                                className="shrink-0"
-                                defaultDurationMinutes={defaultPomoDurationMinutes}
-                            />
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={() => openProofPicker("draft")}
-                                disabled={isActionPending("markComplete")}
-                                className={cn(
-                                    "h-9 w-9 p-0 border",
-                                    proofDraft
-                                        ? "text-blue-300 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20"
-                                        : "text-slate-300 border-slate-700/80 hover:text-white hover:bg-slate-800"
-                                )}
-                                title={proofDraft ? "Proof attached" : "Attach proof (optional)"}
-                                aria-label="Attach proof"
-                            >
-                                <Camera className="h-4 w-4" />
-                            </Button>
-                            <Button
-                                onClick={handleMarkComplete}
-                                disabled={isActionPending("markComplete") || isOverdue || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement}
-                                className={cn(
-                                    "h-9 border text-emerald-300",
-                                    (incompleteSubtasksCount > 0 || hasIncompletePomoRequirement)
-                                        ? "bg-slate-800/50 border-slate-700/60 text-slate-500 cursor-not-allowed"
-                                        : "bg-emerald-600/20 hover:bg-emerald-600/30 border-emerald-500/40"
-                                )}
-                            >
-                                Mark Complete
-                            </Button>
-
-                            {proofDraft && (
-                                <div className="w-full rounded-lg border border-blue-500/20 bg-blue-950/20 p-3">
-                                    <div className="mb-2 flex items-center justify-between gap-2">
-                                        <p className="text-xs text-blue-200 uppercase tracking-wider font-mono">
-                                            Proof attached ({proofDraft.proof.mediaKind})
-                                        </p>
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            className="h-7 px-2 text-[11px] text-blue-200 hover:text-white hover:bg-blue-900/30"
-                                            onClick={() => setTaskProofDraft(null)}
-                                        >
-                                            Remove
-                                        </Button>
-                                    </div>
-                                    {proofDraft.proof.mediaKind === "image" ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img
-                                            src={proofDraft.previewUrl}
-                                            alt="Selected proof"
-                                            className="max-h-44 rounded-md object-cover"
-                                        />
-                                    ) : (
-                                        <video
-                                            controls
-                                            preload="metadata"
-                                            className="max-h-44 rounded-md"
-                                            src={proofDraft.previewUrl}
-                                        />
-                                    )}
-                                </div>
-                            )}
-
-                            {proofUploadError && (
-                                <div className="w-full rounded-lg border border-red-900/60 bg-red-950/30 p-3">
-                                    <p className="text-sm text-red-300">{proofUploadError}</p>
-                                </div>
-                            )}
-
-                            {taskState.status === "CREATED" && !taskState.postponed_at && !isOverdue && (
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() => setIsPostponeDialogOpen(true)}
-                                    disabled={isActionPending("postpone")}
-                                    className="h-9 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300 disabled:opacity-60"
-                                >
-                                    {isActionPending("postpone") ? "Postponing..." : "Postpone deadline (1x only)"}
-                                </Button>
-                            )}
-
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                onClick={handleTempDelete}
-                                disabled={isActionPending("tempDelete") || !canTempDelete}
-                                className={canTempDelete
-                                    ? "h-9 w-9 p-0 bg-red-950/30 text-red-400 border border-red-900/50 hover:bg-red-900/40 hover:text-red-300"
-                                    : "h-9 w-9 p-0 bg-slate-800/50 text-slate-500 border border-slate-700/60 cursor-not-allowed"}
-                                title={canTempDelete
-                                    ? "Delete task (available for 5 minutes after creation)"
-                                    : "Delete available only within 5 minutes of creation"}
-                                aria-label="Delete task"
-                            >
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
-                        </>
-                    )}
-
-                    {(taskState.status === "CREATED" || taskState.status === "POSTPONED") && incompleteSubtasksCount > 0 && (
-                        <div className="w-full p-3 rounded-lg bg-slate-800/40 border border-slate-700/70">
-                            <p className="text-sm text-slate-300">
-                                Complete all subtasks to enable parent completion ({completedSubtasksCount}/{subtasks.length}).
-                            </p>
-                        </div>
-                    )}
-
-                    {(taskState.status === "CREATED" || taskState.status === "POSTPONED") && hasIncompletePomoRequirement && (
-                        <div className="w-full p-3 rounded-lg bg-slate-800/40 border border-slate-700/70">
-                            <p className="text-sm text-slate-300">
-                                Log {formatFocusTime(remainingRequiredPomoSeconds)} more focus time to enable parent completion ({formatFocusTime(totalPomoSeconds)}/{taskState.required_pomo_minutes}m).
-                            </p>
-                        </div>
-                    )}
-
-                    {taskState.status === "FAILED" && (
-                        <Button
-                            variant="ghost"
-                            onClick={handleForceMajeure}
-                            disabled={isActionPending("forceMajeure")}
-                            className="bg-slate-800/40 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700/40"
-                        >
-                            Use Force Majeure
-                        </Button>
-                    )}
-
-                    {(taskState.recurrence_rule_id || isRepetitionStopped) && (
-                        <Button
-                            variant="destructive"
-                            onClick={handleCancelRepetition}
-                            disabled={isActionPending("cancelRepetition") || isRepetitionStopped}
-                            className={isRepetitionStopped
-                                ? "bg-slate-800/50 text-slate-500 border border-slate-700/60 cursor-not-allowed"
-                                : "bg-red-950/30 text-red-400 border border-red-900/50 hover:bg-red-900/40"}
-                        >
-                            <Repeat className="mr-2 h-4 w-4" />
-                            {isRepetitionStopped ? "Repetition Stopped" : "Stop Future Repetitions"}
-                        </Button>
-                    )}
-
-                    {taskState.status === "AWAITING_VOUCHER" && (
-                        <div className="w-full p-3 rounded-lg bg-purple-500/10 border border-purple-500/30 space-y-3">
-                            <p className="text-slate-300">Waiting for voucher response...</p>
-                            {hasOpenProofRequest && (
-                                <p className="text-amber-300 text-sm">
-                                    {proofRequestedByLabel} has asked for proof.
-                                </p>
-                            )}
-                            <div className="flex flex-wrap items-center gap-3">
-                                {isOwner && (
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={() => openProofPicker("awaiting-upload")}
-                                        disabled={isActionPending("awaitingProofUpload")}
-                                        className="bg-slate-800/60 border-slate-600 text-slate-200 hover:bg-slate-700/60"
-                                    >
-                                        {storedProof ? "Replace Proof" : "Add Proof"}
-                                    </Button>
-                                )}
-                                {isOwner && !isOverdue && (
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={handleUndoComplete}
-                                        disabled={isActionPending("undoComplete")}
-                                        className="bg-slate-800/60 border-slate-600 text-slate-200 hover:bg-slate-700/60"
-                                    >
-                                        Undo Complete
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {taskState.status === "AWAITING_VOUCHER" && proofDraft && (
-                        <div className="w-full rounded-lg border border-blue-500/20 bg-blue-950/20 p-3">
-                            <div className="mb-2 flex items-center justify-between gap-2">
-                                <p className="text-xs text-blue-200 uppercase tracking-wider font-mono">
-                                    Ready to upload ({proofDraft.proof.mediaKind})
-                                </p>
+                        {(taskState.status === "CREATED" || taskState.status === "POSTPONED") && (
+                            <>
+                                <PomoButton
+                                    taskId={taskState.id}
+                                    variant="full"
+                                    className="shrink-0"
+                                    defaultDurationMinutes={defaultPomoDurationMinutes}
+                                />
                                 <Button
                                     type="button"
                                     variant="ghost"
-                                    className="h-7 px-2 text-[11px] text-blue-200 hover:text-white hover:bg-blue-900/30"
-                                    onClick={() => setTaskProofDraft(null)}
+                                    onClick={() => openProofPicker("draft")}
+                                    disabled={isActionPending("markComplete")}
+                                    className={cn(
+                                        "h-9 w-9 p-0 border",
+                                        proofDraft
+                                            ? "text-blue-300 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20"
+                                            : "text-slate-300 border-slate-700/80 hover:text-white hover:bg-slate-800"
+                                    )}
+                                    title={proofDraft ? "Proof attached" : "Attach proof (optional)"}
+                                    aria-label="Attach proof"
                                 >
-                                    Remove
+                                    <Camera className="h-4 w-4" />
                                 </Button>
+                                <Button
+                                    onClick={handleMarkComplete}
+                                    disabled={isActionPending("markComplete") || isOverdue || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask}
+                                    className={cn(
+                                        "h-9 border text-emerald-300",
+                                        (incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask)
+                                            ? "bg-slate-800/50 border-slate-700/60 text-slate-500 cursor-not-allowed"
+                                            : "bg-emerald-600/20 hover:bg-emerald-600/30 border-emerald-500/40"
+                                    )}
+                                >
+                                    Mark Complete
+                                </Button>
+
+                                {proofDraft && (
+                                    <div className="w-full rounded-lg border border-blue-500/20 bg-blue-950/20 p-3">
+                                        <div className="mb-2 flex items-center justify-between gap-2">
+                                            <p className="text-xs text-blue-200 uppercase tracking-wider font-mono">
+                                                Proof attached ({proofDraft.proof.mediaKind})
+                                            </p>
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                className="h-7 px-2 text-[11px] text-blue-200 hover:text-white hover:bg-blue-900/30"
+                                                onClick={() => setTaskProofDraft(null)}
+                                            >
+                                                Remove
+                                            </Button>
+                                        </div>
+                                        {proofDraft.proof.mediaKind === "image" ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img
+                                                src={proofDraft.previewUrl}
+                                                alt="Selected proof"
+                                                className="max-h-44 rounded-md object-cover"
+                                            />
+                                        ) : (
+                                            <video
+                                                controls
+                                                preload="metadata"
+                                                className="max-h-44 rounded-md"
+                                                src={proofDraft.previewUrl}
+                                            />
+                                        )}
+                                    </div>
+                                )}
+
+                                {proofUploadError && (
+                                    <div className="w-full rounded-lg border border-red-900/60 bg-red-950/30 p-3">
+                                        <p className="text-sm text-red-300">{proofUploadError}</p>
+                                    </div>
+                                )}
+
+                                {taskState.status === "CREATED" && !taskState.postponed_at && !isOverdue && (
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => setIsPostponeDialogOpen(true)}
+                                        disabled={isActionPending("postpone")}
+                                        className="h-9 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300 disabled:opacity-60"
+                                    >
+                                        {isActionPending("postpone") ? "Postponing..." : "Postpone deadline (1x only)"}
+                                    </Button>
+                                )}
+
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    onClick={handleTempDelete}
+                                    disabled={isActionPending("tempDelete") || !canTempDelete}
+                                    className={canTempDelete
+                                        ? "h-9 w-9 p-0 bg-red-950/30 text-red-400 border border-red-900/50 hover:bg-red-900/40 hover:text-red-300"
+                                        : "h-9 w-9 p-0 bg-slate-800/50 text-slate-500 border border-slate-700/60 cursor-not-allowed"}
+                                    title={canTempDelete
+                                        ? "Delete task (available for 5 minutes after creation)"
+                                        : "Delete available only within 5 minutes of creation"}
+                                    aria-label="Delete task"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                            </>
+                        )}
+
+                        {(taskState.status === "CREATED" || taskState.status === "POSTPONED") && incompleteSubtasksCount > 0 && (
+                            <div className="w-full p-3 rounded-lg bg-slate-800/40 border border-slate-700/70">
+                                <p className="text-sm text-slate-300">
+                                    Complete all subtasks to enable parent completion ({completedSubtasksCount}/{subtasks.length}).
+                                </p>
                             </div>
-                            {proofDraft.proof.mediaKind === "image" ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                    src={proofDraft.previewUrl}
-                                    alt="Selected proof"
-                                    className="max-h-44 rounded-md object-cover"
-                                />
-                            ) : (
-                                <video
-                                    controls
-                                    preload="metadata"
-                                    className="max-h-44 rounded-md"
-                                    src={proofDraft.previewUrl}
-                                />
-                            )}
-                        </div>
-                    )}
+                        )}
 
-                    {taskState.status === "AWAITING_VOUCHER" && proofUploadError && (
-                        <div className="w-full rounded-lg border border-red-900/60 bg-red-950/30 p-3">
-                            <p className="text-sm text-red-300">{proofUploadError}</p>
-                        </div>
-                    )}
+                        {(taskState.status === "CREATED" || taskState.status === "POSTPONED") && hasIncompletePomoRequirement && (
+                            <div className="w-full p-3 rounded-lg bg-slate-800/40 border border-slate-700/70">
+                                <p className="text-sm text-slate-300">
+                                    Log {formatFocusTime(remainingRequiredPomoSeconds)} more focus time to enable parent completion ({formatFocusTime(totalPomoSeconds)}/{taskState.required_pomo_minutes}m).
+                                </p>
+                            </div>
+                        )}
 
-                    {taskState.status === "COMPLETED" && (
-                        <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30 w-full">
-                            <p className="text-green-300">Task completed successfully.</p>
-                        </div>
-                    )}
+                        {(taskState.status === "CREATED" || taskState.status === "POSTPONED") && hasRunningPomoForTask && (
+                            <div className="w-full p-3 rounded-lg bg-slate-800/40 border border-slate-700/70">
+                                <p className="text-sm text-slate-300">
+                                    Stop the running pomodoro to enable parent completion.
+                                </p>
+                            </div>
+                        )}
 
-                    {taskState.status === "FAILED" && (
-                        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 w-full">
-                            <p className="text-red-300">
-                                {taskState.marked_completed_at
-                                    ? "Denied by voucher."
-                                    : "Deadline missed. Failure cost:"} {formattedFailureCost} added to ledger.
-                            </p>
-                        </div>
-                    )}
+                        {taskState.status === "FAILED" && (
+                            <Button
+                                variant="ghost"
+                                onClick={handleForceMajeure}
+                                disabled={isActionPending("forceMajeure")}
+                                className="bg-slate-800/40 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700/40"
+                            >
+                                Use Force Majeure
+                            </Button>
+                        )}
+
+                        {(taskState.recurrence_rule_id || isRepetitionStopped) && (
+                            <Button
+                                variant="destructive"
+                                onClick={handleCancelRepetition}
+                                disabled={isActionPending("cancelRepetition") || isRepetitionStopped}
+                                className={isRepetitionStopped
+                                    ? "bg-slate-800/50 text-slate-500 border border-slate-700/60 cursor-not-allowed"
+                                    : "bg-red-950/30 text-red-400 border border-red-900/50 hover:bg-red-900/40"}
+                            >
+                                <Repeat className="mr-2 h-4 w-4" />
+                                {isRepetitionStopped ? "Repetition Stopped" : "Stop Future Repetitions"}
+                            </Button>
+                        )}
+
+                        {taskState.status === "AWAITING_VOUCHER" && (
+                            <div className="w-full p-3 rounded-lg bg-purple-500/10 border border-purple-500/30 space-y-3">
+                                <p className="text-slate-300">Waiting for voucher response...</p>
+                                {hasOpenProofRequest && (
+                                    <p className="text-amber-300 text-sm">
+                                        {proofRequestedByLabel} has asked for proof.
+                                    </p>
+                                )}
+                                <div className="flex flex-wrap items-center gap-3">
+                                    {isOwner && (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() => openProofPicker("awaiting-upload")}
+                                            disabled={isActionPending("awaitingProofUpload")}
+                                            className="bg-slate-800/60 border-slate-600 text-slate-200 hover:bg-slate-700/60"
+                                        >
+                                            {storedProof ? "Replace Proof" : "Add Proof"}
+                                        </Button>
+                                    )}
+                                    {isOwner && !isOverdue && (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={handleUndoComplete}
+                                            disabled={isActionPending("undoComplete")}
+                                            className="bg-slate-800/60 border-slate-600 text-slate-200 hover:bg-slate-700/60"
+                                        >
+                                            Undo Complete
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {taskState.status === "AWAITING_VOUCHER" && proofDraft && (
+                            <div className="w-full rounded-lg border border-blue-500/20 bg-blue-950/20 p-3">
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                    <p className="text-xs text-blue-200 uppercase tracking-wider font-mono">
+                                        Ready to upload ({proofDraft.proof.mediaKind})
+                                    </p>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        className="h-7 px-2 text-[11px] text-blue-200 hover:text-white hover:bg-blue-900/30"
+                                        onClick={() => setTaskProofDraft(null)}
+                                    >
+                                        Remove
+                                    </Button>
+                                </div>
+                                {proofDraft.proof.mediaKind === "image" ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                        src={proofDraft.previewUrl}
+                                        alt="Selected proof"
+                                        className="max-h-44 rounded-md object-cover"
+                                    />
+                                ) : (
+                                    <video
+                                        controls
+                                        preload="metadata"
+                                        className="max-h-44 rounded-md"
+                                        src={proofDraft.previewUrl}
+                                    />
+                                )}
+                            </div>
+                        )}
+
+                        {taskState.status === "AWAITING_VOUCHER" && proofUploadError && (
+                            <div className="w-full rounded-lg border border-red-900/60 bg-red-950/30 p-3">
+                                <p className="text-sm text-red-300">{proofUploadError}</p>
+                            </div>
+                        )}
+
+                        {taskState.status === "COMPLETED" && (
+                            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30 w-full">
+                                <p className="text-green-300">Task completed successfully.</p>
+                            </div>
+                        )}
+
+                        {taskState.status === "FAILED" && (
+                            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 w-full">
+                                <p className="text-red-300">
+                                    {taskState.marked_completed_at
+                                        ? "Denied by voucher."
+                                        : "Deadline missed. Failure cost:"} {formattedFailureCost} added to ledger.
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </CardContent>
             </Card>
