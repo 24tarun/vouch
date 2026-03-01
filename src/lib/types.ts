@@ -162,6 +162,7 @@ export interface VoucherReminderLog {
 export interface GoogleCalendarConnection {
     user_id: string;
     sync_enabled: boolean;
+    import_only_tagged_google_events: boolean;
     google_account_email: string | null;
     selected_calendar_id: string | null;
     selected_calendar_summary: string | null;

@@ -10,12 +10,14 @@ import {
     disconnectGoogleCalendarForUser,
     enableGoogleCalendarSyncForUser,
     listCalendarsForUserConnection,
+    setGoogleCalendarImportTaggedOnlyForUser,
     setGoogleCalendarSelection,
 } from "@/lib/google-calendar/sync";
 
 export interface GoogleCalendarIntegrationState {
     connected: boolean;
     syncEnabled: boolean;
+    importOnlyTaggedGoogleEvents: boolean;
     accountEmail: string | null;
     selectedCalendarId: string | null;
     selectedCalendarSummary: string | null;
@@ -66,6 +68,7 @@ export async function getGoogleCalendarIntegrationState(): Promise<GoogleCalenda
         return {
             connected: false,
             syncEnabled: false,
+            importOnlyTaggedGoogleEvents: false,
             accountEmail: null,
             selectedCalendarId: null,
             selectedCalendarSummary: null,
@@ -84,6 +87,7 @@ export async function getGoogleCalendarIntegrationState(): Promise<GoogleCalenda
         return {
             connected: false,
             syncEnabled: false,
+            importOnlyTaggedGoogleEvents: false,
             accountEmail: null,
             selectedCalendarId: null,
             selectedCalendarSummary: null,
@@ -96,6 +100,7 @@ export async function getGoogleCalendarIntegrationState(): Promise<GoogleCalenda
     return {
         connected: Boolean(data.encrypted_refresh_token),
         syncEnabled: Boolean(data.sync_enabled),
+        importOnlyTaggedGoogleEvents: Boolean(data.import_only_tagged_google_events),
         accountEmail: (data.google_account_email as string | null) || null,
         selectedCalendarId: (data.selected_calendar_id as string | null) || null,
         selectedCalendarSummary: (data.selected_calendar_summary as string | null) || null,
@@ -142,6 +147,18 @@ export async function setGoogleCalendarSyncEnabled(enabled: boolean) {
         return { success: true };
     } catch (error) {
         return { error: error instanceof Error ? error.message : "Unable to update Google Calendar sync state." };
+    }
+}
+
+export async function setGoogleCalendarImportTaggedOnly(enabled: boolean) {
+    const supabase = await createClient();
+    const userId = await getAuthenticatedUserId();
+
+    try {
+        await setGoogleCalendarImportTaggedOnlyForUser(supabase, userId, enabled);
+        return { success: true };
+    } catch (error) {
+        return { error: error instanceof Error ? error.message : "Unable to update Google Calendar import filter." };
     }
 }
 

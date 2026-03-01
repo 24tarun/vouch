@@ -7,6 +7,7 @@ import {
     disconnectGoogleCalendar,
     listGoogleCalendarsForSettings,
     setGoogleCalendarCalendar,
+    setGoogleCalendarImportTaggedOnly,
     setGoogleCalendarSyncEnabled,
     startGoogleCalendarConnect,
     type GoogleCalendarIntegrationState,
@@ -107,6 +108,9 @@ export default function SettingsClient({
     const [deleteAccountSuccess, setDeleteAccountSuccess] = useState(false);
     const [googleConnected, setGoogleConnected] = useState(googleCalendarIntegration.connected);
     const [googleSyncEnabled, setGoogleSyncEnabled] = useState(googleCalendarIntegration.syncEnabled);
+    const [googleImportOnlyTaggedEvents, setGoogleImportOnlyTaggedEvents] = useState(
+        googleCalendarIntegration.importOnlyTaggedGoogleEvents
+    );
     const [googleAccountEmail, setGoogleAccountEmail] = useState<string | null>(googleCalendarIntegration.accountEmail);
     const [googleSelectedCalendarId, setGoogleSelectedCalendarId] = useState<string>(
         googleCalendarIntegration.selectedCalendarId ?? ""
@@ -421,6 +425,7 @@ export default function SettingsClient({
 
             setGoogleConnected(false);
             setGoogleSyncEnabled(false);
+            setGoogleImportOnlyTaggedEvents(false);
             setGoogleAccountEmail(null);
             setGoogleSelectedCalendarId("");
             setGoogleSelectedCalendarSummary(null);
@@ -498,6 +503,33 @@ export default function SettingsClient({
         } catch (error) {
             console.error(error);
             setGoogleLastError("Could not update sync setting.");
+        } finally {
+            setIsGoogleActionLoading(false);
+        }
+    }
+
+    async function handleGoogleImportFilterToggle(enabled: boolean) {
+        if (isGoogleActionLoading) return;
+        setIsGoogleActionLoading(true);
+        setGoogleActionSuccess(null);
+        setGoogleLastError(null);
+
+        try {
+            const result = await setGoogleCalendarImportTaggedOnly(enabled);
+            if (result.error) {
+                setGoogleLastError(result.error);
+                return;
+            }
+
+            setGoogleImportOnlyTaggedEvents(enabled);
+            setGoogleActionSuccess(
+                enabled
+                    ? "Google import filter enabled: only events with -event in title or description will import."
+                    : "Google import filter disabled: all calendar events can import."
+            );
+        } catch (error) {
+            console.error(error);
+            setGoogleLastError("Could not update Google import filter.");
         } finally {
             setIsGoogleActionLoading(false);
         }
@@ -962,6 +994,32 @@ export default function SettingsClient({
                                         className="h-4 w-4 accent-cyan-400"
                                     />
                                 </div>
+                            </div>
+
+                            <div className="rounded-lg border border-slate-700/70 bg-slate-800/30 px-3 py-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="space-y-1">
+                                        <Label htmlFor="googleImportOnlyTaggedEvents" className="text-slate-200">
+                                            Import only tagged Google events
+                                        </Label>
+                                        <p className="text-xs text-slate-400">
+                                            When enabled, only Google events containing <span className="font-mono">-event</span> in the title or description are imported into Vouch.
+                                        </p>
+                                    </div>
+                                    <input
+                                        id="googleImportOnlyTaggedEvents"
+                                        type="checkbox"
+                                        checked={googleImportOnlyTaggedEvents}
+                                        disabled={!googleSyncEnabled || isGoogleActionLoading}
+                                        onChange={(e) => handleGoogleImportFilterToggle(e.target.checked)}
+                                        className="h-4 w-4 accent-cyan-400"
+                                    />
+                                </div>
+                                {!googleSyncEnabled && (
+                                    <p className="mt-2 text-xs text-slate-500">
+                                        Enable Google Calendar sync first to configure this filter.
+                                    </p>
+                                )}
                             </div>
                         </>
                     )}
