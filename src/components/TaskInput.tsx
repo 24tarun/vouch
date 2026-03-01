@@ -28,6 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/lib/types";
 import { getCurrencySymbol, getFailureCostBounds, type SupportedCurrency } from "@/lib/currency";
+import { DEFAULT_EVENT_DURATION_MINUTES } from "@/lib/constants";
 import { toast } from "sonner";
 import {
     fromDateTimeLocalValue,
@@ -35,7 +36,7 @@ import {
 } from "@/lib/datetime-local";
 
 const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
-const EVENT_END_TOKEN_REGEX = /\bend(\d{1,2}:\d{2}|\d{1,4})\b/i;
+const EVENT_END_TOKEN_REGEX = /(?:^|\s)-?end(\d{1,2}:\d{2}|\d{1,4})\b/i;
 
 function parseTimeToken(token: string, allowHourOnly: boolean) {
     const normalized = token.trim();
@@ -133,6 +134,7 @@ interface TaskInputProps {
     defaultFailureCostEuros: string;
     defaultCurrency: SupportedCurrency;
     defaultVoucherId: string | null;
+    defaultEventDurationMinutes: number;
     selfUserId: string;
     onCreateTaskOptimistic?: (payload: TaskInputCreatePayload) => void;
 }
@@ -156,6 +158,7 @@ export function TaskInput({
     defaultFailureCostEuros,
     defaultCurrency,
     defaultVoucherId,
+    defaultEventDurationMinutes,
     selfUserId,
     onCreateTaskOptimistic,
 }: TaskInputProps) {
@@ -202,6 +205,12 @@ export function TaskInput({
     const lastCalendarTapRef = useRef(0);
     const currencySymbol = getCurrencySymbol(defaultCurrency);
     const failureCostBounds = getFailureCostBounds(defaultCurrency);
+    const normalizedDefaultEventDurationMinutes =
+        Number.isInteger(defaultEventDurationMinutes) &&
+            defaultEventDurationMinutes >= 1 &&
+            defaultEventDurationMinutes <= 720
+            ? defaultEventDurationMinutes
+            : DEFAULT_EVENT_DURATION_MINUTES;
 
     useEffect(() => {
         setFailureCost(defaultFailureCostEuros);
@@ -491,12 +500,13 @@ export function TaskInput({
     const stripMetadata = (text: string) => {
         return text
             .replace(/@(?:\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g, "")
-            .replace(/\bend(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, "")
+            .replace(/(?:^|\s)-?end(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
             .replace(/\bremind\s+(?:\d{1,2}:\d{2}|\d{4})\b/gi, "")
             .replace(/\b(?:tmrw|tomorrow)\b/gi, "")
             .replace(/vouch\s+\w+/gi, "")
             .replace(/\bpomo\s+\d+\b/gi, "")
             .replace(/\btimer\s+\d+\b/gi, "")
+            .replace(/\s+/g, " ")
             .trim();
     };
 
@@ -542,15 +552,14 @@ export function TaskInput({
         const parsedEventEnd = isEventTask
             ? parseEventEndFromTitle(title, deadlineToSubmit)
             : { found: false, endDate: null as Date | null };
-        if (isEventTask && !parsedEventEnd.found) {
-            setDeadlineError("Events require end time, e.g. -event @6 end7 or end15:00.");
-            return;
-        }
-        if (isEventTask && !parsedEventEnd.endDate) {
+        if (isEventTask && parsedEventEnd.found && !parsedEventEnd.endDate) {
             setDeadlineError("Event end time is invalid. Use end7, end1500, or end15:00.");
             return;
         }
-        const eventEndDate = parsedEventEnd.endDate;
+        const eventEndDate =
+            isEventTask && !parsedEventEnd.found
+                ? new Date(deadlineToSubmit.getTime() + normalizedDefaultEventDurationMinutes * 60 * 1000)
+                : parsedEventEnd.endDate;
         if (isEventTask && eventEndDate && eventEndDate.getTime() <= deadlineToSubmit.getTime()) {
             setDeadlineError("Event end time must be after start time.");
             return;

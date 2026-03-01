@@ -7,7 +7,11 @@ import { canTransition, type TaskStatus } from "@/lib/xstate/task-machine";
 import { type Database } from "@/lib/types";
 import { type SupabaseClient } from "@supabase/supabase-js";
 import { sendNotification } from "@/lib/notifications";
-import { DEFAULT_FAILURE_COST_CENTS, MAX_SUBTASKS_PER_TASK } from "@/lib/constants";
+import {
+    DEFAULT_EVENT_DURATION_MINUTES,
+    DEFAULT_FAILURE_COST_CENTS,
+    MAX_SUBTASKS_PER_TASK,
+} from "@/lib/constants";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
 import { getCurrencySymbol, getFailureCostBounds, normalizeCurrency } from "@/lib/currency";
@@ -41,7 +45,6 @@ const INVALID_TASK_PROOF_ERROR = "Invalid proof payload.";
 const TASK_PROOF_TOO_LARGE_ERROR = "Proof must be 5MB or less.";
 const TASK_PROOF_VIDEO_TOO_LONG_ERROR = "Video proof must be 15 seconds or less.";
 const TITLE_REQUIRED_ERROR = "Title cannot be empty.";
-const EVENT_END_REQUIRED_ERROR = "Events require an end time (for example: end7 or end15:00).";
 const EVENT_END_INVALID_ERROR = "Event end time is invalid.";
 const EVENT_END_BEFORE_START_ERROR = "Event end time must be after start time.";
 
@@ -145,7 +148,7 @@ function normalizeTaskTitleAndSyncKind(rawTitle: string): { normalizedTitle: str
     const hasEventToken = /(^|\s)-event(?=\s|$)/i.test(rawTitle);
     const normalizedTitle = rawTitle
         .replace(/(^|\s)-event(?=\s|$)/gi, " ")
-        .replace(/\bend(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
+        .replace(/(?:^|\s)-?end(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
         .replace(/\s+/g, " ")
         .trim();
 
@@ -190,16 +193,16 @@ function parseEventEndTimeToken(token: string): { hours: number; minutes: number
     return { hours, minutes };
 }
 
-function parseEventEndFromRawTitle(rawTitle: string, startDate: Date): Date | null {
-    const endTokenMatch = rawTitle.match(/\bend(\d{1,2}:\d{2}|\d{1,4})\b/i);
-    if (!endTokenMatch) return null;
+function parseEventEndFromRawTitle(rawTitle: string, startDate: Date): { found: boolean; endDate: Date | null } {
+    const endTokenMatch = rawTitle.match(/(?:^|\s)-?end(\d{1,2}:\d{2}|\d{1,4})\b/i);
+    if (!endTokenMatch) return { found: false, endDate: null };
 
     const parsed = parseEventEndTimeToken(endTokenMatch[1]);
-    if (!parsed) return null;
+    if (!parsed) return { found: true, endDate: null };
 
     const endDate = new Date(startDate);
     endDate.setHours(parsed.hours, parsed.minutes, 0, 0);
-    return endDate;
+    return { found: true, endDate };
 }
 
 function parseAndValidateFutureDeadline(rawDeadline: string): { deadline?: Date; error?: string } {
@@ -541,9 +544,6 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
     if (!normalizedTitle.normalizedTitle) {
         return { error: TITLE_REQUIRED_ERROR };
     }
-    if (normalizedTitle.googleSyncForTask) {
-        return { error: EVENT_END_REQUIRED_ERROR };
-    }
 
     const normalizedSubtasks = normalizeSubtaskTitles(subtasksInput ?? []);
     if (normalizedSubtasks.error) {
@@ -578,9 +578,19 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
     const defaultFailureCostCents =
         ((profileDefaults as any)?.default_failure_cost_cents as number | undefined) ??
         DEFAULT_FAILURE_COST_CENTS;
+    const defaultEventDurationMinutesRaw = Number((profileDefaults as any)?.default_event_duration_minutes);
+    const defaultEventDurationMinutes =
+        Number.isInteger(defaultEventDurationMinutesRaw) &&
+            defaultEventDurationMinutesRaw >= 1 &&
+            defaultEventDurationMinutesRaw <= 720
+            ? defaultEventDurationMinutesRaw
+            : DEFAULT_EVENT_DURATION_MINUTES;
 
     // Default params: Deadline = End of today
     const deadline = getDefaultTaskDeadline();
+    const eventEndAtIso = normalizedTitle.googleSyncForTask
+        ? new Date(deadline.getTime() + defaultEventDurationMinutes * 60 * 1000).toISOString()
+        : null;
 
     // @ts-ignore
     const { data: task, error } = await (supabase.from("tasks") as any)
@@ -593,7 +603,7 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
             deadline: deadline.toISOString(),
             status: "CREATED",
             google_sync_for_task: normalizedTitle.googleSyncForTask,
-            google_event_end_at: null,
+            google_event_end_at: eventEndAtIso,
         })
         .select()
         .single();
@@ -717,7 +727,7 @@ export async function createTask(formData: FormData) {
 
     const { data: reminderDefaultsProfile } = await supabase
         .from("profiles")
-        .select("deadline_one_hour_warning_enabled, deadline_final_warning_enabled, currency")
+        .select("deadline_one_hour_warning_enabled, deadline_final_warning_enabled, currency, default_event_duration_minutes")
         .eq("id", user.id as any)
         .maybeSingle();
 
@@ -731,6 +741,16 @@ export async function createTask(formData: FormData) {
     }
     const validatedDeadline = deadlineValidation.deadline;
     let eventEndAtIso: string | null = null;
+    const defaultEventDurationMinutesRaw = Number(
+        (reminderDefaultsProfile as { default_event_duration_minutes?: unknown } | null)?.default_event_duration_minutes
+    );
+    const defaultEventDurationMinutes =
+        Number.isInteger(defaultEventDurationMinutesRaw) &&
+            defaultEventDurationMinutesRaw >= 1 &&
+            defaultEventDurationMinutesRaw <= 720
+            ? defaultEventDurationMinutesRaw
+            : DEFAULT_EVENT_DURATION_MINUTES;
+
     if (titleSelection.googleSyncForTask) {
         let parsedEventEnd: Date | null = null;
         if (typeof eventEndIsoRaw === "string" && eventEndIsoRaw.trim()) {
@@ -739,10 +759,13 @@ export async function createTask(formData: FormData) {
                 return { error: EVENT_END_INVALID_ERROR };
             }
         } else {
-            parsedEventEnd = parseEventEndFromRawTitle(rawTitle || "", validatedDeadline);
-            if (!parsedEventEnd) {
-                return { error: EVENT_END_REQUIRED_ERROR };
+            const parsedEventEndFromTitle = parseEventEndFromRawTitle(rawTitle || "", validatedDeadline);
+            if (parsedEventEndFromTitle.found && !parsedEventEndFromTitle.endDate) {
+                return { error: EVENT_END_INVALID_ERROR };
             }
+            parsedEventEnd =
+                parsedEventEndFromTitle.endDate ||
+                new Date(validatedDeadline.getTime() + defaultEventDurationMinutes * 60 * 1000);
         }
 
         if (parsedEventEnd.getTime() <= validatedDeadline.getTime()) {

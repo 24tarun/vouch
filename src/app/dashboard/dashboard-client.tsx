@@ -32,6 +32,7 @@ import { subscribeRealtimeTaskChanges } from "@/lib/realtime-task-events";
 import { isIncomingNewer, patchTaskScalars } from "@/lib/tasks-realtime-patch";
 
 const MAX_COMPLETED_TASKS = 10;
+const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
 
 interface TaskProofDraft {
     proof: PreparedTaskProof;
@@ -58,6 +59,7 @@ interface DashboardClientProps {
     currency: SupportedCurrency;
     defaultVoucherId: string | null;
     defaultPomoDurationMinutes: number;
+    defaultEventDurationMinutes: number;
     userId: string;
     username: string;
     initialHideTips: boolean;
@@ -166,6 +168,7 @@ export default function DashboardClient({
     currency,
     defaultVoucherId,
     defaultPomoDurationMinutes,
+    defaultEventDurationMinutes,
     userId,
     username,
     initialHideTips,
@@ -547,6 +550,7 @@ export default function DashboardClient({
     const handleCreateTaskOptimistic = (payload: TaskInputCreatePayload) => {
         const nowIso = new Date().toISOString();
         const tempTaskId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        const optimisticIsEventTask = EVENT_TOKEN_REGEX.test(payload.title);
         const optimisticTask: Task = {
             id: tempTaskId,
             user_id: userId,
@@ -561,8 +565,8 @@ export default function DashboardClient({
             marked_completed_at: null,
             voucher_response_deadline: null,
             recurrence_rule_id: payload.recurrenceType ? "optimistic" : null,
-            google_sync_for_task: Boolean(payload.eventEndIso),
-            google_event_end_at: payload.eventEndIso,
+            google_sync_for_task: optimisticIsEventTask,
+            google_event_end_at: optimisticIsEventTask ? payload.eventEndIso : null,
             created_at: nowIso,
             updated_at: nowIso,
             subtasks: payload.subtasks.map((subtaskTitle, index) => ({
@@ -865,6 +869,7 @@ export default function DashboardClient({
                 defaultFailureCostEuros={defaultFailureCostEuros}
                 defaultCurrency={currency}
                 defaultVoucherId={defaultVoucherId}
+                defaultEventDurationMinutes={defaultEventDurationMinutes}
                 selfUserId={userId}
                 onCreateTaskOptimistic={handleCreateTaskOptimistic}
             />
@@ -872,7 +877,7 @@ export default function DashboardClient({
                 <div className="space-y-1 px-1 text-[10px] text-slate-400 font-mono uppercase tracking-wider">
                     <p>Parser tips:</p>
                     <p>Deadline: use @20:45 or @2045</p>
-                    <p>Events: add -event and end time like end7 or end15:00</p>
+                    <p>Events: add -event; end time is optional (end7/end15:00 overrides your default duration)</p>
                     <p>Timer: use timer 25 (minutes from now)</p>
                     <p>Reminder: use remind 10:00 or remind 1000</p>
                     <p>Pomodoro: use pomo 75</p>

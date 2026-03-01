@@ -42,6 +42,7 @@ import {
     type SupportedCurrency,
 } from "@/lib/currency";
 import {
+    DEFAULT_EVENT_DURATION_MINUTES,
     DEFAULT_FAILURE_COST_CENTS,
     DEFAULT_POMO_DURATION_MINUTES,
 } from "@/lib/constants";
@@ -78,6 +79,9 @@ export default function SettingsClient({
 
     const [defaultPomoDurationMinutes, setDefaultPomoDurationMinutes] = useState(
         String(profile.default_pomo_duration_minutes ?? DEFAULT_POMO_DURATION_MINUTES)
+    );
+    const [defaultEventDurationMinutes, setDefaultEventDurationMinutes] = useState(
+        String(profile.default_event_duration_minutes ?? DEFAULT_EVENT_DURATION_MINUTES)
     );
     const [defaultFailureCostEuros, setDefaultFailureCostEuros] = useState(
         initialFailureCostBounds.step < 1
@@ -155,6 +159,7 @@ export default function SettingsClient({
     const buildDefaultsFormData = () => {
         const formData = new FormData();
         formData.append("defaultPomoDurationMinutes", defaultPomoDurationMinutes);
+        formData.append("defaultEventDurationMinutes", defaultEventDurationMinutes);
         formData.append("defaultFailureCost", defaultFailureCostEuros);
         formData.append("defaultVoucherId", effectiveDefaultVoucherId ?? "");
         formData.append("strictPomoEnabled", String(strictPomoEnabled));
@@ -187,6 +192,16 @@ export default function SettingsClient({
             parsedPomo > 720
         ) {
             return "Default Pomodoro duration must be an integer between 1 and 720.";
+        }
+
+        const parsedEventDuration = Number(defaultEventDurationMinutes);
+        if (
+            !Number.isFinite(parsedEventDuration) ||
+            !Number.isInteger(parsedEventDuration) ||
+            parsedEventDuration < 1 ||
+            parsedEventDuration > 720
+        ) {
+            return "Default event duration must be an integer between 1 and 720.";
         }
 
         const parsedFailureMajor = Number(defaultFailureCostEuros);
@@ -351,6 +366,7 @@ export default function SettingsClient({
         };
     }, [
         defaultPomoDurationMinutes,
+        defaultEventDurationMinutes,
         defaultFailureCostEuros,
         effectiveDefaultVoucherId,
         strictPomoEnabled,
@@ -752,6 +768,22 @@ export default function SettingsClient({
                             <p className="text-xs text-slate-500">
                                 {currencySymbol}{failureCostBounds.minMajor} - {currencySymbol}{failureCostBounds.maxMajor}
                             </p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="defaultEventDurationMinutes" className="text-slate-200">
+                                Default Event Duration (minutes)
+                            </Label>
+                            <Input
+                                id="defaultEventDurationMinutes"
+                                type="number"
+                                min="1"
+                                max="720"
+                                step="1"
+                                value={defaultEventDurationMinutes}
+                                onChange={(e) => setDefaultEventDurationMinutes(e.target.value)}
+                                className="bg-slate-800/40 border-slate-700 text-white"
+                            />
                         </div>
 
                         <div className="space-y-2">
