@@ -6,9 +6,11 @@ import { createClient } from "@/lib/supabase/server";
 import { GOOGLE_OAUTH_STATE_COOKIE } from "@/lib/google-calendar/constants";
 import {
     buildGoogleOAuthUrl,
-    disableGoogleCalendarSyncForUser,
+    disableGoogleCalendarAppToGoogleForUser,
+    disableGoogleCalendarGoogleToAppForUser,
     disconnectGoogleCalendarForUser,
-    enableGoogleCalendarSyncForUser,
+    enableGoogleCalendarAppToGoogleForUser,
+    enableGoogleCalendarGoogleToAppForUser,
     listCalendarsForUserConnection,
     setGoogleCalendarImportTaggedOnlyForUser,
     setGoogleCalendarSelection,
@@ -16,7 +18,8 @@ import {
 
 export interface GoogleCalendarIntegrationState {
     connected: boolean;
-    syncEnabled: boolean;
+    syncAppToGoogleEnabled: boolean;
+    syncGoogleToAppEnabled: boolean;
     importOnlyTaggedGoogleEvents: boolean;
     accountEmail: string | null;
     selectedCalendarId: string | null;
@@ -67,7 +70,8 @@ export async function getGoogleCalendarIntegrationState(): Promise<GoogleCalenda
     if (!user) {
         return {
             connected: false,
-            syncEnabled: false,
+            syncAppToGoogleEnabled: false,
+            syncGoogleToAppEnabled: false,
             importOnlyTaggedGoogleEvents: false,
             accountEmail: null,
             selectedCalendarId: null,
@@ -86,7 +90,8 @@ export async function getGoogleCalendarIntegrationState(): Promise<GoogleCalenda
     if (!data) {
         return {
             connected: false,
-            syncEnabled: false,
+            syncAppToGoogleEnabled: false,
+            syncGoogleToAppEnabled: false,
             importOnlyTaggedGoogleEvents: false,
             accountEmail: null,
             selectedCalendarId: null,
@@ -99,7 +104,8 @@ export async function getGoogleCalendarIntegrationState(): Promise<GoogleCalenda
 
     return {
         connected: Boolean(data.encrypted_refresh_token),
-        syncEnabled: Boolean(data.sync_enabled),
+        syncAppToGoogleEnabled: Boolean(data.sync_app_to_google_enabled),
+        syncGoogleToAppEnabled: Boolean(data.sync_google_to_app_enabled),
         importOnlyTaggedGoogleEvents: Boolean(data.import_only_tagged_google_events),
         accountEmail: (data.google_account_email as string | null) || null,
         selectedCalendarId: (data.selected_calendar_id as string | null) || null,
@@ -129,10 +135,40 @@ export async function setGoogleCalendarCalendar(calendarId: string) {
     }
 
     await setGoogleCalendarSelection(supabase, userId, selected.id, selected.summary);
-    if (currentState.syncEnabled) {
-        await enableGoogleCalendarSyncForUser(userId);
+    if (currentState.syncGoogleToAppEnabled) {
+        await enableGoogleCalendarGoogleToAppForUser(userId);
     }
     return { success: true };
+}
+
+export async function setGoogleCalendarAppToGoogleEnabled(enabled: boolean) {
+    const userId = await getAuthenticatedUserId();
+
+    try {
+        if (enabled) {
+            await enableGoogleCalendarAppToGoogleForUser(userId);
+        } else {
+            await disableGoogleCalendarAppToGoogleForUser(userId);
+        }
+        return { success: true };
+    } catch (error) {
+        return { error: error instanceof Error ? error.message : "Unable to update Vouch to Google sync state." };
+    }
+}
+
+export async function setGoogleCalendarGoogleToAppEnabled(enabled: boolean) {
+    const userId = await getAuthenticatedUserId();
+
+    try {
+        if (enabled) {
+            await enableGoogleCalendarGoogleToAppForUser(userId);
+        } else {
+            await disableGoogleCalendarGoogleToAppForUser(userId);
+        }
+        return { success: true };
+    } catch (error) {
+        return { error: error instanceof Error ? error.message : "Unable to update Google to Vouch sync state." };
+    }
 }
 
 export async function setGoogleCalendarSyncEnabled(enabled: boolean) {
@@ -140,9 +176,11 @@ export async function setGoogleCalendarSyncEnabled(enabled: boolean) {
 
     try {
         if (enabled) {
-            await enableGoogleCalendarSyncForUser(userId);
+            await enableGoogleCalendarGoogleToAppForUser(userId);
+            await enableGoogleCalendarAppToGoogleForUser(userId);
         } else {
-            await disableGoogleCalendarSyncForUser(userId);
+            await disableGoogleCalendarAppToGoogleForUser(userId);
+            await disableGoogleCalendarGoogleToAppForUser(userId);
         }
         return { success: true };
     } catch (error) {

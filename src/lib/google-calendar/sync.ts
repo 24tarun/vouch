@@ -597,6 +597,8 @@ export async function upsertGoogleConnectionTokens(
     const row = {
         user_id: userId,
         sync_enabled: false,
+        sync_app_to_google_enabled: false,
+        sync_google_to_app_enabled: false,
         google_account_email: accountEmail,
         encrypted_access_token: encryptSecret(tokens.access_token),
         encrypted_refresh_token: encryptedRefreshToken,
@@ -707,7 +709,52 @@ export async function setGoogleCalendarImportTaggedOnlyForUser(
     }
 }
 
-export async function enableGoogleCalendarSyncForUser(userId: string): Promise<void> {
+export async function enableGoogleCalendarAppToGoogleForUser(userId: string): Promise<void> {
+    const supabase = createAdminClient();
+    const connection = await getConnectionByUserId(supabase, userId);
+
+    if (!connection) {
+        throw new Error("Google Calendar is not connected.");
+    }
+
+    if (!connection.selected_calendar_id) {
+        throw new Error("Choose a Google calendar first.");
+    }
+
+    const { error } = await (supabase.from("google_calendar_connections") as any)
+        .update({
+            sync_enabled: true,
+            sync_app_to_google_enabled: true,
+            last_error: null,
+        } as any)
+        .eq("user_id", userId as any);
+
+    if (error) {
+        throw new Error(error.message);
+    }
+}
+
+export async function disableGoogleCalendarAppToGoogleForUser(userId: string): Promise<void> {
+    const supabase = createAdminClient();
+    const connection = await getConnectionByUserId(supabase, userId);
+
+    if (!connection) return;
+
+    const syncEnabledNext = Boolean(connection.sync_google_to_app_enabled);
+    const { error } = await (supabase.from("google_calendar_connections") as any)
+        .update({
+            sync_enabled: syncEnabledNext,
+            sync_app_to_google_enabled: false,
+            last_error: null,
+        } as any)
+        .eq("user_id", userId as any);
+
+    if (error) {
+        throw new Error(error.message);
+    }
+}
+
+export async function enableGoogleCalendarGoogleToAppForUser(userId: string): Promise<void> {
     const supabase = createAdminClient();
     const connection = await getConnectionByUserId(supabase, userId);
 
@@ -742,6 +789,7 @@ export async function enableGoogleCalendarSyncForUser(userId: string): Promise<v
     const { error } = await (supabase.from("google_calendar_connections") as any)
         .update({
             sync_enabled: true,
+            sync_google_to_app_enabled: true,
             watch_channel_id: watch.id,
             watch_resource_id: watch.resourceId,
             watch_expires_at: watch.expiration ? new Date(Number(watch.expiration)).toISOString() : null,
@@ -759,7 +807,7 @@ export async function enableGoogleCalendarSyncForUser(userId: string): Promise<v
     await processGoogleCalendarDeltaForUser(userId);
 }
 
-export async function disableGoogleCalendarSyncForUser(userId: string): Promise<void> {
+export async function disableGoogleCalendarGoogleToAppForUser(userId: string): Promise<void> {
     const supabase = createAdminClient();
     const connection = await getConnectionByUserId(supabase, userId);
 
@@ -776,7 +824,8 @@ export async function disableGoogleCalendarSyncForUser(userId: string): Promise<
 
     const { error } = await (supabase.from("google_calendar_connections") as any)
         .update({
-            sync_enabled: false,
+            sync_enabled: Boolean(connection.sync_app_to_google_enabled),
+            sync_google_to_app_enabled: false,
             watch_channel_id: null,
             watch_resource_id: null,
             watch_expires_at: null,
@@ -789,6 +838,16 @@ export async function disableGoogleCalendarSyncForUser(userId: string): Promise<
     }
 }
 
+export async function enableGoogleCalendarSyncForUser(userId: string): Promise<void> {
+    await enableGoogleCalendarGoogleToAppForUser(userId);
+    await enableGoogleCalendarAppToGoogleForUser(userId);
+}
+
+export async function disableGoogleCalendarSyncForUser(userId: string): Promise<void> {
+    await disableGoogleCalendarAppToGoogleForUser(userId);
+    await disableGoogleCalendarGoogleToAppForUser(userId);
+}
+
 export async function enqueueGoogleCalendarOutbox(
     userId: string,
     taskId: string,
@@ -798,7 +857,7 @@ export async function enqueueGoogleCalendarOutbox(
     const supabase = createAdminClient();
     const connection = await getConnectionByUserId(supabase, userId);
 
-    if (!connection || !connection.sync_enabled) {
+    if (!connection || !connection.sync_app_to_google_enabled) {
         return;
     }
 
@@ -987,7 +1046,7 @@ export async function processGoogleCalendarOutboxItem(outboxId: number): Promise
         if (!taskId) {
             if (intent === "DELETE" && outboxPayload.google_event_id) {
                 const connection = await getConnectionByUserId(supabase, userId);
-                if (connection && connection.sync_enabled) {
+                if (connection && connection.sync_app_to_google_enabled) {
                     const calendarId = outboxPayload.calendar_id || connection.selected_calendar_id || null;
                     if (calendarId) {
                         const fresh = await ensureFreshGoogleAccessToken(supabase, connection);
@@ -1000,7 +1059,7 @@ export async function processGoogleCalendarOutboxItem(outboxId: number): Promise
         }
 
         const connection = await getConnectionByUserId(supabase, userId);
-        if (!connection || !connection.sync_enabled) {
+        if (!connection || !connection.sync_app_to_google_enabled) {
             await markOutboxDone(supabase, outboxId);
             return;
         }
@@ -1142,7 +1201,7 @@ export async function processGoogleCalendarDeltaForUser(userId: string): Promise
     const supabase = createAdminClient();
     const connection = await getConnectionByUserId(supabase, userId);
 
-    if (!connection || !connection.sync_enabled || !connection.selected_calendar_id || !connection.sync_token) {
+    if (!connection || !connection.sync_google_to_app_enabled || !connection.selected_calendar_id || !connection.sync_token) {
         return;
     }
 
@@ -1399,7 +1458,7 @@ export async function syncGoogleCalendarForEnabledConnections(limit: number = 20
 
     const { data: rows } = await (supabase.from("google_calendar_connections") as any)
         .select("user_id")
-        .eq("sync_enabled", true as any)
+        .eq("sync_google_to_app_enabled", true as any)
         .not("selected_calendar_id", "is", null as any)
         .not("sync_token", "is", null as any)
         .limit(limit);
@@ -1415,7 +1474,7 @@ export async function renewExpiringGoogleCalendarWatches(): Promise<void> {
 
     const { data: rows } = await (supabase.from("google_calendar_connections") as any)
         .select("*")
-        .eq("sync_enabled", true as any)
+        .eq("sync_google_to_app_enabled", true as any)
         .not("selected_calendar_id", "is", null as any)
         .or(`watch_expires_at.is.null,watch_expires_at.lte.${thresholdIso}`);
 
@@ -1461,7 +1520,7 @@ export async function reconcileStaleGoogleCalendarConnections(): Promise<void> {
 
     const { data: rows } = await (supabase.from("google_calendar_connections") as any)
         .select("user_id")
-        .eq("sync_enabled", true as any)
+        .eq("sync_google_to_app_enabled", true as any)
         .not("selected_calendar_id", "is", null as any)
         .not("sync_token", "is", null as any)
         .or(`last_webhook_at.is.null,last_webhook_at.lt.${staleBeforeIso}`)
@@ -1477,7 +1536,7 @@ export async function findUserIdByWatchChannel(channelId: string, resourceId: st
     const query = (supabase.from("google_calendar_connections") as any)
         .select("user_id, watch_resource_id")
         .eq("watch_channel_id", channelId as any)
-        .eq("sync_enabled", true as any)
+        .eq("sync_google_to_app_enabled", true as any)
         .maybeSingle();
 
     const { data } = await query;

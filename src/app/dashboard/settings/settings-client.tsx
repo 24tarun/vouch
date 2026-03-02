@@ -7,8 +7,9 @@ import {
     disconnectGoogleCalendar,
     listGoogleCalendarsForSettings,
     setGoogleCalendarCalendar,
+    setGoogleCalendarAppToGoogleEnabled,
+    setGoogleCalendarGoogleToAppEnabled,
     setGoogleCalendarImportTaggedOnly,
-    setGoogleCalendarSyncEnabled,
     startGoogleCalendarConnect,
     type GoogleCalendarIntegrationState,
 } from "@/actions/google-calendar";
@@ -111,7 +112,12 @@ export default function SettingsClient({
     const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
     const [deleteAccountSuccess, setDeleteAccountSuccess] = useState(false);
     const [googleConnected, setGoogleConnected] = useState(googleCalendarIntegration.connected);
-    const [googleSyncEnabled, setGoogleSyncEnabled] = useState(googleCalendarIntegration.syncEnabled);
+    const [googleSyncAppToGoogleEnabled, setGoogleSyncAppToGoogleEnabled] = useState(
+        googleCalendarIntegration.syncAppToGoogleEnabled
+    );
+    const [googleSyncGoogleToAppEnabled, setGoogleSyncGoogleToAppEnabled] = useState(
+        googleCalendarIntegration.syncGoogleToAppEnabled
+    );
     const [googleImportOnlyTaggedEvents, setGoogleImportOnlyTaggedEvents] = useState(
         googleCalendarIntegration.importOnlyTaggedGoogleEvents
     );
@@ -440,7 +446,8 @@ export default function SettingsClient({
             }
 
             setGoogleConnected(false);
-            setGoogleSyncEnabled(false);
+            setGoogleSyncAppToGoogleEnabled(false);
+            setGoogleSyncGoogleToAppEnabled(false);
             setGoogleImportOnlyTaggedEvents(false);
             setGoogleAccountEmail(null);
             setGoogleSelectedCalendarId("");
@@ -500,25 +507,54 @@ export default function SettingsClient({
         }
     }
 
-    async function handleGoogleSyncToggle(enabled: boolean) {
+    async function handleGoogleAppToGoogleToggle(enabled: boolean) {
         if (isGoogleActionLoading) return;
         setIsGoogleActionLoading(true);
         setGoogleActionSuccess(null);
         setGoogleLastError(null);
 
         try {
-            const result = await setGoogleCalendarSyncEnabled(enabled);
+            const result = await setGoogleCalendarAppToGoogleEnabled(enabled);
             if (result.error) {
                 setGoogleLastError(result.error);
                 return;
             }
 
-            setGoogleSyncEnabled(enabled);
-            setGoogleLastSyncAt(new Date().toISOString());
-            setGoogleActionSuccess(enabled ? "Google Calendar sync enabled." : "Google Calendar sync disabled.");
+            setGoogleSyncAppToGoogleEnabled(enabled);
+            setGoogleActionSuccess(
+                enabled ? "Vouch to Google Calendar sync enabled." : "Vouch to Google Calendar sync disabled."
+            );
         } catch (error) {
             console.error(error);
-            setGoogleLastError("Could not update sync setting.");
+            setGoogleLastError("Could not update Vouch to Google sync setting.");
+        } finally {
+            setIsGoogleActionLoading(false);
+        }
+    }
+
+    async function handleGoogleGoogleToAppToggle(enabled: boolean) {
+        if (isGoogleActionLoading) return;
+        setIsGoogleActionLoading(true);
+        setGoogleActionSuccess(null);
+        setGoogleLastError(null);
+
+        try {
+            const result = await setGoogleCalendarGoogleToAppEnabled(enabled);
+            if (result.error) {
+                setGoogleLastError(result.error);
+                return;
+            }
+
+            setGoogleSyncGoogleToAppEnabled(enabled);
+            if (enabled) {
+                setGoogleLastSyncAt(new Date().toISOString());
+            }
+            setGoogleActionSuccess(
+                enabled ? "Google Calendar to Vouch sync enabled." : "Google Calendar to Vouch sync disabled."
+            );
+        } catch (error) {
+            console.error(error);
+            setGoogleLastError("Could not update Google to Vouch sync setting.");
         } finally {
             setIsGoogleActionLoading(false);
         }
@@ -931,7 +967,7 @@ export default function SettingsClient({
                 <CardHeader>
                     <CardTitle className="text-white">Google Calendar</CardTitle>
                     <CardDescription className="text-slate-400">
-                        Optional two-way calendar event sync. Use -event when creating a task to sync it with Google Calendar.
+                        Configure Vouch to Google and Google to Vouch sync independently. Use -event when creating a task to sync it with Google Calendar.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -1013,19 +1049,40 @@ export default function SettingsClient({
                             <div className="rounded-lg border border-slate-700/70 bg-slate-800/30 px-3 py-3">
                                 <div className="flex items-center justify-between gap-3">
                                     <div className="space-y-1">
-                                        <Label htmlFor="googleSyncEnabled" className="text-slate-200">
-                                            Enable Google Calendar sync
+                                        <Label htmlFor="googleSyncAppToGoogleEnabled" className="text-slate-200">
+                                            Sync Vouch -&gt; Google Calendar
+                                        </Label>
+                                        <p className="text-xs text-slate-400">
+                                            Task changes in Vouch are pushed to your selected Google calendar.
+                                        </p>
+                                    </div>
+                                    <input
+                                        id="googleSyncAppToGoogleEnabled"
+                                        type="checkbox"
+                                        checked={googleSyncAppToGoogleEnabled}
+                                        disabled={!googleSelectedCalendarId || isGoogleActionLoading}
+                                        onChange={(e) => handleGoogleAppToGoogleToggle(e.target.checked)}
+                                        className="h-4 w-4 accent-cyan-400"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="rounded-lg border border-slate-700/70 bg-slate-800/30 px-3 py-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div className="space-y-1">
+                                        <Label htmlFor="googleSyncGoogleToAppEnabled" className="text-slate-200">
+                                            Sync Google Calendar -&gt; Vouch
                                         </Label>
                                         <p className="text-xs text-slate-400">
                                             Uses your default voucher and default failure cost for Google-created tasks.
                                         </p>
                                     </div>
                                     <input
-                                        id="googleSyncEnabled"
+                                        id="googleSyncGoogleToAppEnabled"
                                         type="checkbox"
-                                        checked={googleSyncEnabled}
+                                        checked={googleSyncGoogleToAppEnabled}
                                         disabled={!googleSelectedCalendarId || isGoogleActionLoading}
-                                        onChange={(e) => handleGoogleSyncToggle(e.target.checked)}
+                                        onChange={(e) => handleGoogleGoogleToAppToggle(e.target.checked)}
                                         className="h-4 w-4 accent-cyan-400"
                                     />
                                 </div>
@@ -1045,14 +1102,14 @@ export default function SettingsClient({
                                         id="googleImportOnlyTaggedEvents"
                                         type="checkbox"
                                         checked={googleImportOnlyTaggedEvents}
-                                        disabled={!googleSyncEnabled || isGoogleActionLoading}
+                                        disabled={!googleSyncGoogleToAppEnabled || isGoogleActionLoading}
                                         onChange={(e) => handleGoogleImportFilterToggle(e.target.checked)}
                                         className="h-4 w-4 accent-cyan-400"
                                     />
                                 </div>
-                                {!googleSyncEnabled && (
+                                {!googleSyncGoogleToAppEnabled && (
                                     <p className="mt-2 text-xs text-slate-500">
-                                        Enable Google Calendar sync first to configure this filter.
+                                        Enable Google Calendar -&gt; Vouch sync first to configure this filter.
                                     </p>
                                 )}
                             </div>
