@@ -179,6 +179,14 @@ export default function TaskDetailClient({
 
     const formatDateTimeDdMmYy = (value: Date | string) =>
         `${formatDateDdMmYy(value)} ${formatTime24h(value)}`;
+    const formatDateMmDdYyyy = (value: Date | string) =>
+        new Date(value).toLocaleDateString("en-US", {
+            month: "2-digit",
+            day: "2-digit",
+            year: "numeric",
+        });
+    const formatDateTimeMmDdYyyy24h = (value: Date | string) =>
+        `${formatDateMmDdYyyy(value)} ${formatTime24h(value)}`;
     const voucherDeadlineForDisplay = useMemo(() => {
         if (taskState.marked_completed_at) {
             const derived = new Date(taskState.marked_completed_at);
@@ -1383,7 +1391,7 @@ export default function TaskDetailClient({
                     {taskState.postponed_at && (
                         <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
                             <p className="text-sm text-amber-300">
-                                Postponed once on {formatDateTimeDdMmYy(taskState.postponed_at)}
+                                Postponed once on {formatDateTimeDdMmYy(taskState.postponed_at)} to {formatDateTimeMmDdYyyy24h(taskState.deadline)}
                             </p>
                         </div>
                     )}
