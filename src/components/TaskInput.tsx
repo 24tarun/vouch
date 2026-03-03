@@ -40,6 +40,14 @@ const EVENT_END_TOKEN_REGEX = /(?:^|\s)-?end(\d{1,2}:\d{2}|\d{1,4})\b/i;
 const TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/i;
 const ORDINAL_DATE_TOKEN_REGEX = /\b([12]?\d|3[01])(st|nd|rd|th)\b/gi;
 const SLASH_DATE_TOKEN_REGEX = /\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}))?\b/g;
+const HIGHLIGHT_EVENT_TOKEN_REGEX = /(^|\s)(-event)(?=\s|$)/gi;
+const HIGHLIGHT_TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g;
+const HIGHLIGHT_EVENT_END_TOKEN_REGEX = /(^|\s)(-?end(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
+
+interface TitleHighlightSegment {
+    text: string;
+    highlighted: boolean;
+}
 
 function parseTimeToken(token: string, allowHourOnly: boolean) {
     const normalized = token.trim();
@@ -181,6 +189,73 @@ function parseEventEndFromTitle(text: string, startDate: Date): { found: boolean
     return { found: true, endDate };
 }
 
+function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
+    if (!text) return [{ text: "", highlighted: false }];
+
+    const ranges: Array<{ start: number; end: number }> = [];
+
+    for (const match of text.matchAll(HIGHLIGHT_EVENT_TOKEN_REGEX)) {
+        if (!match[2]) continue;
+        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+        ranges.push({ start, end: start + match[2].length });
+    }
+
+    for (const match of text.matchAll(HIGHLIGHT_TIME_TOKEN_REGEX)) {
+        const rawToken = match[0];
+        const parsed = parseTimeToken(rawToken.slice(1), true);
+        if (!parsed) continue;
+        const start = match.index ?? 0;
+        ranges.push({ start, end: start + rawToken.length });
+    }
+
+    for (const match of text.matchAll(HIGHLIGHT_EVENT_END_TOKEN_REGEX)) {
+        if (!match[2] || !match[3]) continue;
+        const parsed = parseTimeToken(match[3], true);
+        if (!parsed) continue;
+        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+        ranges.push({ start, end: start + match[2].length });
+    }
+
+    if (ranges.length === 0) return [{ text, highlighted: false }];
+
+    const normalizedRanges = ranges
+        .sort((a, b) => a.start - b.start || a.end - b.end)
+        .reduce<Array<{ start: number; end: number }>>((acc, current) => {
+            const previous = acc[acc.length - 1];
+            if (!previous || current.start > previous.end) {
+                acc.push({ ...current });
+                return acc;
+            }
+            previous.end = Math.max(previous.end, current.end);
+            return acc;
+        }, []);
+
+    const segments: TitleHighlightSegment[] = [];
+    let cursor = 0;
+    for (const range of normalizedRanges) {
+        if (range.start > cursor) {
+            segments.push({
+                text: text.slice(cursor, range.start),
+                highlighted: false,
+            });
+        }
+        segments.push({
+            text: text.slice(range.start, range.end),
+            highlighted: true,
+        });
+        cursor = range.end;
+    }
+
+    if (cursor < text.length) {
+        segments.push({
+            text: text.slice(cursor),
+            highlighted: false,
+        });
+    }
+
+    return segments;
+}
+
 interface TaskInputProps {
     friends: Profile[];
     defaultFailureCostEuros: string;
@@ -245,6 +320,8 @@ export function TaskInput({
     const [showShake, setShowShake] = useState(false);
 
     const formRef = useRef<HTMLFormElement>(null);
+    const titleInputRef = useRef<HTMLInputElement>(null);
+    const titleHighlightRef = useRef<HTMLDivElement>(null);
     const lastCalendarTapRef = useRef(0);
     const currencySymbol = getCurrencySymbol(defaultCurrency);
     const failureCostBounds = getFailureCostBounds(defaultCurrency);
@@ -254,6 +331,12 @@ export function TaskInput({
             defaultEventDurationMinutes <= 720
             ? defaultEventDurationMinutes
             : DEFAULT_EVENT_DURATION_MINUTES;
+    const titleHighlightSegments = buildTitleHighlightSegments(title);
+
+    const syncTitleHighlightScroll = useCallback(() => {
+        if (!titleInputRef.current || !titleHighlightRef.current) return;
+        titleHighlightRef.current.scrollLeft = titleInputRef.current.scrollLeft;
+    }, []);
 
     useEffect(() => {
         setFailureCost(defaultFailureCostEuros);
@@ -586,6 +669,10 @@ export function TaskInput({
         }
     }, [title, friends, isDeadlineManuallyPicked, selfUserId, resolveDeadlineFromTitle]);
 
+    useEffect(() => {
+        syncTitleHighlightScroll();
+    }, [title, syncTitleHighlightScroll]);
+
     const stripMetadata = (text: string) => {
         return text
             .replace(/@(?:\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g, "")
@@ -766,16 +853,39 @@ export function TaskInput({
     return (
         <form ref={formRef} onSubmit={handleSubmit} className="relative space-y-3 mb-8">
             <div className="bg-slate-900/50 border border-slate-800/50 focus-within:border-slate-700/50 rounded-xl transition-all shadow-2xl overflow-hidden">
-                <input
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    onKeyDown={handleTitleKeyDown}
-                    enterKeyHint="done"
-                    placeholder="study math timer 25 /solve questions remind 1000 vouch bob"
-                    className="w-full bg-transparent border-none py-4 px-5 text-white placeholder:text-slate-500/70 focus:outline-none transition-all font-medium text-lg"
-                    disabled={isLoading}
-                />
+                <div className="relative">
+                    {title.length > 0 && (
+                        <div
+                            ref={titleHighlightRef}
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0 overflow-hidden py-4 px-5 whitespace-pre text-lg font-medium text-white"
+                        >
+                            {titleHighlightSegments.map((segment, index) => (
+                                <span
+                                    key={`${index}-${segment.text}`}
+                                    className={segment.highlighted ? "text-orange-400" : "text-white"}
+                                >
+                                    {segment.text}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                    <input
+                        ref={titleInputRef}
+                        type="text"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        onKeyDown={handleTitleKeyDown}
+                        onScroll={syncTitleHighlightScroll}
+                        enterKeyHint="done"
+                        placeholder="study math timer 25 /solve questions remind 1000 vouch bob"
+                        className={cn(
+                            "w-full bg-transparent border-none py-4 px-5 text-white placeholder:text-slate-500/70 focus:outline-none transition-all font-medium text-lg",
+                            title.length > 0 && "text-transparent caret-white"
+                        )}
+                        disabled={isLoading}
+                    />
+                </div>
 
                 <div className="p-2 border-t border-slate-800/30">
                     <div className="flex items-start gap-1.5">
