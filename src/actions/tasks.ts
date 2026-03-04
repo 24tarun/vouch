@@ -30,6 +30,7 @@ import {
     type TaskProofIntent,
     type TaskProofMetadata,
 } from "@/lib/task-proof";
+import { resolveEventSchedule } from "@/lib/task-title-event-time";
 
 const INVALID_DEADLINE_ERROR = "Deadline is invalid.";
 const PAST_DEADLINE_ERROR = "Deadline must be in the future.";
@@ -46,8 +47,6 @@ const INVALID_TASK_PROOF_ERROR = "Invalid proof payload.";
 const TASK_PROOF_TOO_LARGE_ERROR = "Proof must be 5MB or less.";
 const TASK_PROOF_VIDEO_TOO_LONG_ERROR = "Video proof must be 15 seconds or less.";
 const TITLE_REQUIRED_ERROR = "Title cannot be empty.";
-const EVENT_END_INVALID_ERROR = "Event end time is invalid.";
-const EVENT_END_BEFORE_START_ERROR = "Event end time must be after start time.";
 
 function isValidTimeZone(timeZone: string): boolean {
     try {
@@ -149,7 +148,8 @@ function normalizeTaskTitleAndSyncKind(rawTitle: string): { normalizedTitle: str
     const hasEventToken = /(^|\s)-event(?=\s|$)/i.test(rawTitle);
     const normalizedTitle = rawTitle
         .replace(/(^|\s)-event(?=\s|$)/gi, " ")
-        .replace(/(?:^|\s)-?end(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
+        .replace(/(?:^|\s)-start\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
+        .replace(/(?:^|\s)-end\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
         .replace(/\s+/g, " ")
         .trim();
 
@@ -157,53 +157,6 @@ function normalizeTaskTitleAndSyncKind(rawTitle: string): { normalizedTitle: str
         normalizedTitle,
         googleSyncForTask: hasEventToken,
     };
-}
-
-function parseEventEndTimeToken(token: string): { hours: number; minutes: number } | null {
-    const normalized = token.trim();
-    let hours = Number.NaN;
-    let minutes = Number.NaN;
-
-    const colonMatch = normalized.match(/^(\d{1,2}):(\d{2})$/);
-    if (colonMatch) {
-        hours = Number.parseInt(colonMatch[1], 10);
-        minutes = Number.parseInt(colonMatch[2], 10);
-    } else {
-        const compactFourMatch = normalized.match(/^(\d{4})$/);
-        if (compactFourMatch) {
-            hours = Number.parseInt(compactFourMatch[1].slice(0, 2), 10);
-            minutes = Number.parseInt(compactFourMatch[1].slice(2, 4), 10);
-        } else {
-            const compactThreeMatch = normalized.match(/^(\d{3})$/);
-            if (compactThreeMatch) {
-                hours = Number.parseInt(compactThreeMatch[1].slice(0, 1), 10);
-                minutes = Number.parseInt(compactThreeMatch[1].slice(1, 3), 10);
-            } else {
-                const hourOnlyMatch = normalized.match(/^(\d{1,2})$/);
-                if (hourOnlyMatch) {
-                    hours = Number.parseInt(hourOnlyMatch[1], 10);
-                    minutes = 0;
-                }
-            }
-        }
-    }
-
-    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
-    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-
-    return { hours, minutes };
-}
-
-function parseEventEndFromRawTitle(rawTitle: string, startDate: Date): { found: boolean; endDate: Date | null } {
-    const endTokenMatch = rawTitle.match(/(?:^|\s)-?end(\d{1,2}:\d{2}|\d{1,4})\b/i);
-    if (!endTokenMatch) return { found: false, endDate: null };
-
-    const parsed = parseEventEndTimeToken(endTokenMatch[1]);
-    if (!parsed) return { found: true, endDate: null };
-
-    const endDate = new Date(startDate);
-    endDate.setHours(parsed.hours, parsed.minutes, 0, 0);
-    return { found: true, endDate };
 }
 
 function parseAndValidateFutureDeadline(rawDeadline: string): { deadline?: Date; error?: string } {
@@ -588,10 +541,23 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
             : DEFAULT_EVENT_DURATION_MINUTES;
 
     // Default params: Deadline = End of today
-    const deadline = getDefaultTaskDeadline();
-    const eventEndAtIso = normalizedTitle.googleSyncForTask
-        ? new Date(deadline.getTime() + defaultEventDurationMinutes * 60 * 1000).toISOString()
-        : null;
+    let deadline = getDefaultTaskDeadline();
+    let eventEndAtIso: string | null = null;
+
+    if (normalizedTitle.googleSyncForTask) {
+        const eventResolution = resolveEventSchedule({
+            rawTitle: title,
+            anchorDate: deadline,
+            defaultDurationMinutes: defaultEventDurationMinutes,
+        });
+
+        if (eventResolution.error || !eventResolution.startDate || !eventResolution.endDate) {
+            return { error: eventResolution.error || "Event time is invalid." };
+        }
+
+        deadline = eventResolution.startDate;
+        eventEndAtIso = eventResolution.endDate.toISOString();
+    }
 
     // @ts-ignore
     const { data: task, error } = await (supabase.from("tasks") as any)
@@ -701,13 +667,17 @@ export async function createTask(formData: FormData) {
         return { error: "Not authenticated" };
     }
 
-    const rawTitle = formData.get("title") as string;
+    const submittedTitle = formData.get("title") as string;
+    const rawTitleForm = formData.get("rawTitle");
+    const rawTitle =
+        typeof rawTitleForm === "string" && rawTitleForm.trim()
+            ? rawTitleForm
+            : (submittedTitle || "");
     const titleSelection = normalizeTaskTitleAndSyncKind(rawTitle || "");
-    const title = titleSelection.normalizedTitle;
+    const title = normalizeTaskTitleAndSyncKind(submittedTitle || rawTitle).normalizedTitle;
     const description = formData.get("description") as string;
     const failureCostMajor = Number(formData.get("failureCost"));
     const deadline = formData.get("deadline") as string;
-    const eventEndIsoRaw = formData.get("eventEndIso");
     const voucherId = formData.get("voucherId") as string;
     const subtasksInput = normalizeSubtasksFromFormData(formData.get("subtasks"));
     const requiredPomoInput = parseRequiredPomoMinutesFromFormData(formData.get("requiredPomoMinutes"));
@@ -753,27 +723,18 @@ export async function createTask(formData: FormData) {
             : DEFAULT_EVENT_DURATION_MINUTES;
 
     if (titleSelection.googleSyncForTask) {
-        let parsedEventEnd: Date | null = null;
-        if (typeof eventEndIsoRaw === "string" && eventEndIsoRaw.trim()) {
-            parsedEventEnd = new Date(eventEndIsoRaw);
-            if (Number.isNaN(parsedEventEnd.getTime())) {
-                return { error: EVENT_END_INVALID_ERROR };
-            }
-        } else {
-            const parsedEventEndFromTitle = parseEventEndFromRawTitle(rawTitle || "", validatedDeadline);
-            if (parsedEventEndFromTitle.found && !parsedEventEndFromTitle.endDate) {
-                return { error: EVENT_END_INVALID_ERROR };
-            }
-            parsedEventEnd =
-                parsedEventEndFromTitle.endDate ||
-                new Date(validatedDeadline.getTime() + defaultEventDurationMinutes * 60 * 1000);
+        const eventResolution = resolveEventSchedule({
+            rawTitle: rawTitle || "",
+            anchorDate: validatedDeadline,
+            defaultDurationMinutes: defaultEventDurationMinutes,
+        });
+
+        if (eventResolution.error || !eventResolution.startDate || !eventResolution.endDate) {
+            return { error: eventResolution.error || "Event time is invalid." };
         }
 
-        if (parsedEventEnd.getTime() <= validatedDeadline.getTime()) {
-            return { error: EVENT_END_BEFORE_START_ERROR };
-        }
-
-        eventEndAtIso = parsedEventEnd.toISOString();
+        validatedDeadline.setTime(eventResolution.startDate.getTime());
+        eventEndAtIso = eventResolution.endDate.toISOString();
     }
     const remindersInput = normalizeRemindersFromFormData(formData.get("reminders"), validatedDeadline);
     if (remindersInput.error) {

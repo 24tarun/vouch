@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import type { Profile } from "@/lib/types";
 import { getCurrencySymbol, getFailureCostBounds, type SupportedCurrency } from "@/lib/currency";
 import { DEFAULT_EVENT_DURATION_MINUTES } from "@/lib/constants";
+import { parseClockToken, resolveEventSchedule } from "@/lib/task-title-event-time";
 import { toast } from "sonner";
 import {
     fromDateTimeLocalValue,
@@ -36,13 +37,13 @@ import {
 } from "@/lib/datetime-local";
 
 const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
-const EVENT_END_TOKEN_REGEX = /(?:^|\s)-?end(\d{1,2}:\d{2}|\d{1,4})\b/i;
 const TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/i;
 const ORDINAL_DATE_TOKEN_REGEX = /\b([12]?\d|3[01])(st|nd|rd|th)\b/gi;
 const SLASH_DATE_TOKEN_REGEX = /\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}))?\b/g;
 const HIGHLIGHT_EVENT_TOKEN_REGEX = /(^|\s)(-event)(?=\s|$)/gi;
 const HIGHLIGHT_TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g;
-const HIGHLIGHT_EVENT_END_TOKEN_REGEX = /(^|\s)(-?end(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
+const HIGHLIGHT_EVENT_START_TOKEN_REGEX = /(^|\s)(-start\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
+const HIGHLIGHT_EVENT_END_TOKEN_REGEX = /(^|\s)(-end\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
 const HIGHLIGHT_TIMER_TOKEN_REGEX = /\b(timer)\s+(\d+)\b/gi;
 const HIGHLIGHT_POMO_TOKEN_REGEX = /\b(pomo)\s+(\d+)\b/gi;
 const HIGHLIGHT_REMIND_TOKEN_REGEX = /\b(remind)\s+(\d{1,2}:\d{2}|\d{4})\b/gi;
@@ -180,26 +181,11 @@ function formatTimeUntilDeadline(deadline: Date, now: Date = new Date()): string
     return `${parts.join(" ")} until deadline`;
 }
 
-function parseEventEndFromTitle(text: string, startDate: Date): { found: boolean; endDate: Date | null } {
-    const match = text.match(EVENT_END_TOKEN_REGEX);
-    if (!match) {
-        return { found: false, endDate: null };
-    }
-
-    const parsed = parseTimeToken(match[1], true);
-    if (!parsed) {
-        return { found: true, endDate: null };
-    }
-
-    const endDate = new Date(startDate);
-    endDate.setHours(parsed.hours, parsed.minutes, 0, 0);
-    return { found: true, endDate };
-}
-
 function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
     if (!text) return [{ text: "", highlighted: false }];
 
     const ranges: Array<{ start: number; end: number }> = [];
+    const isEventTask = EVENT_TOKEN_REGEX.test(text);
     const pushRange = (start: number, end: number) => {
         if (start >= 0 && end > start && end <= text.length) {
             ranges.push({ start, end });
@@ -212,17 +198,27 @@ function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
         pushRange(start, start + match[2].length);
     }
 
-    for (const match of text.matchAll(HIGHLIGHT_TIME_TOKEN_REGEX)) {
-        const rawToken = match[0];
-        const parsed = parseTimeToken(rawToken.slice(1), true);
+    if (!isEventTask) {
+        for (const match of text.matchAll(HIGHLIGHT_TIME_TOKEN_REGEX)) {
+            const rawToken = match[0];
+            const parsed = parseTimeToken(rawToken.slice(1), true);
+            if (!parsed) continue;
+            const start = match.index ?? 0;
+            pushRange(start, start + rawToken.length);
+        }
+    }
+
+    for (const match of text.matchAll(HIGHLIGHT_EVENT_START_TOKEN_REGEX)) {
+        if (!match[2] || !match[3]) continue;
+        const parsed = parseClockToken(match[3]);
         if (!parsed) continue;
-        const start = match.index ?? 0;
-        pushRange(start, start + rawToken.length);
+        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+        pushRange(start, start + match[2].length);
     }
 
     for (const match of text.matchAll(HIGHLIGHT_EVENT_END_TOKEN_REGEX)) {
         if (!match[2] || !match[3]) continue;
-        const parsed = parseTimeToken(match[3], true);
+        const parsed = parseClockToken(match[3]);
         if (!parsed) continue;
         const start = (match.index ?? 0) + (match[1]?.length ?? 0);
         pushRange(start, start + match[2].length);
@@ -330,6 +326,7 @@ interface TaskInputProps {
 
 export interface TaskInputCreatePayload {
     title: string;
+    rawTitle: string;
     subtasks: string[];
     requiredPomoMinutes: number | null;
     deadlineIso: string;
@@ -526,9 +523,83 @@ export function TaskInput({
         return results;
     };
 
+    const resolveEventAnchorDateFromTitle = useCallback((text: string, now: Date = new Date()) => {
+        const parsedDateTokens = parseDateTokens(text);
+        if (parsedDateTokens.length > 1) {
+            return {
+                anchorDate: getDefaultDeadline(now),
+                error: "Use only one date token (for example: 28th or 05/03).",
+            };
+        }
+
+        const hasTomorrowKeyword = TOMORROW_KEYWORD_REGEX.test(text);
+
+        if (parsedDateTokens.length === 1) {
+            const dateToken = parsedDateTokens[0];
+            const year = dateToken.kind === "slash" ? (dateToken.year ?? now.getFullYear()) : now.getFullYear();
+            const month = dateToken.kind === "slash" ? dateToken.month : now.getMonth() + 1;
+            const day = dateToken.day;
+
+            if (!isValidCalendarDate(year, month, day)) {
+                return {
+                    anchorDate: getDefaultDeadline(now),
+                    error: "Date is invalid. Use 28th, 05/03, or 05/03/2026.",
+                };
+            }
+
+            return {
+                anchorDate: new Date(year, month - 1, day, 12, 0, 0, 0),
+                error: null as string | null,
+            };
+        }
+
+        if (hasTomorrowKeyword) {
+            const anchorDate = new Date(now);
+            anchorDate.setDate(anchorDate.getDate() + 1);
+            anchorDate.setHours(12, 0, 0, 0);
+            return { anchorDate, error: null as string | null };
+        }
+
+        return {
+            anchorDate: getDefaultDeadline(now),
+            error: null as string | null,
+        };
+    }, []);
+
     const resolveDeadlineFromTitle = useCallback((text: string) => {
         const now = new Date();
         const defaultDeadline = getDefaultDeadline(now);
+        const isEventTask = EVENT_TOKEN_REGEX.test(text);
+
+        if (isEventTask) {
+            const anchorResolution = resolveEventAnchorDateFromTitle(text, now);
+            if (anchorResolution.error) {
+                return {
+                    deadline: defaultDeadline,
+                    error: anchorResolution.error,
+                };
+            }
+
+            const eventResolution = resolveEventSchedule({
+                rawTitle: text,
+                anchorDate: anchorResolution.anchorDate,
+                defaultDurationMinutes: normalizedDefaultEventDurationMinutes,
+                now,
+            });
+
+            if (eventResolution.error || !eventResolution.startDate) {
+                return {
+                    deadline: defaultDeadline,
+                    error: eventResolution.error || "Event start time is invalid.",
+                };
+            }
+
+            return {
+                deadline: eventResolution.startDate,
+                error: null as string | null,
+            };
+        }
+
         const timerMinutes = parseTimerMinutesToken(text);
 
         if (timerMinutes !== null) {
@@ -600,7 +671,7 @@ export function TaskInput({
         }
 
         return { deadline: defaultDeadline, error: null as string | null };
-    }, []);
+    }, [normalizedDefaultEventDurationMinutes, resolveEventAnchorDateFromTitle]);
 
     const resetDeadlineToDefault = () => {
         setDeadlineError(null);
@@ -738,7 +809,8 @@ export function TaskInput({
     const stripMetadata = (text: string) => {
         return text
             .replace(/@(?:\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g, "")
-            .replace(/(?:^|\s)-?end(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
+            .replace(/(?:^|\s)-start\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
+            .replace(/(?:^|\s)-end\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
             .replace(/\b([12]?\d|3[01])(?:st|nd|rd|th)\b/gi, "")
             .replace(/\b(?:0?[1-9]|[12]\d|3[01])\/(?:0?[1-9]|1[0-2])(?:\/\d{4})?\b/g, "")
             .replace(/\bremind\s+(?:\d{1,2}:\d{2}|\d{4})\b/gi, "")
@@ -789,26 +861,41 @@ export function TaskInput({
             return;
         }
 
-        const deadlineToSubmit = parserResolution?.deadline ?? selectedDate ?? getDefaultDeadline();
-        if (deadlineToSubmit.getTime() <= Date.now()) {
-            setDeadlineError("Deadline must be in the future.");
-            return;
-        }
         const isEventTask = EVENT_TOKEN_REGEX.test(title);
-        const parsedEventEnd = isEventTask
-            ? parseEventEndFromTitle(title, deadlineToSubmit)
-            : { found: false, endDate: null as Date | null };
-        if (isEventTask && parsedEventEnd.found && !parsedEventEnd.endDate) {
-            setDeadlineError("Event end time is invalid. Use end7, end1500, or end15:00.");
-            return;
-        }
-        const eventEndDate =
-            isEventTask && !parsedEventEnd.found
-                ? new Date(deadlineToSubmit.getTime() + normalizedDefaultEventDurationMinutes * 60 * 1000)
-                : parsedEventEnd.endDate;
-        if (isEventTask && eventEndDate && eventEndDate.getTime() <= deadlineToSubmit.getTime()) {
-            setDeadlineError("Event end time must be after start time.");
-            return;
+        let deadlineToSubmit = parserResolution?.deadline ?? selectedDate ?? getDefaultDeadline();
+        let eventEndDate: Date | null = null;
+
+        if (isEventTask) {
+            const anchorDateResolution = isDeadlineManuallyPicked
+                ? {
+                    anchorDate: selectedDate ?? getDefaultDeadline(),
+                    error: null as string | null,
+                }
+                : resolveEventAnchorDateFromTitle(title);
+
+            if (anchorDateResolution.error) {
+                setDeadlineError(anchorDateResolution.error);
+                return;
+            }
+
+            const eventResolution = resolveEventSchedule({
+                rawTitle: title,
+                anchorDate: anchorDateResolution.anchorDate,
+                defaultDurationMinutes: normalizedDefaultEventDurationMinutes,
+            });
+
+            if (eventResolution.error || !eventResolution.startDate || !eventResolution.endDate) {
+                setDeadlineError(eventResolution.error || "Event time is invalid.");
+                return;
+            }
+
+            deadlineToSubmit = eventResolution.startDate;
+            eventEndDate = eventResolution.endDate;
+        } else {
+            if (deadlineToSubmit.getTime() <= Date.now()) {
+                setDeadlineError("Deadline must be in the future.");
+                return;
+            }
         }
 
         const parsedReminderTimes = parseReminderTimesFromTitle(title);
@@ -840,6 +927,7 @@ export function TaskInput({
 
         const payload: TaskInputCreatePayload = {
             title: taskTitle,
+            rawTitle: title,
             subtasks,
             requiredPomoMinutes,
             deadlineIso: deadlineToSubmit.toISOString(),
@@ -868,6 +956,7 @@ export function TaskInput({
         try {
             const formData = new FormData();
             formData.append("title", payload.title);
+            formData.append("rawTitle", payload.rawTitle);
             formData.append("deadline", payload.deadlineIso);
             if (payload.eventEndIso) {
                 formData.append("eventEndIso", payload.eventEndIso);
@@ -940,7 +1029,7 @@ export function TaskInput({
                         onKeyDown={handleTitleKeyDown}
                         onScroll={syncTitleHighlightScroll}
                         enterKeyHint="done"
-                        placeholder="study math timer 25 /solve questions remind 1000 vouch bob"
+                        placeholder="plan sprint -event -start930 /write notes remind 1000 vouch bob"
                         className={cn(
                             "w-full bg-transparent border-none py-4 px-5 text-white placeholder:text-slate-500/70 focus:outline-none transition-all font-medium text-lg",
                             title.length > 0 && "text-transparent caret-white"

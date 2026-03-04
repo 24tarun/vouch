@@ -132,6 +132,7 @@ function sortActiveTasks(tasks: Task[], sortMode: DashboardSortMode): Task[] {
 function buildCreateTaskFormData(payload: TaskInputCreatePayload): FormData {
     const formData = new FormData();
     formData.append("title", payload.title);
+    formData.append("rawTitle", payload.rawTitle);
     formData.append("deadline", payload.deadlineIso);
     if (payload.eventEndIso) {
         formData.append("eventEndIso", payload.eventEndIso);
@@ -879,7 +880,8 @@ export default function DashboardClient({
                     <p>Time: use @20:45, @2045, or @8</p>
                     <p>Date: use 28th, 05/03, 5/3, or 05/03/2026</p>
                     <p>If date has no @time, deadline defaults to end of day</p>
-                    <p>Events: add -event; end time is optional (end7/end15:00 overrides your default duration)</p>
+                    <p>Events: add -event with -start or -end (e.g., -start930, -end09:30)</p>
+                    <p>Event auto-fill: -start uses default duration for end, and -end backfills start</p>
                     <p>Timer: use timer 25 (minutes from now)</p>
                     <p>Reminder: use remind 10:00 or remind 1000</p>
                     <p>Pomodoro: use pomo 75</p>
