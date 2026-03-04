@@ -14,6 +14,7 @@ import {
     buildDefaultDeadlineReminderRows,
     MANUAL_REMINDER_SOURCE,
 } from "@/lib/task-reminder-defaults";
+import { isGoogleEventColorId } from "@/lib/task-title-event-color";
 import { enqueueGoogleCalendarOutbox } from "@/lib/google-calendar/sync";
 
 export const recurrenceGenerator = schedules.task({
@@ -28,7 +29,7 @@ export const recurrenceGenerator = schedules.task({
         const { data: rules, error } = await supabase
             .from("recurrence_rules")
             .select(
-                "id, user_id, voucher_id, title, description, failure_cost_cents, required_pomo_minutes, rule_config, timezone, last_generated_date, created_at, manual_reminder_offsets_ms, google_sync_for_rule, google_event_duration_minutes"
+                "id, user_id, voucher_id, title, description, failure_cost_cents, required_pomo_minutes, rule_config, timezone, last_generated_date, created_at, manual_reminder_offsets_ms, google_sync_for_rule, google_event_duration_minutes, google_event_color_id"
             )
             .eq("active", true) as { data: RecurrenceRule[] | null, error: any };
 
@@ -499,6 +500,11 @@ async function processRule(
                             new Date(deadlineIso).getTime() +
                             Number((rule as any).google_event_duration_minutes) * 60 * 1000
                         ).toISOString()
+                        : null,
+                google_event_color_id:
+                    Boolean(rule.google_sync_for_rule) &&
+                        isGoogleEventColorId((rule as any).google_event_color_id)
+                        ? (rule as any).google_event_color_id
                         : null,
                 recurrence_rule_id: rule.id
             })

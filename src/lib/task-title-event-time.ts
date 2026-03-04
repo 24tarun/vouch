@@ -4,10 +4,9 @@ const EVENT_END_TOKEN_REGEX = /(^|\s)-end\s*(\d{1,2}:\d{2}|\d{1,4})\b/gi;
 
 const EVENT_DUPLICATE_START_ERROR = "Use only one -start token.";
 const EVENT_DUPLICATE_END_ERROR = "Use only one -end token.";
-const EVENT_MISSING_TIME_ERROR = "Event tasks require -start or -end.";
+const EVENT_MISSING_TIME_ERROR = "Event tasks require -startHHMM or -endHHMM.";
 const EVENT_START_INVALID_ERROR = "Event start time is invalid. Use -start930 or -start09:30.";
 const EVENT_END_INVALID_ERROR = "Event end time is invalid. Use -end930 or -end15:00.";
-const EVENT_START_PAST_ERROR = "Event start time must be in the future.";
 const EVENT_END_BEFORE_START_ERROR = "Event end time must be after start time.";
 
 export interface ParsedClockToken {
@@ -111,7 +110,6 @@ function applyClockToken(baseDate: Date, token: ParsedClockToken): Date {
 
 export function resolveEventSchedule(options: ResolveEventScheduleOptions): ResolveEventScheduleResult {
     const { rawTitle, anchorDate, defaultDurationMinutes } = options;
-    const now = options.now ?? new Date();
 
     if (
         !(anchorDate instanceof Date) ||
@@ -196,15 +194,6 @@ export function resolveEventSchedule(options: ResolveEventScheduleOptions): Reso
         };
     }
 
-    if (startDate.getTime() <= now.getTime()) {
-        return {
-            hasEvent: true,
-            startDate: null,
-            endDate: null,
-            error: EVENT_START_PAST_ERROR,
-        };
-    }
-
     if (endDate.getTime() <= startDate.getTime()) {
         return {
             hasEvent: true,
@@ -220,4 +209,3 @@ export function resolveEventSchedule(options: ResolveEventScheduleOptions): Reso
         endDate,
     };
 }
-

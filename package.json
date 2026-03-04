@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test tests/unit/task-title-event-time.test.ts"
+    "test": "node --test tests/unit/*.test.ts"
   },
   "overrides": {
     "tar": "^7.5.7"

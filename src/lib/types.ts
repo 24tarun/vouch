@@ -41,6 +41,7 @@ export interface Task {
     recurrence_rule_id: string | null;
     google_sync_for_task: boolean;
     google_event_end_at?: string | null;
+    google_event_color_id?: string | null;
     created_at: string;
     updated_at: string;
     proof_request_open?: boolean;
@@ -232,6 +233,7 @@ export interface RecurrenceRule {
     active: boolean;
     google_sync_for_rule: boolean;
     google_event_duration_minutes?: number | null;
+    google_event_color_id?: string | null;
     manual_reminder_offsets_ms?: number[] | null;
     last_generated_date: string | null; // YYYY-MM-DD
     created_at: string;

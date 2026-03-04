@@ -14,6 +14,12 @@ function buildNowBeforeAnchorDay(): Date {
     return new Date(2026, 4, 31, 23, 0, 0, 0); // May 31, 2026 23:00 local
 }
 
+function buildNowAfterAnchorDay(): Date {
+    // This timestamp is intentionally later than anchor-day event times so we can
+    // validate past-event acceptance without relying on wall-clock execution time.
+    return new Date(2026, 5, 1, 23, 0, 0, 0); // June 1, 2026 23:00 local
+}
+
 test("parseClockToken accepts and rejects supported clock formats", () => {
     /*
      * WHAT + WHY:
@@ -152,7 +158,7 @@ test("4) -event with no -start/-end is rejected as mandatory-token violation", (
 
     assert.equal(result.startDate, null);
     assert.equal(result.endDate, null);
-    assert.equal(result.error, "Event tasks require -start or -end.");
+    assert.equal(result.error, "Event tasks require -startHHMM or -endHHMM.");
 });
 
 test("5) invalid -start token is rejected", () => {
@@ -303,7 +309,34 @@ test("10) -event with @930 but no -start/-end still fails mandatory-token rule",
         now: buildNowBeforeAnchorDay(),
     });
 
-    assert.equal(result.error, "Event tasks require -start or -end.");
+    assert.equal(result.error, "Event tasks require -startHHMM or -endHHMM.");
     assert.equal(result.startDate, null);
     assert.equal(result.endDate, null);
+});
+
+test("11) past event windows are accepted when start/end are in the past", () => {
+    /*
+     * WHAT + WHY:
+     * Product behavior now allows creating calendar-block events in the past.
+     * This test ensures parser no longer rejects schedules solely because start is before now.
+     *
+     * PASSING SCENARIO:
+     * With now at 23:00, "-start900 -end1000" on the same anchor day still resolves successfully.
+     *
+     * FAILING SCENARIO:
+     * If legacy future-start enforcement still exists, resolver would return
+     * "Event start time must be in the future." and block this use case.
+     */
+    const result = resolveEventSchedule({
+        rawTitle: "retro log -event -start900 -end1000",
+        anchorDate: buildAnchorDate(),
+        defaultDurationMinutes: 60,
+        now: buildNowAfterAnchorDay(),
+    });
+
+    assert.equal(result.error, undefined);
+    assert.ok(result.startDate);
+    assert.ok(result.endDate);
+    assert.equal(result.startDate!.getHours(), 9);
+    assert.equal(result.endDate!.getHours(), 10);
 });

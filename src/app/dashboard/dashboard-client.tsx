@@ -549,9 +549,21 @@ export default function DashboardClient({
     };
 
     const handleCreateTaskOptimistic = (payload: TaskInputCreatePayload) => {
-        const nowIso = new Date().toISOString();
+        const now = new Date();
+        const nowIso = now.toISOString();
         const tempTaskId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         const optimisticIsEventTask = EVENT_TOKEN_REGEX.test(payload.title);
+        const optimisticEventStart = optimisticIsEventTask ? new Date(payload.deadlineIso) : null;
+        const optimisticEventEnd = optimisticIsEventTask && payload.eventEndIso ? new Date(payload.eventEndIso) : null;
+        const shouldAutoCompletePastEvent = Boolean(
+            optimisticIsEventTask &&
+            optimisticEventStart &&
+            optimisticEventEnd &&
+            !Number.isNaN(optimisticEventStart.getTime()) &&
+            !Number.isNaN(optimisticEventEnd.getTime()) &&
+            optimisticEventStart.getTime() <= now.getTime() &&
+            optimisticEventEnd.getTime() <= now.getTime()
+        );
         const optimisticTask: Task = {
             id: tempTaskId,
             user_id: userId,
@@ -561,9 +573,9 @@ export default function DashboardClient({
             failure_cost_cents: Math.round(Number(payload.failureCost) * 100),
             required_pomo_minutes: payload.requiredPomoMinutes,
             deadline: payload.deadlineIso,
-            status: "CREATED",
+            status: shouldAutoCompletePastEvent ? "COMPLETED" : "CREATED",
             postponed_at: null,
-            marked_completed_at: null,
+            marked_completed_at: shouldAutoCompletePastEvent ? nowIso : null,
             voucher_response_deadline: null,
             recurrence_rule_id: payload.recurrenceType ? "optimistic" : null,
             google_sync_for_task: optimisticIsEventTask,
@@ -588,7 +600,11 @@ export default function DashboardClient({
                 completedTasks,
             }),
             applyOptimistic: () => {
-                setActiveTasks((prev) => [optimisticTask, ...prev]);
+                if (shouldAutoCompletePastEvent) {
+                    setCompletedTasks((prev) => [optimisticTask, ...prev].slice(0, MAX_COMPLETED_TASKS));
+                } else {
+                    setActiveTasks((prev) => [optimisticTask, ...prev]);
+                }
             },
             runMutation: () => createTask(buildCreateTaskFormData(payload)),
             rollback: (snapshot) => {
@@ -598,19 +614,27 @@ export default function DashboardClient({
             onSuccess: (result) => {
                 if (result && "taskId" in result && result.taskId) {
                     const realTaskId = result.taskId as string;
+                    const patchTaskId = (task: Task) =>
+                        task.id === tempTaskId
+                            ? {
+                                ...task,
+                                id: realTaskId,
+                                recurrence_rule_id: payload.recurrenceType ? task.recurrence_rule_id : null,
+                                subtasks: (task.subtasks || []).map((subtask) => ({
+                                    ...subtask,
+                                    parent_task_id: realTaskId,
+                                })),
+                            }
+                            : task;
+
                     setActiveTasks((prev) =>
                         prev.map((task) =>
-                            task.id === tempTaskId
-                                ? {
-                                    ...task,
-                                    id: realTaskId,
-                                    recurrence_rule_id: payload.recurrenceType ? task.recurrence_rule_id : null,
-                                    subtasks: (task.subtasks || []).map((subtask) => ({
-                                        ...subtask,
-                                        parent_task_id: realTaskId,
-                                    })),
-                                }
-                                : task
+                            patchTaskId(task)
+                        )
+                    );
+                    setCompletedTasks((prev) =>
+                        prev.map((task) =>
+                            patchTaskId(task)
                         )
                     );
                     setProofByTaskId((prev) => {
@@ -882,6 +906,8 @@ export default function DashboardClient({
                     <p>If date has no @time, deadline defaults to end of day</p>
                     <p>Events: add -event with -start or -end (e.g., -start930, -end09:30)</p>
                     <p>Event auto-fill: -start uses default duration for end, and -end backfills start</p>
+                    <p>Event colors: type -color, then pick an alias (e.g., -pink, -blue)</p>
+                    <p>Color tags work only with -event and sync as Google event colors</p>
                     <p>Timer: use timer 25 (minutes from now)</p>
                     <p>Reminder: use remind 10:00 or remind 1000</p>
                     <p>Pomodoro: use pomo 75</p>

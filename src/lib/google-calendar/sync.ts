@@ -4,6 +4,7 @@ import { tasks as triggerTasks } from "@trigger.dev/sdk/v3";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database, GoogleCalendarConnection, GoogleCalendarTaskLink, Task } from "@/lib/types";
+import { isGoogleEventColorId } from "@/lib/task-title-event-color";
 
 const GOOGLE_API_BASE = "https://www.googleapis.com/calendar/v3";
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -49,6 +50,7 @@ interface GoogleCalendarEvent {
     id?: string;
     etag?: string;
     status?: string;
+    colorId?: string;
     summary?: string;
     description?: string;
     updated?: string;
@@ -83,7 +85,7 @@ interface GoogleCalendarOutboxPayload {
 
 type GoogleSyncTaskSnapshot = Pick<
     Task,
-    "id" | "user_id" | "title" | "description" | "deadline" | "status" | "updated_at" | "google_sync_for_task" | "google_event_end_at"
+    "id" | "user_id" | "title" | "description" | "deadline" | "status" | "updated_at" | "google_sync_for_task" | "google_event_end_at" | "google_event_color_id"
 >;
 
 function getRequiredEnv(name: string): string {
@@ -346,9 +348,10 @@ function mapGoogleEventToEnd(event: GoogleCalendarEvent): string | null {
     return null;
 }
 
-function buildGoogleEventPayload(task: Pick<Task, "id" | "title" | "description" | "deadline" | "google_event_end_at">): GoogleCalendarEvent {
+function buildGoogleEventPayload(task: Pick<Task, "id" | "title" | "description" | "deadline" | "google_event_end_at" | "google_event_color_id">): GoogleCalendarEvent {
     const start = new Date(task.deadline);
     const explicitEnd = task.google_event_end_at ? new Date(task.google_event_end_at) : null;
+    const colorId = isGoogleEventColorId(task.google_event_color_id) ? task.google_event_color_id : undefined;
     const hasValidExplicitEnd = Boolean(
         explicitEnd &&
         !Number.isNaN(explicitEnd.getTime()) &&
@@ -367,6 +370,7 @@ function buildGoogleEventPayload(task: Pick<Task, "id" | "title" | "description"
         end: {
             dateTime: end.toISOString(),
         },
+        colorId,
         extendedProperties: {
             private: {
                 vouchManaged: "true",
@@ -380,7 +384,7 @@ function buildGoogleEventPayload(task: Pick<Task, "id" | "title" | "description"
 async function googleCreateOrUpdateEvent(
     accessToken: string,
     calendarId: string,
-    task: Pick<Task, "id" | "title" | "description" | "deadline" | "google_event_end_at">,
+    task: Pick<Task, "id" | "title" | "description" | "deadline" | "google_event_end_at" | "google_event_color_id">,
     existingEventId?: string
 ): Promise<GoogleCalendarEvent> {
     const payload = buildGoogleEventPayload(task);
@@ -1013,7 +1017,7 @@ async function getTaskSnapshotForGoogleSync(
     userId: string
 ): Promise<GoogleSyncTaskSnapshot | null> {
     const { data } = await (supabase.from("tasks") as any)
-        .select("id, user_id, title, description, deadline, status, updated_at, google_sync_for_task, google_event_end_at")
+        .select("id, user_id, title, description, deadline, status, updated_at, google_sync_for_task, google_event_end_at, google_event_color_id")
         .eq("id", taskId as any)
         .eq("user_id", userId as any)
         .maybeSingle();
@@ -1345,6 +1349,7 @@ export async function processGoogleCalendarDeltaForUser(userId: string): Promise
                 continue;
             }
             const eventEndIso = mapGoogleEventToEnd(event);
+            const eventColorId = isGoogleEventColorId(event.colorId) ? event.colorId : null;
 
             const googleUpdatedTs = parseIsoTimestamp(event.updated);
 
@@ -1377,6 +1382,7 @@ export async function processGoogleCalendarDeltaForUser(userId: string): Promise
                         description: event.description || null,
                         deadline: deadlineIso,
                         google_event_end_at: eventEndIso,
+                        google_event_color_id: eventColorId,
                         google_sync_for_task: true,
                         status: SOFT_DELETEABLE_STATUSES.has((task as any).status) ? (task as any).status : "CREATED",
                         updated_at: new Date().toISOString(),
@@ -1405,6 +1411,7 @@ export async function processGoogleCalendarDeltaForUser(userId: string): Promise
                     failure_cost_cents: defaultFailureCostCents,
                     deadline: deadlineIso,
                     google_event_end_at: eventEndIso,
+                    google_event_color_id: eventColorId,
                     status: "CREATED",
                     google_sync_for_task: true,
                     postponed_at: null,

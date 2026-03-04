@@ -31,6 +31,11 @@ import {
     type TaskProofMetadata,
 } from "@/lib/task-proof";
 import { resolveEventSchedule } from "@/lib/task-title-event-time";
+import {
+    resolveEventColorFromTitle,
+    stripEventColorTokens,
+    validateEventColorUsage,
+} from "@/lib/task-title-event-color";
 
 const INVALID_DEADLINE_ERROR = "Deadline is invalid.";
 const PAST_DEADLINE_ERROR = "Deadline must be in the future.";
@@ -146,7 +151,7 @@ async function enqueueGoogleCalendarDelete(
 
 function normalizeTaskTitleAndSyncKind(rawTitle: string): { normalizedTitle: string; googleSyncForTask: boolean } {
     const hasEventToken = /(^|\s)-event(?=\s|$)/i.test(rawTitle);
-    const normalizedTitle = rawTitle
+    const normalizedTitle = stripEventColorTokens(rawTitle)
         .replace(/(^|\s)-event(?=\s|$)/gi, " ")
         .replace(/(?:^|\s)-start\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
         .replace(/(?:^|\s)-end\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
@@ -495,6 +500,12 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
     if (!user) return { error: "Not authenticated" };
 
     const normalizedTitle = normalizeTaskTitleAndSyncKind(title);
+    const colorValidation = validateEventColorUsage(title, normalizedTitle.googleSyncForTask);
+    if (colorValidation.error) {
+        return { error: colorValidation.error };
+    }
+    const colorSelection = resolveEventColorFromTitle(title);
+    const googleEventColorId = normalizedTitle.googleSyncForTask ? colorSelection.colorId : null;
     if (!normalizedTitle.normalizedTitle) {
         return { error: TITLE_REQUIRED_ERROR };
     }
@@ -543,6 +554,9 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
     // Default params: Deadline = End of today
     let deadline = getDefaultTaskDeadline();
     let eventEndAtIso: string | null = null;
+    let shouldAutoCompletePastEvent = false;
+    const creationNow = new Date();
+    const creationNowIso = creationNow.toISOString();
 
     if (normalizedTitle.googleSyncForTask) {
         const eventResolution = resolveEventSchedule({
@@ -557,6 +571,9 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
 
         deadline = eventResolution.startDate;
         eventEndAtIso = eventResolution.endDate.toISOString();
+        shouldAutoCompletePastEvent =
+            eventResolution.startDate.getTime() <= creationNow.getTime() &&
+            eventResolution.endDate.getTime() <= creationNow.getTime();
     }
 
     // @ts-ignore
@@ -568,9 +585,12 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
             description: null,
             failure_cost_cents: defaultFailureCostCents,
             deadline: deadline.toISOString(),
-            status: "CREATED",
+            status: shouldAutoCompletePastEvent ? "COMPLETED" : "CREATED",
+            marked_completed_at: shouldAutoCompletePastEvent ? creationNowIso : null,
+            voucher_response_deadline: null,
             google_sync_for_task: normalizedTitle.googleSyncForTask,
             google_event_end_at: eventEndAtIso,
+            google_event_color_id: googleEventColorId,
         })
         .select()
         .single();
@@ -608,14 +628,28 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
 
     // Event
     // @ts-ignore
-    await supabase.from("task_events").insert({
+    const taskEvents: Array<Record<string, unknown>> = [{
         task_id: (task as any).id,
         event_type: "CREATED",
         actor_id: user.id,
         from_status: "CREATED",
         to_status: "CREATED",
         metadata: { title: normalizedTitle.normalizedTitle, type: "simple" },
-    });
+    }];
+    if (shouldAutoCompletePastEvent) {
+        taskEvents.push({
+            task_id: (task as any).id,
+            event_type: "MARK_COMPLETE",
+            actor_id: user.id,
+            from_status: "CREATED",
+            to_status: "COMPLETED",
+            metadata: {
+                auto_completed_past_event: true,
+                auto_accepted: true,
+            },
+        });
+    }
+    await supabase.from("task_events").insert(taskEvents as any);
 
     await enqueueGoogleCalendarUpsert(user.id, (task as any).id);
 
@@ -675,6 +709,12 @@ export async function createTask(formData: FormData) {
             : (submittedTitle || "");
     const titleSelection = normalizeTaskTitleAndSyncKind(rawTitle || "");
     const title = normalizeTaskTitleAndSyncKind(submittedTitle || rawTitle).normalizedTitle;
+    const colorValidation = validateEventColorUsage(rawTitle || "", titleSelection.googleSyncForTask);
+    if (colorValidation.error) {
+        return { error: colorValidation.error };
+    }
+    const colorSelection = resolveEventColorFromTitle(rawTitle || "");
+    const googleEventColorId = titleSelection.googleSyncForTask ? colorSelection.colorId : null;
     const description = formData.get("description") as string;
     const failureCostMajor = Number(formData.get("failureCost"));
     const deadline = formData.get("deadline") as string;
@@ -706,12 +746,18 @@ export async function createTask(formData: FormData) {
     const failureCostBounds = getFailureCostBounds(ownerCurrency);
     const failureCostCents = Math.round(failureCostMajor * 100);
 
-    const deadlineValidation = parseAndValidateFutureDeadline(deadline);
-    if (!deadlineValidation.deadline) {
-        return { error: deadlineValidation.error || INVALID_DEADLINE_ERROR };
+    const parsedDeadline = new Date(deadline);
+    if (Number.isNaN(parsedDeadline.getTime())) {
+        return { error: INVALID_DEADLINE_ERROR };
     }
-    const validatedDeadline = deadlineValidation.deadline;
+    if (!titleSelection.googleSyncForTask && parsedDeadline.getTime() <= Date.now()) {
+        return { error: PAST_DEADLINE_ERROR };
+    }
+    const validatedDeadline = parsedDeadline;
     let eventEndAtIso: string | null = null;
+    let shouldAutoCompletePastEvent = false;
+    const creationNow = new Date();
+    const creationNowIso = creationNow.toISOString();
     const defaultEventDurationMinutesRaw = Number(
         (reminderDefaultsProfile as { default_event_duration_minutes?: unknown } | null)?.default_event_duration_minutes
     );
@@ -735,6 +781,9 @@ export async function createTask(formData: FormData) {
 
         validatedDeadline.setTime(eventResolution.startDate.getTime());
         eventEndAtIso = eventResolution.endDate.toISOString();
+        shouldAutoCompletePastEvent =
+            eventResolution.startDate.getTime() <= creationNow.getTime() &&
+            eventResolution.endDate.getTime() <= creationNow.getTime();
     }
     const remindersInput = normalizeRemindersFromFormData(formData.get("reminders"), validatedDeadline);
     if (remindersInput.error) {
@@ -818,6 +867,7 @@ export async function createTask(formData: FormData) {
                 active: true,
                 google_sync_for_rule: titleSelection.googleSyncForTask,
                 google_event_duration_minutes: eventDurationMinutes,
+                google_event_color_id: googleEventColorId,
                 manual_reminder_offsets_ms: manualReminderOffsetsMs,
                 // Set last_generated_date to the date part of the deadline in user's timezone
                 // This prevents immediate regeneration of the task we are about to create manually
@@ -847,9 +897,12 @@ export async function createTask(formData: FormData) {
             failure_cost_cents: failureCostCents,
             required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,
             deadline: validatedDeadline.toISOString(),
-            status: "CREATED",
+            status: shouldAutoCompletePastEvent ? "COMPLETED" : "CREATED",
+            marked_completed_at: shouldAutoCompletePastEvent ? creationNowIso : null,
+            voucher_response_deadline: null,
             google_sync_for_task: titleSelection.googleSyncForTask,
             google_event_end_at: eventEndAtIso,
+            google_event_color_id: googleEventColorId,
             recurrence_rule_id: recurrenceRuleId
         })
         .select()
@@ -900,7 +953,7 @@ export async function createTask(formData: FormData) {
 
     // Log the creation event
     // @ts-ignore
-    await supabase.from("task_events").insert({
+    const taskEvents: Array<Record<string, unknown>> = [{
         task_id: (task as any).id,
         event_type: "CREATED",
         actor_id: (user as any).id,
@@ -914,7 +967,21 @@ export async function createTask(formData: FormData) {
             reminder_count: remindersInput.reminderDates.length,
             required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,
         },
-    });
+    }];
+    if (shouldAutoCompletePastEvent) {
+        taskEvents.push({
+            task_id: (task as any).id,
+            event_type: "MARK_COMPLETE",
+            actor_id: (user as any).id,
+            from_status: "CREATED",
+            to_status: "COMPLETED",
+            metadata: {
+                auto_completed_past_event: true,
+                auto_accepted: true,
+            },
+        });
+    }
+    await supabase.from("task_events").insert(taskEvents as any);
 
     await enqueueGoogleCalendarUpsert((user as any).id, (task as any).id);
 
@@ -2362,7 +2429,18 @@ export async function getTask(taskId: string) {
         if (isOwner || isVoucher) {
             const now = new Date();
             const deadline = new Date((task as any).deadline);
-            const shouldAutoFail = now >= deadline && ["CREATED", "POSTPONED"].includes((task as any).status);
+            const eventEndRaw = (task as any).google_event_end_at;
+            const parsedEventEnd =
+                typeof eventEndRaw === "string" ? new Date(eventEndRaw) : null;
+            const effectiveDeadline =
+                (task as any).google_sync_for_task &&
+                    parsedEventEnd &&
+                    !Number.isNaN(parsedEventEnd.getTime())
+                    ? parsedEventEnd
+                    : deadline;
+            const shouldAutoFail =
+                now >= effectiveDeadline &&
+                ["CREATED", "POSTPONED"].includes((task as any).status);
 
             if (shouldAutoFail) {
                 const currentPeriod = now.toISOString().slice(0, 7);

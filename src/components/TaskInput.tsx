@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createTask } from "@/actions/tasks";
 import { Calendar, Check, Loader2, Repeat, User } from "lucide-react";
 import {
@@ -30,6 +30,14 @@ import type { Profile } from "@/lib/types";
 import { getCurrencySymbol, getFailureCostBounds, type SupportedCurrency } from "@/lib/currency";
 import { DEFAULT_EVENT_DURATION_MINUTES } from "@/lib/constants";
 import { parseClockToken, resolveEventSchedule } from "@/lib/task-title-event-time";
+import {
+    GOOGLE_EVENT_COLOR_OPTIONS,
+    extractEventColorMatches,
+    findNearestColorHelperToken,
+    replaceNearestColorHelperToken,
+    stripEventColorTokens,
+    validateEventColorUsage,
+} from "@/lib/task-title-event-color";
 import { toast } from "sonner";
 import {
     fromDateTimeLocalValue,
@@ -44,6 +52,7 @@ const HIGHLIGHT_EVENT_TOKEN_REGEX = /(^|\s)(-event)(?=\s|$)/gi;
 const HIGHLIGHT_TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g;
 const HIGHLIGHT_EVENT_START_TOKEN_REGEX = /(^|\s)(-start\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
 const HIGHLIGHT_EVENT_END_TOKEN_REGEX = /(^|\s)(-end\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
+const HIGHLIGHT_EVENT_COLOR_HELPER_TOKEN_REGEX = /(^|\s)(-color)(?=\s|$)/gi;
 const HIGHLIGHT_TIMER_TOKEN_REGEX = /\b(timer)\s+(\d+)\b/gi;
 const HIGHLIGHT_POMO_TOKEN_REGEX = /\b(pomo)\s+(\d+)\b/gi;
 const HIGHLIGHT_REMIND_TOKEN_REGEX = /\b(remind)\s+(\d{1,2}:\d{2}|\d{4})\b/gi;
@@ -51,10 +60,41 @@ const HIGHLIGHT_TOMORROW_TOKEN_REGEX = /\b(tmrw|tomorrow)\b/gi;
 const HIGHLIGHT_VOUCH_TOKEN_REGEX = /\b(vouch)\s+(me|self|myself|\w+)\b/gi;
 const HIGHLIGHT_ORDINAL_DATE_TOKEN_REGEX = /\b([12]?\d|3[01])(st|nd|rd|th)\b/gi;
 const HIGHLIGHT_SLASH_DATE_TOKEN_REGEX = /\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}))?\b/g;
+const VALUE_EXPECTING_KEYWORDS = new Set(["-start", "-end", "-color", "remind", "timer", "pomo", "vouch"]);
+const COLOR_COMPLETION_TOKENS = [
+    ...GOOGLE_EVENT_COLOR_OPTIONS.map((option) => option.aliasToken),
+    ...GOOGLE_EVENT_COLOR_OPTIONS.map((option) => option.nativeToken),
+    "-lightgreen",
+    "-light-green",
+    "-lightblue",
+    "-light-blue",
+];
+const PARSER_KEYWORD_COMPLETION_TOKENS = Array.from(new Set([
+    "-event",
+    "-start",
+    "-end",
+    "-color",
+    "remind",
+    "timer",
+    "pomo",
+    "vouch",
+    "tmrw",
+    "tomorrow",
+    ...COLOR_COMPLETION_TOKENS,
+]));
 
 interface TitleHighlightSegment {
     text: string;
-    highlighted: boolean;
+    className: string;
+    style?: CSSProperties;
+}
+
+interface ParserKeywordCompletion {
+    fragmentStart: number;
+    fragment: string;
+    suggestion: string;
+    suffix: string;
+    insertText: string;
 }
 
 function parseTimeToken(token: string, allowHourOnly: boolean) {
@@ -182,20 +222,34 @@ function formatTimeUntilDeadline(deadline: Date, now: Date = new Date()): string
 }
 
 function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
-    if (!text) return [{ text: "", highlighted: false }];
+    if (!text) return [{ text: "", className: "text-white" }];
 
-    const ranges: Array<{ start: number; end: number }> = [];
-    const isEventTask = EVENT_TOKEN_REGEX.test(text);
-    const pushRange = (start: number, end: number) => {
-        if (start >= 0 && end > start && end <= text.length) {
-            ranges.push({ start, end });
+    const classNames = Array<string>(text.length).fill("text-white");
+    const inlineStyles = Array<CSSProperties | undefined>(text.length).fill(undefined);
+    const applyKeywordRange = (start: number, end: number) => {
+        const clampedStart = Math.max(0, start);
+        const clampedEnd = Math.min(text.length, end);
+        for (let index = clampedStart; index < clampedEnd; index += 1) {
+            if (classNames[index] === "text-white") {
+                classNames[index] = "text-orange-400";
+            }
         }
     };
+    const applyColorRange = (start: number, end: number, colorHex: string) => {
+        const clampedStart = Math.max(0, start);
+        const clampedEnd = Math.min(text.length, end);
+        for (let index = clampedStart; index < clampedEnd; index += 1) {
+            classNames[index] = "";
+            inlineStyles[index] = { color: colorHex };
+        }
+    };
+
+    const isEventTask = EVENT_TOKEN_REGEX.test(text);
 
     for (const match of text.matchAll(HIGHLIGHT_EVENT_TOKEN_REGEX)) {
         if (!match[2]) continue;
         const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        pushRange(start, start + match[2].length);
+        applyKeywordRange(start, start + match[2].length);
     }
 
     if (!isEventTask) {
@@ -204,7 +258,7 @@ function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
             const parsed = parseTimeToken(rawToken.slice(1), true);
             if (!parsed) continue;
             const start = match.index ?? 0;
-            pushRange(start, start + rawToken.length);
+            applyKeywordRange(start, start + rawToken.length);
         }
     }
 
@@ -213,7 +267,7 @@ function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
         const parsed = parseClockToken(match[3]);
         if (!parsed) continue;
         const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        pushRange(start, start + match[2].length);
+        applyKeywordRange(start, start + match[2].length);
     }
 
     for (const match of text.matchAll(HIGHLIGHT_EVENT_END_TOKEN_REGEX)) {
@@ -221,7 +275,13 @@ function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
         const parsed = parseClockToken(match[3]);
         if (!parsed) continue;
         const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        pushRange(start, start + match[2].length);
+        applyKeywordRange(start, start + match[2].length);
+    }
+
+    for (const match of text.matchAll(HIGHLIGHT_EVENT_COLOR_HELPER_TOKEN_REGEX)) {
+        if (!match[2]) continue;
+        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+        applyKeywordRange(start, start + match[2].length);
     }
 
     for (const match of text.matchAll(HIGHLIGHT_TIMER_TOKEN_REGEX)) {
@@ -229,7 +289,7 @@ function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
         const parsed = Number.parseInt(match[2], 10);
         if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) continue;
         const start = match.index ?? 0;
-        pushRange(start, start + match[0].length);
+        applyKeywordRange(start, start + match[0].length);
     }
 
     for (const match of text.matchAll(HIGHLIGHT_POMO_TOKEN_REGEX)) {
@@ -237,7 +297,7 @@ function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
         const parsed = Number.parseInt(match[2], 10);
         if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) continue;
         const start = match.index ?? 0;
-        pushRange(start, start + match[0].length);
+        applyKeywordRange(start, start + match[0].length);
     }
 
     for (const match of text.matchAll(HIGHLIGHT_REMIND_TOKEN_REGEX)) {
@@ -245,19 +305,19 @@ function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
         const parsed = parseTimeToken(match[2], false);
         if (!parsed) continue;
         const start = match.index ?? 0;
-        pushRange(start, start + match[0].length);
+        applyKeywordRange(start, start + match[0].length);
     }
 
     for (const match of text.matchAll(HIGHLIGHT_TOMORROW_TOKEN_REGEX)) {
         if (!match[0]) continue;
         const start = match.index ?? 0;
-        pushRange(start, start + match[0].length);
+        applyKeywordRange(start, start + match[0].length);
     }
 
     for (const match of text.matchAll(HIGHLIGHT_VOUCH_TOKEN_REGEX)) {
         if (!match[0]) continue;
         const start = match.index ?? 0;
-        pushRange(start, start + match[0].length);
+        applyKeywordRange(start, start + match[0].length);
     }
 
     for (const match of text.matchAll(HIGHLIGHT_ORDINAL_DATE_TOKEN_REGEX)) {
@@ -265,53 +325,73 @@ function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
         const parsedDay = Number.parseInt(match[1], 10);
         if (!Number.isInteger(parsedDay) || parsedDay < 1 || parsedDay > 31) continue;
         const start = match.index ?? 0;
-        pushRange(start, start + match[0].length);
+        applyKeywordRange(start, start + match[0].length);
     }
 
     for (const match of text.matchAll(HIGHLIGHT_SLASH_DATE_TOKEN_REGEX)) {
         if (!match[0]) continue;
         const start = match.index ?? 0;
-        pushRange(start, start + match[0].length);
+        applyKeywordRange(start, start + match[0].length);
     }
 
-    if (ranges.length === 0) return [{ text, highlighted: false }];
-
-    const normalizedRanges = ranges
-        .sort((a, b) => a.start - b.start || a.end - b.end)
-        .reduce<Array<{ start: number; end: number }>>((acc, current) => {
-            const previous = acc[acc.length - 1];
-            if (!previous || current.start > previous.end) {
-                acc.push({ ...current });
-                return acc;
-            }
-            previous.end = Math.max(previous.end, current.end);
-            return acc;
-        }, []);
+    for (const colorMatch of extractEventColorMatches(text)) {
+        const colorOption = GOOGLE_EVENT_COLOR_OPTIONS.find((option) => option.colorId === colorMatch.colorId);
+        if (!colorOption) continue;
+        applyColorRange(colorMatch.start, colorMatch.end, colorOption.swatchHex);
+    }
 
     const segments: TitleHighlightSegment[] = [];
-    let cursor = 0;
-    for (const range of normalizedRanges) {
-        if (range.start > cursor) {
-            segments.push({
-                text: text.slice(cursor, range.start),
-                highlighted: false,
-            });
-        }
+    let segmentStart = 0;
+    for (let index = 1; index < text.length; index += 1) {
+        const classChanged = classNames[index] !== classNames[index - 1];
+        const styleChanged = inlineStyles[index]?.color !== inlineStyles[index - 1]?.color;
+        if (!classChanged && !styleChanged) continue;
         segments.push({
-            text: text.slice(range.start, range.end),
-            highlighted: true,
+            text: text.slice(segmentStart, index),
+            className: classNames[index - 1],
+            style: inlineStyles[index - 1],
         });
-        cursor = range.end;
+        segmentStart = index;
     }
-
-    if (cursor < text.length) {
-        segments.push({
-            text: text.slice(cursor),
-            highlighted: false,
-        });
-    }
+    segments.push({
+        text: text.slice(segmentStart),
+        className: classNames[text.length - 1],
+        style: inlineStyles[text.length - 1],
+    });
 
     return segments;
+}
+
+function getParserKeywordCompletion(text: string, caretIndex: number): ParserKeywordCompletion | null {
+    if (caretIndex !== text.length) return null;
+
+    const leading = text.slice(0, caretIndex);
+    const tokenMatch = leading.match(/(^|\s)([^\s]+)$/);
+    if (!tokenMatch) return null;
+
+    const fragment = tokenMatch[2];
+    if (!fragment || fragment.length < 2) return null;
+    if (/[0-9:\/]/.test(fragment)) return null;
+
+    const normalized = fragment.toLowerCase();
+    if (PARSER_KEYWORD_COMPLETION_TOKENS.includes(normalized)) return null;
+
+    const suggestion = PARSER_KEYWORD_COMPLETION_TOKENS.find((keyword) => keyword.startsWith(normalized));
+    if (!suggestion) return null;
+
+    const insertText = VALUE_EXPECTING_KEYWORDS.has(suggestion)
+        ? `${suggestion} `
+        : suggestion;
+    const suffix = insertText.slice(fragment.length);
+    if (!suffix) return null;
+
+    return {
+        fragmentStart: caretIndex - fragment.length,
+        fragment,
+        suggestion,
+        suffix,
+        insertText,
+    };
 }
 
 interface TaskInputProps {
@@ -377,10 +457,16 @@ export function TaskInput({
     const [deadlineError, setDeadlineError] = useState<string | null>(null);
 
     const [showShake, setShowShake] = useState(false);
+    const [titleCaretIndex, setTitleCaretIndex] = useState(0);
+    const [isTitleFocused, setIsTitleFocused] = useState(false);
+    const [colorPickerIndex, setColorPickerIndex] = useState(0);
+    const [isColorPickerDismissed, setIsColorPickerDismissed] = useState(false);
 
     const formRef = useRef<HTMLFormElement>(null);
     const titleInputRef = useRef<HTMLInputElement>(null);
     const titleHighlightRef = useRef<HTMLDivElement>(null);
+    const colorPickerListRef = useRef<HTMLDivElement>(null);
+    const colorOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
     const lastCalendarTapRef = useRef(0);
     const currencySymbol = getCurrencySymbol(defaultCurrency);
     const failureCostBounds = getFailureCostBounds(defaultCurrency);
@@ -391,11 +477,93 @@ export function TaskInput({
             ? defaultEventDurationMinutes
             : DEFAULT_EVENT_DURATION_MINUTES;
     const titleHighlightSegments = buildTitleHighlightSegments(title);
+    const nearestColorHelperToken =
+        isTitleFocused ? findNearestColorHelperToken(title, titleCaretIndex) : null;
+    const isCaretNearColorHelper = Boolean(
+        nearestColorHelperToken &&
+        titleCaretIndex >= nearestColorHelperToken.start - 1 &&
+        titleCaretIndex <= nearestColorHelperToken.end + 1
+    );
+    const isColorPickerVisible = Boolean(
+        nearestColorHelperToken &&
+        isCaretNearColorHelper &&
+        !isColorPickerDismissed
+    );
+    const inlineKeywordCompletion = useMemo(() => {
+        if (!isTitleFocused || isColorPickerVisible) return null;
+        return getParserKeywordCompletion(title, titleCaretIndex);
+    }, [isTitleFocused, isColorPickerVisible, title, titleCaretIndex]);
 
     const syncTitleHighlightScroll = useCallback(() => {
         if (!titleInputRef.current || !titleHighlightRef.current) return;
         titleHighlightRef.current.scrollLeft = titleInputRef.current.scrollLeft;
     }, []);
+
+    const syncTitleCaretFromInput = useCallback(() => {
+        const input = titleInputRef.current;
+        if (!input) return;
+        setTitleCaretIndex(input.selectionStart ?? input.value.length);
+    }, []);
+
+    const applyColorPickerSelection = useCallback((aliasToken: string) => {
+        const input = titleInputRef.current;
+        const caretIndex = input?.selectionStart ?? titleCaretIndex;
+        const replacement = replaceNearestColorHelperToken(title, caretIndex, aliasToken);
+        if (!replacement.replaced) return;
+
+        setTitle(replacement.nextTitle);
+        setTitleCaretIndex(replacement.nextCaretIndex);
+        setIsColorPickerDismissed(false);
+
+        requestAnimationFrame(() => {
+            const nextInput = titleInputRef.current;
+            if (!nextInput) return;
+            nextInput.focus();
+            nextInput.setSelectionRange(replacement.nextCaretIndex, replacement.nextCaretIndex);
+            syncTitleHighlightScroll();
+        });
+    }, [title, titleCaretIndex, syncTitleHighlightScroll]);
+
+    const applyInlineKeywordCompletion = useCallback(() => {
+        if (!inlineKeywordCompletion) return;
+        const fragmentEnd = inlineKeywordCompletion.fragmentStart + inlineKeywordCompletion.fragment.length;
+        const nextTitle = `${title.slice(0, inlineKeywordCompletion.fragmentStart)}${inlineKeywordCompletion.insertText}${title.slice(fragmentEnd)}`;
+        const nextCaretIndex = inlineKeywordCompletion.fragmentStart + inlineKeywordCompletion.insertText.length;
+
+        setTitle(nextTitle);
+        setTitleCaretIndex(nextCaretIndex);
+
+        requestAnimationFrame(() => {
+            const input = titleInputRef.current;
+            if (!input) return;
+            input.focus();
+            input.setSelectionRange(nextCaretIndex, nextCaretIndex);
+            syncTitleHighlightScroll();
+        });
+    }, [inlineKeywordCompletion, title, syncTitleHighlightScroll]);
+
+    useEffect(() => {
+        if (!nearestColorHelperToken) return;
+        setColorPickerIndex(0);
+    }, [nearestColorHelperToken?.start, nearestColorHelperToken?.end]);
+
+    useEffect(() => {
+        if (!isColorPickerVisible) return;
+        const listEl = colorPickerListRef.current;
+        const optionEl = colorOptionRefs.current[colorPickerIndex];
+        if (!listEl || !optionEl) return;
+
+        const optionTop = optionEl.offsetTop;
+        const optionBottom = optionTop + optionEl.offsetHeight;
+        const visibleTop = listEl.scrollTop;
+        const visibleBottom = visibleTop + listEl.clientHeight;
+
+        if (optionTop < visibleTop) {
+            listEl.scrollTop = optionTop;
+        } else if (optionBottom > visibleBottom) {
+            listEl.scrollTop = optionBottom - listEl.clientHeight;
+        }
+    }, [colorPickerIndex, isColorPickerVisible]);
 
     useEffect(() => {
         setFailureCost(defaultFailureCostEuros);
@@ -444,6 +612,10 @@ export function TaskInput({
         if (!localValue) return;
         setDeadlineDraftValue(localValue);
     }, [selectedDate]);
+
+    useEffect(() => {
+        setIsColorPickerDismissed(false);
+    }, [title, titleCaretIndex, isTitleFocused]);
 
     const getSelectedWeekday = () => {
         return selectedDate?.getDay() ?? new Date().getDay();
@@ -771,6 +943,38 @@ export function TaskInput({
     };
 
     const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (isColorPickerVisible) {
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setColorPickerIndex((prev) => (prev + 1) % GOOGLE_EVENT_COLOR_OPTIONS.length);
+                return;
+            }
+            if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setColorPickerIndex((prev) => (prev - 1 + GOOGLE_EVENT_COLOR_OPTIONS.length) % GOOGLE_EVENT_COLOR_OPTIONS.length);
+                return;
+            }
+            if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault();
+                const option = GOOGLE_EVENT_COLOR_OPTIONS[colorPickerIndex];
+                if (option) {
+                    applyColorPickerSelection(option.aliasToken);
+                }
+                return;
+            }
+            if (e.key === "Escape") {
+                e.preventDefault();
+                setIsColorPickerDismissed(true);
+                return;
+            }
+        }
+
+        if (e.key === "Tab" && inlineKeywordCompletion) {
+            e.preventDefault();
+            applyInlineKeywordCompletion();
+            return;
+        }
+
         if (e.key !== "Enter") return;
         if (e.nativeEvent.isComposing) return;
         e.preventDefault();
@@ -807,7 +1011,7 @@ export function TaskInput({
     }, [title, syncTitleHighlightScroll]);
 
     const stripMetadata = (text: string) => {
-        return text
+        const withoutStandardTokens = text
             .replace(/@(?:\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g, "")
             .replace(/(?:^|\s)-start\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
             .replace(/(?:^|\s)-end\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
@@ -820,6 +1024,8 @@ export function TaskInput({
             .replace(/\btimer\s+\d+\b/gi, "")
             .replace(/\s+/g, " ")
             .trim();
+
+        return stripEventColorTokens(withoutStandardTokens);
     };
 
     const parseRequiredPomoMinutes = (text: string): number | null => {
@@ -855,13 +1061,19 @@ export function TaskInput({
             return;
         }
 
+        const isEventTask = EVENT_TOKEN_REGEX.test(title);
+        const colorValidation = validateEventColorUsage(title, isEventTask);
+        if (colorValidation.error) {
+            setDeadlineError(colorValidation.error);
+            return;
+        }
+
         const parserResolution = isDeadlineManuallyPicked ? null : resolveDeadlineFromTitle(title);
         if (parserResolution?.error) {
             setDeadlineError(parserResolution.error);
             return;
         }
 
-        const isEventTask = EVENT_TOKEN_REGEX.test(title);
         let deadlineToSubmit = parserResolution?.deadline ?? selectedDate ?? getDefaultDeadline();
         let eventEndDate: Date | null = null;
 
@@ -1003,7 +1215,7 @@ export function TaskInput({
 
     return (
         <form ref={formRef} onSubmit={handleSubmit} className="relative space-y-3 mb-8">
-            <div className="bg-slate-900/50 border border-slate-800/50 focus-within:border-slate-700/50 rounded-xl transition-all shadow-2xl overflow-hidden">
+            <div className="bg-slate-900/50 border border-slate-800/50 focus-within:border-slate-700/50 rounded-xl transition-all shadow-2xl overflow-visible">
                 <div className="relative">
                     {title.length > 0 && (
                         <div
@@ -1014,28 +1226,81 @@ export function TaskInput({
                             {titleHighlightSegments.map((segment, index) => (
                                 <span
                                     key={`${index}-${segment.text}`}
-                                    className={segment.highlighted ? "text-orange-400" : "text-white"}
+                                    className={segment.className || undefined}
+                                    style={segment.style}
                                 >
                                     {segment.text}
                                 </span>
                             ))}
+                            {inlineKeywordCompletion?.suffix && (
+                                <span className="text-slate-500/75">
+                                    {inlineKeywordCompletion.suffix}
+                                </span>
+                            )}
                         </div>
                     )}
                     <input
                         ref={titleInputRef}
                         type="text"
                         value={title}
-                        onChange={(e) => setTitle(e.target.value)}
+                        onChange={(e) => {
+                            setTitle(e.target.value);
+                            setTitleCaretIndex(e.target.selectionStart ?? e.target.value.length);
+                        }}
                         onKeyDown={handleTitleKeyDown}
+                        onKeyUp={syncTitleCaretFromInput}
+                        onClick={syncTitleCaretFromInput}
+                        onSelect={syncTitleCaretFromInput}
+                        onFocus={() => {
+                            setIsTitleFocused(true);
+                            syncTitleCaretFromInput();
+                        }}
+                        onBlur={() => {
+                            setIsTitleFocused(false);
+                        }}
                         onScroll={syncTitleHighlightScroll}
                         enterKeyHint="done"
-                        placeholder="plan sprint -event -start930 /write notes remind 1000 vouch bob"
+                        placeholder="plan sprint -event -start930 -color /write notes remind 1000 vouch bob"
                         className={cn(
                             "w-full bg-transparent border-none py-4 px-5 text-white placeholder:text-slate-500/70 focus:outline-none transition-all font-medium text-lg",
                             title.length > 0 && "text-transparent caret-white"
                         )}
                         disabled={isLoading}
                     />
+                    {isColorPickerVisible && (
+                        <div
+                            className="absolute left-5 right-5 top-full z-30 mt-2 rounded-lg border border-slate-700/60 bg-slate-950/95 shadow-xl backdrop-blur-sm"
+                            onMouseDown={(e) => e.preventDefault()}
+                        >
+                            <div ref={colorPickerListRef} className="max-h-56 overflow-y-auto py-1">
+                                {GOOGLE_EVENT_COLOR_OPTIONS.map((option, index) => {
+                                    const isActive = index === colorPickerIndex;
+                                    return (
+                                        <button
+                                            key={option.aliasToken}
+                                            ref={(element) => {
+                                                colorOptionRefs.current[index] = element;
+                                            }}
+                                            type="button"
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            onClick={() => {
+                                                setColorPickerIndex(index);
+                                                applyColorPickerSelection(option.aliasToken);
+                                            }}
+                                            className={cn(
+                                                "w-full px-3 py-1.5 text-left text-sm font-mono transition-colors",
+                                                isActive ? "bg-slate-800/80" : "hover:bg-slate-800/50"
+                                            )}
+                                        >
+                                            <span style={{ color: option.swatchHex }}>
+                                                {option.aliasToken}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="p-2 border-t border-slate-800/30">
