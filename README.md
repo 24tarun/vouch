@@ -37,6 +37,14 @@ VAPID_SUBJECT=mailto:you@yourdomain.com
 TRIGGER_SECRET_KEY=tr_dev_123456789
 NEXT_PUBLIC_TRIGGER_PUBLIC_API_KEY=tr_pub_123456789
 TRIGGER_API_URL=https://api.trigger.dev # Optional, defaults to cloud
+
+# Google Calendar Integration (optional)
+GOOGLE_OAUTH_CLIENT_ID=your_google_oauth_client_id
+GOOGLE_OAUTH_CLIENT_SECRET=your_google_oauth_client_secret
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/api/integrations/google/callback
+GOOGLE_TOKEN_ENCRYPTION_KEY=your_aes_256_gcm_key
+GOOGLE_WEBHOOK_CHANNEL_TOKEN_SECRET=your_webhook_channel_token_secret
+GOOGLE_CALENDAR_WEBHOOK_URL=https://your-domain.com/api/integrations/google/webhook
 ```
 
 ## 2. Install Dependencies
@@ -108,18 +116,25 @@ npx trigger.dev@latest deploy
 4. Check **Runs** tab for execution logs
 
 **Scheduled Tasks:**
+- `deadline-fail`: Runs every 5 minutes (fails overdue active/event tasks past their deadline or event end time)
 - `task-reminder-notify`: Runs every minute (sends due custom reminders, plus optional default 1-hour and 5-minute deadline warnings based on user settings)
 - `voucher-deadline-warning`: Runs at 09:00, 12:00, 15:00, 18:00, 21:00 UTC (daily digest of pending vouch requests, max once per voucher per UTC day)
 - `voucher-timeout`: Runs every hour (auto-accepts overdue awaiting-voucher tasks, adds a 0.30 voucher timeout penalty amount, and cleans proof media)
 - `monthly-settlement`: Runs on 1st of each month at 9am (sends ledger settlement emails)
+- `recurrence-generator`: Runs every hour (generates recurring tasks from active rules, including event tasks with color/duration)
+- `google-calendar-sync-sweeper`: Runs every minute (syncs enabled connections, retries outbox, reconciles stale connections)
+- `google-calendar-watch-renew`: Runs every hour (renews expiring Google Calendar webhook subscriptions)
 
 Voucher review window:
 - Vouchers have 7 days to respond after task submission.
 - No immediate push/email is sent at submission time.
 
-Google Calendar integration controls:
-- `Enable Google Calendar sync` toggles sync on/off while keeping the connection.
+Google Calendar integration:
+- Two-way sync with independent directional controls (app→Google and Google→app can be toggled separately).
+- `Enable Google Calendar sync` toggles both sync directions on/off while keeping the connection.
 - `Disconnect & Forget` revokes Google access and purges Google integration rows (`google_calendar_connections`, `google_calendar_task_links`, `google_calendar_sync_outbox`) while keeping existing tasks.
+- Event tasks can be created with `-event -start HH:MM -end HH:MM` syntax and synced as Google Calendar events.
+- Event color tokens (`-tomato`, `-banana`, `-sage`, `-basil`, `-flamingo`, `-peacock`, `-blueberry`, `-lavender`, `-graphite`, `-tangerine`, `-grape`) map to Google Calendar color IDs 1–11.
 
 
 

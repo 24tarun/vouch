@@ -37,6 +37,12 @@
 | `VERCEL_GIT_COMMIT_REF` | Build stamp label | No | No | Falls back to local git command or `unknown`. |
 | `VERCEL_GIT_COMMIT_SHA` | Build stamp label | No | No | Falls back to local git command or `unknown`. |
 | `VERCEL_GIT_COMMIT_MESSAGE` | Build stamp label | No | No | Falls back to local git command or `unknown`. |
+| `GOOGLE_OAUTH_CLIENT_ID` | Google Calendar OAuth flow | Yes for GCal | No | OAuth initiation fails |
+| `GOOGLE_OAUTH_CLIENT_SECRET` | Google token exchange/refresh | Yes for GCal | No | Token exchange fails |
+| `GOOGLE_OAUTH_REDIRECT_URI` | Google OAuth callback | Yes for GCal | No | OAuth redirect fails |
+| `GOOGLE_TOKEN_ENCRYPTION_KEY` | AES-256-GCM token encryption | Yes for GCal | No | `encryptSecret`/`decryptSecret` throw |
+| `GOOGLE_WEBHOOK_CHANNEL_TOKEN_SECRET` | Webhook auth validation | Yes for GCal | No | Webhook POST returns 403 |
+| `GOOGLE_CALENDAR_WEBHOOK_URL` | Watch subscription setup | Yes for GCal | No | Watch channel setup fails |
 
 - Trigger.dev runtime secrets/keys (for deployment/execution transport) are external to repository code and **MUST** be provisioned in Trigger.dev environment, but are not directly read in repo source. (Source: `trigger.config.ts`, `README.md`)
 
@@ -47,13 +53,13 @@
 ### 3.1 Global DB Rules
 
 - `uuid-ossp` extension **MUST** be enabled for UUID defaults. (Source: `supabase/migrations/001_initial_schema.sql`)
-- All table/constraint semantics below **MUST** reflect migrations `001` through `030` in lexical order. (Source: `supabase/migrations/*.sql`)
+- All table/constraint semantics below **MUST** reflect migrations `001` through `042` in lexical order. (Source: `supabase/migrations/*.sql`)
 
 ### 3.2 Tables
 
 #### 3.2.1 `profiles`
 
-- Purpose: user identity/profile defaults and notification/task visibility preferences. (Source: `001`, `009`, `012`, `019`, `021`, `022`, `023`, `024`, `030`)
+- Purpose: user identity/profile defaults and notification/task visibility preferences. (Source: `001`, `009`, `012`, `019`, `021`, `022`, `023`, `024`, `030`, `039`)
 - Columns **MUST** be:
   - `id uuid` PK, not null, FK -> `auth.users(id)` `ON DELETE CASCADE`
   - `email text` not null
@@ -68,10 +74,12 @@
   - `currency text` not null default `'EUR'`
   - `deadline_one_hour_warning_enabled boolean` not null default `true`
   - `voucher_can_view_active_tasks boolean` not null default `false`
+  - `default_event_duration_minutes int` not null default `60`
 - Constraints **MUST** include:
   - `profiles_default_pomo_duration_minutes_check` (`1..720`)
   - `profiles_default_failure_cost_cents_check` (`1..100000`)
   - `profiles_currency_check` (`EUR|USD|INR`)
+  - `profiles_default_event_duration_minutes_check` (`1..720`)
 - RLS **MUST** be enabled.
 - Policies **MUST** be:
   - `Users can view all profiles` (`SELECT USING true`)
@@ -98,7 +106,7 @@
 
 #### 3.2.3 `tasks`
 
-- Purpose: canonical task commitments and status lifecycle. (Source: `001`, `003`, `004`, `007`, `018`, `027`, `030`)
+- Purpose: canonical task commitments and status lifecycle. (Source: `001`, `003`, `004`, `007`, `018`, `027`, `030`, `036`, `037`, `042`)
 - Columns **MUST** be:
   - `id uuid` PK default `uuid_generate_v4()`
   - `user_id uuid` not null FK -> `profiles(id)` `ON DELETE CASCADE`
@@ -118,10 +126,14 @@
   - `proof_request_open boolean` not null default `false`
   - `proof_requested_at timestamptz` nullable
   - `proof_requested_by uuid` nullable FK -> `profiles(id)` `ON DELETE SET NULL`
+  - `google_sync_for_task boolean` not null default `false`
+  - `google_event_end_at timestamptz` nullable
+  - `google_event_color_id text` nullable
 - Constraints **MUST** include:
   - `tasks_status_check` in `CREATED,POSTPONED,MARKED_COMPLETED,AWAITING_VOUCHER,COMPLETED,FAILED,RECTIFIED,SETTLED,DELETED`
   - `tasks_failure_cost_cents_check` (`1..100000`)
   - `tasks_required_pomo_minutes_check` (`NULL OR 1..10000`)
+  - `tasks_google_event_color_id_check` (`NULL OR '1'..'11'`)
 - Indexes **MUST** include:
   - `idx_tasks_user_id`, `idx_tasks_voucher_id`, `idx_tasks_status`, `idx_tasks_deadline`
   - `idx_tasks_recurrence_rule_id`
@@ -220,7 +232,7 @@
 
 #### 3.2.9 `recurrence_rules`
 
-- Purpose: templates for generating future recurring tasks. (Source: `007`, `018`, `028`, `029`)
+- Purpose: templates for generating future recurring tasks. (Source: `007`, `018`, `028`, `029`, `036`, `037`, `042`)
 - Columns **MUST** be:
   - `id uuid` PK default `uuid_generate_v4()`
   - `user_id uuid` not null FK -> `profiles(id)` `ON DELETE CASCADE`
@@ -236,16 +248,20 @@
   - `updated_at timestamptz` not null default `now()`
   - `required_pomo_minutes int` nullable
   - `manual_reminder_offsets_ms jsonb` nullable
+  - `google_sync_for_rule boolean` not null default `false`
+  - `google_event_duration_minutes int` nullable
+  - `google_event_color_id text` nullable
 - Constraints/indexes **MUST** include:
   - `recurrence_rules_required_pomo_minutes_check` (`NULL OR 1..10000`)
   - `recurrence_rules_manual_reminder_offsets_ms_is_array` (`NULL OR json array`)
+  - `recurrence_rules_google_event_color_id_check` (`NULL OR '1'..'11'`)
   - partial index `idx_recurrence_rules_active` where `active=true`
 - RLS **MUST** be enabled.
 - Policies **MUST** be owner-only select/insert/update/delete by `user_id`.
 
 #### 3.2.10 `pomo_sessions`
 
-- Purpose: pomodoro/focus session tracking per task. (Source: `008`, `019`, `020`)
+- Purpose: pomodoro/focus session tracking per task. (Source: `008`, `019`, `020`, `041`)
 - Columns **MUST** be:
   - `id uuid` PK default `uuid_generate_v4()`
   - `user_id uuid` not null FK -> `profiles(id)` `ON DELETE CASCADE`
@@ -261,7 +277,7 @@
   - `is_strict boolean` not null default `false`
 - Constraints/indexes **MUST** include:
   - status check in `ACTIVE,PAUSED,COMPLETED,DELETED`
-  - unique partial index `idx_single_active_pomo` on `(user_id)` where `status='ACTIVE'`
+  - unique partial index `idx_single_active_or_paused_pomo` on `(user_id)` where `status IN ('ACTIVE','PAUSED')`
   - `idx_pomo_sessions_task_id`
 - Trigger `pomo_sessions_updated_at` **MUST** maintain `updated_at`.
 - RLS **MUST** be enabled.
@@ -330,7 +346,7 @@
 
 #### 3.2.14 `task_completion_proofs`
 
-- Purpose: metadata pointer to private proof media object for voucher review window. (Source: `016`, `017`)
+- Purpose: metadata pointer to private proof media object for voucher review window. (Source: `016`, `017`, `031`)
 - Columns **MUST** be:
   - `id uuid` PK default `uuid_generate_v4()`
   - `task_id uuid` not null FK -> `tasks(id)` `ON DELETE CASCADE`
@@ -353,13 +369,86 @@
   - `duration_ms IS NULL OR (duration_ms > 0 AND <= 15000)`
   - `upload_state` in `PENDING,UPLOADED,FAILED`
   - `idx_task_completion_proofs_voucher`, `idx_task_completion_proofs_task`, `idx_task_completion_proofs_state`
+  - `task_completion_proofs_bucket_fixed` CHECK (`bucket = 'task-proofs'`)
 - Trigger `task_completion_proofs_updated_at` **MUST** maintain `updated_at`.
+- Trigger `task_completion_proofs_prevent_location_mutation` **MUST** make `bucket`, `object_path`, `owner_id`, `voucher_id`, `task_id` immutable on UPDATE. (Source: `031`)
 - RLS **MUST** be enabled.
 - Policies **MUST** be:
   - owner select
   - voucher select assigned
   - owner insert (with task ownership and voucher consistency check)
   - owner update/delete
+
+#### 3.2.15 `google_calendar_connections`
+
+- Purpose: per-user Google Calendar OAuth link with encrypted tokens, directional sync controls, and watch subscription for push notifications. (Source: `032`, `035`→`037` removed cursor, `038`, `040`)
+- Columns **MUST** be:
+  - `user_id uuid` PK, FK -> `auth.users(id)` `ON DELETE CASCADE`
+  - `sync_enabled boolean` not null default `false`
+  - `sync_app_to_google_enabled boolean` not null default `false`
+  - `sync_google_to_app_enabled boolean` not null default `false`
+  - `import_only_tagged_google_events boolean` not null default `false`
+  - `google_account_email text` nullable
+  - `selected_calendar_id text` nullable
+  - `selected_calendar_summary text` nullable
+  - `encrypted_access_token text` nullable
+  - `encrypted_refresh_token text` nullable
+  - `token_expires_at timestamptz` nullable
+  - `watch_channel_id text` nullable
+  - `watch_resource_id text` nullable
+  - `watch_expires_at timestamptz` nullable
+  - `sync_token text` nullable
+  - `last_webhook_at timestamptz` nullable
+  - `last_sync_at timestamptz` nullable
+  - `last_error text` nullable
+  - `created_at timestamptz` not null default `now()`
+  - `updated_at timestamptz` not null default `now()`
+- RLS **MUST** be enabled.
+- Policies **MUST** be owner-only CRUD by `user_id`.
+- Trigger `update_updated_at` **MUST** maintain `updated_at`.
+
+#### 3.2.16 `google_calendar_task_links`
+
+- Purpose: mapping between app tasks and Google Calendar events for sync tracking. (Source: `032`, `034`→`037` removed item_kind)
+- Columns **MUST** be:
+  - `task_id uuid` PK, FK -> `tasks(id)` `ON DELETE CASCADE`
+  - `user_id uuid` not null FK -> `auth.users(id)` `ON DELETE CASCADE`
+  - `calendar_id text` not null
+  - `google_event_id text` not null
+  - `last_google_etag text` nullable
+  - `last_google_updated_at timestamptz` nullable
+  - `last_app_updated_at timestamptz` nullable
+  - `last_origin text` nullable (`APP|GOOGLE`)
+  - `created_at timestamptz` not null default `now()`
+  - `updated_at timestamptz` not null default `now()`
+- Constraints **MUST** include:
+  - `UNIQUE(user_id, calendar_id, google_event_id)`
+- RLS **MUST** be enabled.
+- Policies **MUST** be owner select only by `user_id`.
+- Trigger `update_updated_at` **MUST** maintain `updated_at`.
+
+#### 3.2.17 `google_calendar_sync_outbox`
+
+- Purpose: queued app→Google mutations with retry semantics. (Source: `032`, `033`)
+- Columns **MUST** be:
+  - `id bigserial` PK
+  - `user_id uuid` not null FK -> `auth.users(id)` `ON DELETE CASCADE`
+  - `task_id uuid` nullable FK -> `tasks(id)` `ON DELETE SET NULL`
+  - `intent text` not null (`UPSERT|DELETE`)
+  - `status text` not null default `'PENDING'` (`PENDING|PROCESSING|DONE|FAILED`)
+  - `attempt_count int` not null default `0`
+  - `next_attempt_at timestamptz` nullable
+  - `payload jsonb` nullable
+  - `last_error text` nullable
+  - `created_at timestamptz` not null default `now()`
+  - `updated_at timestamptz` not null default `now()`
+- Indexes **MUST** include:
+  - `idx_google_calendar_outbox_pending`
+  - `idx_google_calendar_outbox_user`
+- RLS **MUST** be enabled.
+- Policies **MUST** be owner select only by `user_id`.
+- Realtime: in publication `supabase_realtime`. (Source: `033`)
+- Trigger `update_updated_at` **MUST** maintain `updated_at`.
 
 ### 3.3 Storage Buckets & Object Policies
 
@@ -374,11 +463,12 @@
 - `current_period()`, `rectify_passes_used(uuid)`, `force_majeure_available(uuid)` **MUST** exist as helper functions (not required by app writes but part of schema). (Source: `001`)
 - `update_updated_at()` **MUST** stamp `updated_at` in trigger-backed tables. (Source: `001`, `008`)
 - `enforce_task_subtask_limit()` **MUST** raise exception when parent subtasks exceed 20. (Source: `011`)
+- `prevent_task_proof_location_mutation()` **MUST** raise exception when `bucket`, `object_path`, `owner_id`, `voucher_id`, or `task_id` are changed on UPDATE. (Source: `031`)
 
 ### 3.5 Realtime Publication & Replica Identity
 
-- Realtime publication membership **MUST** include: `public.tasks`, `public.friendships`, `public.pomo_sessions`. (Source: `006`, `013`, `014`)
-- Replica identity **MUST** be `FULL` on those three tables. (Source: `006`, `013`, `014`)
+- Realtime publication membership **MUST** include: `public.tasks`, `public.friendships`, `public.pomo_sessions`, `public.google_calendar_sync_outbox`. (Source: `006`, `013`, `014`, `033`)
+- Replica identity **MUST** be `FULL` on `tasks`, `friendships`, `pomo_sessions`. (Source: `006`, `013`, `014`)
 
 ---
 
@@ -396,6 +486,9 @@
 - **Completion Proof**: metadata row + private storage object used during voucher review window. (Source: `task_completion_proofs`, `task-proofs` bucket)
 - **Pomodoro Session**: tracked focus session (`pomo_sessions`) optionally strict-counted. (Source: `src/actions/tasks.ts`)
 - **Defaults/Profile**: per-user task/pomo/currency/notification/visibility defaults in `profiles`. (Source: `src/actions/auth.ts::updateUserDefaults`)
+- **Event Task**: task with `-event` flag, scheduled via `-start`/`-end` tokens, syncs to Google Calendar as calendar event with optional color. (Source: `src/actions/tasks.ts`, `src/trigger/recurrence-generator.ts`)
+- **Google Calendar Connection**: per-user OAuth link with encrypted tokens, directional sync controls, and watch subscription for push notifications. (Source: `google_calendar_connections`, `src/actions/google-calendar.ts`)
+- **Google Calendar Sync Outbox**: queued app→Google mutations with retry semantics; processed by dispatch job and swept by sweeper. (Source: `google_calendar_sync_outbox`, `src/trigger/google-calendar-sync.ts`)
 
 ---
 
@@ -453,8 +546,9 @@
   - Idempotency: guarded update prevents double state transition; ledger/event still not globally unique.
   (Source: `src/trigger/voucher-timeout.ts`)
 
-- `DEADLINE_FAIL` (`system job` and read-path side effect) **MUST** transition `CREATED|POSTPONED (deadline passed) -> FAILED`.
-  - Writes: task status, owner failure ledger entry, `task_events.DEADLINE_MISSED`.
+- `DEADLINE_FAIL` (`system job` and read-path side effect) **MUST** transition `CREATED|POSTPONED (effective due time passed) -> FAILED`.
+  - Effective due time **MUST** be `google_event_end_at` for event tasks (where `google_sync_for_task=true` and `google_event_end_at` is valid), otherwise `deadline`.
+  - Writes: task status, owner failure ledger entry, `task_events.DEADLINE_MISSED`; enqueues Google Calendar outbox for failed event tasks.
   - Concurrency caveat: both read-path and cron can run; no uniqueness protection on ledger/event duplicates.
   (Source: `src/trigger/deadline-fail.ts`, `src/actions/tasks.ts::getTask`)
 
@@ -485,7 +579,7 @@
 ## 5.2 `pomo_sessions.status` Runtime Machine
 
 - States **MUST** be `ACTIVE|PAUSED|COMPLETED|DELETED`. (Source: `008`)
-- `startPomoSession` **MUST** create `ACTIVE`; one concurrent active session is DB-enforced for `ACTIVE` status only. (Source: `src/actions/tasks.ts::startPomoSession`, `idx_single_active_pomo`)
+- `startPomoSession` **MUST** create `ACTIVE`; one concurrent active-or-paused session is DB-enforced via `idx_single_active_or_paused_pomo` for `ACTIVE` and `PAUSED` statuses. (Source: `src/actions/tasks.ts::startPomoSession`, `041`)
 - `pausePomoSession` **MUST** require non-strict active session. (Source: `src/actions/tasks.ts::pausePomoSession`)
 - `resumePomoSession` **MUST** require non-strict paused session. (Source: `src/actions/tasks.ts::resumePomoSession`)
 - `endPomoSession` **MUST** set terminal:
@@ -525,6 +619,19 @@
   - Success output **MUST** be binary response with strict no-store and `Content-Disposition:inline`.
   - Failure output **MUST** be no-store JSON errors (`401/403/404/410`).
 
+- `GET /api/integrations/google/callback` (`src/app/api/integrations/google/callback/route.ts::GET`)
+  - Inputs **MUST** be query params: `code`, `state`, optional `error`.
+  - Auth **MUST** be required (unauthenticated → redirect to `/login?error=not_authenticated`).
+  - Behavior order **MUST** be: check error param (→ `?googleCalendar=oauth_denied`) -> validate code+state presence (→ `?googleCalendar=missing_code`) -> validate CSRF state cookie (→ `?googleCalendar=invalid_state`) -> exchange code for tokens -> extract email from id_token -> upsert connection -> redirect to `/dashboard/settings?googleCalendar=connected`.
+  - On exception: redirects to `/dashboard/settings?googleCalendar=connect_failed`.
+  - Outputs **MUST** be redirects only.
+
+- `POST /api/integrations/google/webhook` (`src/app/api/integrations/google/webhook/route.ts::POST`)
+  - Inputs **MUST** be Google push notification headers: `x-goog-channel-id`, `x-goog-resource-id`, `x-goog-channel-token`, `x-goog-resource-state`.
+  - Auth **MUST** be channel token validation against `GOOGLE_WEBHOOK_CHANNEL_TOKEN_SECRET` (missing channel → 400, invalid token → 403).
+  - Behavior order **MUST** be: resolve userId via `findUserIdByWatchChannel` (unknown → silent `{ok:true}`) -> touch webhook receipt -> if resourceState ≠ `"sync"` trigger delta sync (fallback to inline sync on enqueue failure).
+  - Outputs **MUST** be JSON `{ok: true}` or error.
+
 ### 6.2 Server Actions (`src/actions/**`)
 
 #### 6.2.1 `auth.ts`
@@ -537,7 +644,7 @@
 - `deleteAccount()` **MUST** execute: load proof rows -> delete recurrence_rules where voucher=user -> null task_events.actor_id and rectify_passes.authorized_by -> remove storage proofs -> signOut -> admin delete user. (Source: `src/actions/auth.ts::deleteAccount`)
 - `getUser()` **MUST** return current user or null. (Source: `src/actions/auth.ts::getUser`)
 - `getProfile()` **MUST** return full profile row or null for unauthenticated. (Source: `src/actions/auth.ts::getProfile`)
-- `updateUserDefaults(formData)` **MUST** accept keys `defaultPomoDurationMinutes,defaultFailureCost,defaultVoucherId,strictPomoEnabled,deadlineOneHourWarningEnabled,deadlineFinalWarningEnabled,voucherCanViewActiveTasksEnabled,currency`; enforce all validations; update profile; invalidate pending voucher tags and revalidate key paths. (Source: `src/actions/auth.ts::updateUserDefaults`)
+- `updateUserDefaults(formData)` **MUST** accept keys `defaultPomoDurationMinutes,defaultFailureCost,defaultVoucherId,strictPomoEnabled,deadlineOneHourWarningEnabled,deadlineFinalWarningEnabled,voucherCanViewActiveTasksEnabled,currency,defaultEventDurationMinutes`; enforce all validations (including `defaultEventDurationMinutes` 1..720); update profile; invalidate pending voucher tags and revalidate key paths. (Source: `src/actions/auth.ts::updateUserDefaults`)
 - `setDashboardTipsHidden(hidden)` **MUST** update `profiles.hide_tips` for current user and revalidate dashboard/settings. (Source: `src/actions/auth.ts::setDashboardTipsHidden`)
 - `updateUsername(formData)` **MUST** validate min length 3, enforce uniqueness, update profile, and revalidate settings. (Source: `src/actions/auth.ts::updateUsername`)
 
@@ -559,10 +666,10 @@
 
 #### 6.2.5 `tasks.ts`
 
-- `createTaskSimple(title,subtasksInput?)` **MUST** require auth, derive defaults from profile, insert `CREATED` task, seed default reminders, insert subtasks, add `CREATED` event, and invalidate/revalidate relevant caches/paths. (Source: `src/actions/tasks.ts::createTaskSimple`)
+- `createTaskSimple(title,subtasksInput?)` **MUST** require auth, derive defaults from profile, insert `CREATED` task, seed default reminders, insert subtasks, add `CREATED` event, and invalidate/revalidate relevant caches/paths. Event tokens (`-event`, `-start HH:MM`, `-end HH:MM`, color tokens) **MUST** populate `google_sync_for_task`, `google_event_end_at`, `google_event_color_id`; event tasks bypass past-deadline validation when event start is in the future. Task state mutations **MUST** enqueue Google Calendar sync via `enqueueGoogleCalendarOutbox` when applicable. (Source: `src/actions/tasks.ts::createTaskSimple`)
 - `markTaskCompleted` **MUST** alias `markTaskComplete`. (Source: `src/actions/tasks.ts::markTaskCompleted`)
 - `getCachedActiveTasksForUser(userId)` **MUST** return admin-cached active tasks tagged `tasks:active:{userId}` with TTL 60s. (Source: `src/actions/tasks.ts::getCachedActiveTasksForUser`)
-- `createTask(formData)` **MUST** validate required inputs, per-currency bounds, reminders, voucher relationship, recurrence payload; then write recurrence/task/reminders/subtasks/events in order and invalidate/revalidate. (Source: `src/actions/tasks.ts::createTask`)
+- `createTask(formData)` **MUST** validate required inputs, per-currency bounds, reminders, voucher relationship, recurrence payload; then write recurrence/task/reminders/subtasks/events in order and invalidate/revalidate. Event tokens (`-event`, `-start`, `-end`, color tokens) **MUST** be supported with the same semantics as `createTaskSimple`. (Source: `src/actions/tasks.ts::createTask`)
 - `cancelRepetition(taskId)` **MUST** delete owner’s recurrence rule referenced by task. (Source: `src/actions/tasks.ts::cancelRepetition`)
 - `markTaskComplete(taskId,userTimeZone?)` **MUST** delegate to proof-intent variant. (Source: `src/actions/tasks.ts::markTaskComplete`)
 - `markTaskCompleteWithProofIntent(taskId,userTimeZone?,rawProofIntent?)` **MUST** enforce ownership/status/deadline/subtask/pomo preconditions, then:
@@ -607,6 +714,18 @@
 - `getVouchHistoryPage(offset,limit)` **MUST** normalize paging, fetch final-status history page, add timeout-auto-accepted and pass-count enrichments, and return `{tasks,hasMore,nextOffset,error?}`. (Source: `src/actions/voucher.ts::getVouchHistoryPage`)
 - `getVouchHistory()` **MUST** return full final-status history with same enrichments. (Source: `src/actions/voucher.ts::getVouchHistory`)
 
+#### 6.2.7 `google-calendar.ts`
+
+- `startGoogleCalendarConnect()` **MUST** initiate OAuth flow, set state cookie, and return redirect URL or `{error}`. (Source: `src/actions/google-calendar.ts::startGoogleCalendarConnect`)
+- `getGoogleCalendarIntegrationState()` **MUST** return current connection state (connected flag, sync flags, account email, selected calendar, watch/sync timestamps, last error). (Source: `src/actions/google-calendar.ts::getGoogleCalendarIntegrationState`)
+- `listGoogleCalendarsForSettings()` **MUST** list available calendars for connected user. (Source: `src/actions/google-calendar.ts::listGoogleCalendarsForSettings`)
+- `setGoogleCalendarCalendar(calendarId)` **MUST** select calendar and re-enable Google→App sync if was previously enabled. (Source: `src/actions/google-calendar.ts::setGoogleCalendarCalendar`)
+- `setGoogleCalendarAppToGoogleEnabled(enabled)` **MUST** toggle app→Google sync direction. (Source: `src/actions/google-calendar.ts::setGoogleCalendarAppToGoogleEnabled`)
+- `setGoogleCalendarGoogleToAppEnabled(enabled)` **MUST** toggle Google→app sync direction. (Source: `src/actions/google-calendar.ts::setGoogleCalendarGoogleToAppEnabled`)
+- `setGoogleCalendarSyncEnabled(enabled)` **MUST** toggle both sync directions on/off. (Source: `src/actions/google-calendar.ts::setGoogleCalendarSyncEnabled`)
+- `setGoogleCalendarImportTaggedOnly(enabled)` **MUST** toggle import filter for `-event` tagged events only. (Source: `src/actions/google-calendar.ts::setGoogleCalendarImportTaggedOnly`)
+- `disconnectGoogleCalendar()` **MUST** revoke Google access, purge all Google integration rows (`google_calendar_connections`, `google_calendar_task_links`, `google_calendar_sync_outbox`). (Source: `src/actions/google-calendar.ts::disconnectGoogleCalendar`)
+
 ---
 
 ## 7) Background Jobs (Trigger.dev)
@@ -616,12 +735,14 @@
 ### 7.1 `deadline-fail`
 
 - Schedule **MUST** be `*/5 * * * *`.
-- Selection query **MUST** load tasks in `CREATED|POSTPONED` with `deadline < now`.
+- Selection query **MUST** load tasks in `CREATED|POSTPONED` with `deadline < now` OR `google_event_end_at < now`.
+- Effective due time **MUST** be `google_event_end_at` for event tasks (where `google_sync_for_task=true` and `google_event_end_at` is valid), otherwise `deadline`.
 - Algorithm **MUST**:
-  1) load overdue active tasks
+  1) load overdue active tasks (by effective due time)
   2) set each to `FAILED`
   3) insert owner `ledger_entries.failure`
   4) insert `task_events.DEADLINE_MISSED`
+  5) enqueue Google Calendar outbox for failed event tasks
 - Dedupe/idempotency: no global dedupe; concurrent read-path fail logic can duplicate ledger/event rows.
 - Source: `src/trigger/deadline-fail.ts`
 
@@ -680,11 +801,12 @@
   2) skip when `last_generated_date == current_local_date`
   3) evaluate frequency/interval/day logic to decide `shouldRun`
   4) if due, compute deadline from local date + `time_of_day` using iterative wall-time conversion
-  5) insert `tasks.CREATED` with `recurrence_rule_id`
+  5) insert `tasks.CREATED` with `recurrence_rule_id`; for event rules, populate `google_sync_for_task`, `google_event_end_at` (computed as `deadline + google_event_duration_minutes`), `google_event_color_id`
   6) insert `task_events.CREATED` (system)
   7) insert manual reminders from template/legacy copy
   8) seed default deadline reminders from owner profile toggles
   9) update `recurrence_rules.last_generated_date`
+  10) enqueue Google Calendar outbox for generated event tasks
 - Dedupe/idempotency: dedupe is primarily `last_generated_date`; no DB unique guard prevents duplicate task generation under concurrent runs/races.
 - Source: `src/trigger/recurrence-generator.ts`
 
@@ -697,6 +819,35 @@
   - if total == 0 and entries exist: send “perfect month” email
 - Idempotency: no dedupe; reruns can resend emails.
 - Source: `src/trigger/ledger-settlement.ts`
+
+### 7.8 `google-calendar-dispatch`
+
+- Type: on-demand task (not scheduled).
+- Trigger: invoked with `{outboxId}` payload.
+- Algorithm **MUST** process individual outbox item via `processGoogleCalendarOutboxItem`.
+- Source: `src/trigger/google-calendar-sync.ts`
+
+### 7.9 `google-calendar-sync-connection`
+
+- Type: on-demand task (not scheduled).
+- Trigger: invoked with `{userId, reason?}` payload.
+- Algorithm **MUST** run full delta sync for a user via `processGoogleCalendarDeltaForUser`.
+- Source: `src/trigger/google-calendar-sync.ts`
+
+### 7.10 `google-calendar-sync-sweeper`
+
+- Schedule **MUST** be `* * * * *` (every minute).
+- Algorithm **MUST**:
+  1) sync enabled connections (up to 200 per run)
+  2) retry pending outbox items (up to 200 per run)
+  3) reconcile stale connections
+- Source: `src/trigger/google-calendar-sync.ts`
+
+### 7.11 `google-calendar-watch-renew`
+
+- Schedule **MUST** be `0 * * * *` (hourly).
+- Algorithm **MUST** renew expiring Google Calendar webhook watch subscriptions via `renewExpiringGoogleCalendarWatches`.
+- Source: `src/trigger/google-calendar-sync.ts`
 
 ---
 
@@ -752,6 +903,8 @@
 - `required_pomo_minutes` on task/rule **MUST** be null or `1..10000`. (Source: `supabase/migrations/018_add_required_pomo_minutes.sql`, `src/actions/tasks.ts`)
 - Task proof constraints **MUST** be: max 5MB, video max 15000ms, `media_kind in (image,video)`, `upload_state in (PENDING,UPLOADED,FAILED)`. (Source: `supabase/migrations/016_task_completion_proofs.sql`, `src/lib/task-proof-shared.ts`)
 - Subtasks per parent task **MUST NOT** exceed 20 (DB trigger + app checks). (Source: `supabase/migrations/011_task_subtasks.sql::enforce_task_subtask_limit`, `src/actions/tasks.ts`)
+- `default_event_duration_minutes` **MUST** be integer `1..720`. (Source: `supabase/migrations/039_profile_default_event_duration.sql`)
+- `google_event_color_id` **MUST** be NULL or `'1'..'11'`. (Source: `supabase/migrations/042_google_event_color_id.sql`)
 - Rectify usage **MUST** cap at 5 per owner per period; force majeure **MUST** cap at 1 per owner per period. (Source: `src/actions/voucher.ts::authorizeRectify`, `src/actions/tasks.ts::forceMajeureTask`)
 - Voucher timeout penalty **MUST** be `30` cents per timed-out task. (Source: `src/trigger/voucher-timeout.ts::VOUCHER_TIMEOUT_PENALTY_CENTS`)
 
@@ -764,13 +917,15 @@
 - Rectify window **MUST** expire after 7 days from failed task `updated_at`. (Source: `src/actions/voucher.ts::RECTIFY_WINDOW_MS`)
 - Stale pending proof uploads **MUST** be cleanup-eligible after 20 minutes. (Source: `src/trigger/task-proof-cleanup.ts::STALE_PENDING_UPLOAD_MS`)
 - Reminder dispatcher **MUST** process up to 500 due reminders per run (per minute schedule). (Source: `src/trigger/task-reminder-notify.ts`)
+- Google Calendar watch subscriptions expire after ~7 days; renewed hourly by `google-calendar-watch-renew`. (Source: `src/trigger/google-calendar-sync.ts`)
+- Stale outbox items **MUST** be retried with exponential backoff by sweeper. (Source: `src/trigger/google-calendar-sync.ts`)
 
 ### 9.3 “Only once” and dedupe semantics
 
 - Postpone action **MUST** be allowed once per task (`postponed_at` guard + status check). (Source: `src/actions/tasks.ts::postponeTask`)
 - Recurrence generation dedupe **MUST** primarily rely on `last_generated_date`; no hard DB unique key prevents duplicate generated tasks under concurrent runs. (Source: `src/trigger/recurrence-generator.ts::processRule`)
 - Voucher reminder digest dedupe **MUST** use unique `(voucher_id, reminder_date)` in `voucher_reminder_logs`. (Source: `supabase/migrations/010_voucher_review_policy.sql`, `src/trigger/voucher-deadline-warning.ts`)
-- Pomodoro active concurrency **MUST** be DB-enforced for `status='ACTIVE'` only via partial unique index; paused session mutual exclusion is app-enforced. (Source: `supabase/migrations/008_pomo_sessions.sql`, `src/actions/tasks.ts::startPomoSession`)
+- Pomodoro active/paused concurrency **MUST** be DB-enforced for `status IN ('ACTIVE','PAUSED')` via partial unique index `idx_single_active_or_paused_pomo`. (Source: `supabase/migrations/041_pomo_sessions_single_active_or_paused.sql`, `src/actions/tasks.ts::startPomoSession`)
 
 ### 9.4 Self-vouch, visibility, and policy quirks
 
@@ -778,6 +933,8 @@
 - Voucher pending/history queries **MUST** exclude self-vouch tasks (`user_id != voucher_id`). (Source: `src/actions/voucher.ts::{getCachedPendingVouchRequestsForVoucher,getCachedPendingVouchCountForVoucher,getAssignedTasksForVoucher,getFailedTasks,getVouchHistoryPage,getVouchHistory}`)
 - Voucher visibility for owner active tasks **MUST** depend on owner profile toggle `voucher_can_view_active_tasks`; DB RLS may permit broader row visibility, but app read-path filters are runtime truth for product behavior. (Source: `src/actions/tasks.ts::{getTask,getTaskPomoSummary}`, `src/actions/voucher.ts::canVoucherSeeTask`, `supabase/migrations/023_profile_voucher_active_task_visibility.sql`)
 - Friend activity visibility **MUST** include only friends and only active/paused sessions via RLS policy. (Source: `supabase/migrations/020_friend_read_pomo_sessions.sql`, `src/actions/friends.ts::getWorkingFriendActivities`)
+- Event tasks with `-event` tag **MAY** be imported from Google Calendar; `import_only_tagged_google_events` toggle controls whether only `-event`-tagged events are imported. (Source: `src/actions/google-calendar.ts::setGoogleCalendarImportTaggedOnly`)
+- Color tokens **MUST** only be valid for event tasks; non-event tasks with color tokens **MUST** produce validation error. (Source: `src/actions/tasks.ts`)
 
 ### 9.5 FK deletion consequences and missing dependency behavior
 
@@ -842,6 +999,18 @@
 | `supabase/migrations/028_recurrence_manual_reminder_template.sql` | migration | `3.2.9`, `7.6`, `9.6` |
 | `supabase/migrations/029_account_delete_fk_fixes.sql` | migration | `3.2.6`, `3.2.9`, `6.2.1`, `9.5` |
 | `supabase/migrations/030_per_currency_failure_cost_bounds.sql` | migration | `3.2.1`, `3.2.3`, `6.2.1`, `9.1` |
+| `supabase/migrations/031_harden_task_completion_proofs_integrity.sql` | migration | `3.2.14`, `3.4` |
+| `supabase/migrations/032_google_calendar_sync.sql` | migration | `3.2.15`, `3.2.16`, `3.2.17` |
+| `supabase/migrations/033_enable_realtime_google_calendar_outbox.sql` | migration | `3.2.17`, `3.5` |
+| `supabase/migrations/034_google_tasks_default_sync_kind.sql` | migration | `3.2.16` |
+| `supabase/migrations/035_google_tasks_sync_cursor.sql` | migration | `3.2.15` |
+| `supabase/migrations/036_add_google_event_end_time_columns.sql` | migration | `3.2.3`, `3.2.9` |
+| `supabase/migrations/037_google_sync_boolean_flags.sql` | migration | `3.2.3`, `3.2.9`, `3.2.15`, `3.2.16` |
+| `supabase/migrations/038_google_calendar_import_filter_toggle.sql` | migration | `3.2.15` |
+| `supabase/migrations/039_profile_default_event_duration.sql` | migration | `3.2.1`, `6.2.1`, `9.1` |
+| `supabase/migrations/040_google_calendar_directional_sync_flags.sql` | migration | `3.2.15` |
+| `supabase/migrations/041_pomo_sessions_single_active_or_paused.sql` | migration | `3.2.10`, `5.2`, `9.3` |
+| `supabase/migrations/042_google_event_color_id.sql` | migration | `3.2.3`, `3.2.9`, `9.1` |
 
 ### 10.2 Tables
 
@@ -861,6 +1030,9 @@
 | `task_subtasks` | `3.2.12`, `6.2.5`, `9.1` |
 | `task_reminders` | `3.2.13`, `6.2.5`, `7.4`, `9.6` |
 | `task_completion_proofs` | `3.2.14`, `3.3`, `5.3`, `6.1`, `7.5` |
+| `google_calendar_connections` | `3.2.15`, `6.2.7`, `7.10`, `7.11` |
+| `google_calendar_task_links` | `3.2.16`, `6.2.7` |
+| `google_calendar_sync_outbox` | `3.2.17`, `3.5`, `6.2.7`, `7.8`, `7.10` |
 
 ### 10.3 Routes (pages + API/auth handlers)
 
@@ -879,6 +1051,8 @@
 | `src/app/auth/callback/route.ts` | route | `6.1` |
 | `src/app/api/pomo/auto-end/route.ts` | route | `6.1`, `11` |
 | `src/app/api/task-proofs/[taskId]/route.ts` | route | `6.1`, `3.3`, `9.5` |
+| `src/app/api/integrations/google/callback/route.ts` | route | `6.1` |
+| `src/app/api/integrations/google/webhook/route.ts` | route | `6.1` |
 
 ### 10.4 Server action exports
 
@@ -943,6 +1117,15 @@
 | `getFailedTasks` | `src/actions/voucher.ts` | `6.2.6` |
 | `getVouchHistoryPage` | `src/actions/voucher.ts` | `6.2.6` |
 | `getVouchHistory` | `src/actions/voucher.ts` | `6.2.6` |
+| `startGoogleCalendarConnect` | `src/actions/google-calendar.ts` | `6.2.7` |
+| `getGoogleCalendarIntegrationState` | `src/actions/google-calendar.ts` | `6.2.7` |
+| `listGoogleCalendarsForSettings` | `src/actions/google-calendar.ts` | `6.2.7` |
+| `setGoogleCalendarCalendar` | `src/actions/google-calendar.ts` | `6.2.7` |
+| `setGoogleCalendarAppToGoogleEnabled` | `src/actions/google-calendar.ts` | `6.2.7` |
+| `setGoogleCalendarGoogleToAppEnabled` | `src/actions/google-calendar.ts` | `6.2.7` |
+| `setGoogleCalendarSyncEnabled` | `src/actions/google-calendar.ts` | `6.2.7` |
+| `setGoogleCalendarImportTaggedOnly` | `src/actions/google-calendar.ts` | `6.2.7` |
+| `disconnectGoogleCalendar` | `src/actions/google-calendar.ts` | `6.2.7` |
 
 ### 10.5 Trigger jobs
 
@@ -955,6 +1138,10 @@
 | `task-proof-cleanup` | `src/trigger/task-proof-cleanup.ts` | `7.5`, `5.3`, `9.2` |
 | `recurrence-generator` | `src/trigger/recurrence-generator.ts` | `7.6`, `9.6` |
 | `monthly-settlement` | `src/trigger/ledger-settlement.ts` | `7.7`, `11` |
+| `google-calendar-dispatch` | `src/trigger/google-calendar-sync.ts` | `7.8` |
+| `google-calendar-sync-connection` | `src/trigger/google-calendar-sync.ts` | `7.9` |
+| `google-calendar-sync-sweeper` | `src/trigger/google-calendar-sync.ts` | `7.10` |
+| `google-calendar-watch-renew` | `src/trigger/google-calendar-sync.ts` | `7.11` |
 
 ### 10.6 Realtime channels/subscriptions
 
@@ -965,6 +1152,7 @@
 | `realtime:pomo_sessions` | `src/components/RealtimeListener.tsx` | `8.1` |
 | `realtime:pomo_sessions:{userId}` | `src/components/PomodoroProvider.tsx` | `8.1` |
 | `vouch:realtime-task-change` | `src/lib/realtime-task-events.ts` | `8.1`, `8.2` |
+| `google_calendar_sync_outbox` (publication) | `supabase/migrations/033` | `3.5` |
 
 ---
 
