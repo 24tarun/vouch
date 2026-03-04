@@ -839,6 +839,14 @@ export default function TaskDetailClient({
         : proofDraft
             ? `Attached (${proofDraft.proof.mediaKind})`
             : "None";
+    const googleSyncDirectionLabel =
+        taskState.google_sync_linked && taskState.google_sync_last_origin === "APP"
+            ? "App -> Google Calendar"
+            : taskState.google_sync_linked && taskState.google_sync_last_origin === "GOOGLE"
+                ? "Google Calendar -> App"
+                : null;
+    const googleSyncDirectionClassName =
+        taskState.google_sync_last_origin === "APP" ? "text-emerald-300" : "text-cyan-300";
 
     async function handleMarkComplete() {
         if (isActionPending("markComplete")) return;
@@ -1379,6 +1387,14 @@ export default function TaskDetailClient({
                             <p className="text-[11px] uppercase tracking-wide text-slate-400">Proof</p>
                             <p className="mt-2 text-white font-medium">{proofSummary}</p>
                         </div>
+                        {googleSyncDirectionLabel && (
+                            <div>
+                                <p className="text-[11px] uppercase tracking-wide text-slate-400">Google Sync</p>
+                                <p className={`mt-2 font-medium ${googleSyncDirectionClassName}`}>
+                                    {googleSyncDirectionLabel}
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     {taskState.description && (

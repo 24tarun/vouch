@@ -2495,7 +2495,8 @@ export async function getTask(taskId: string) {
         }
 
         if (isOwner || isVoucher) {
-            const [{ data: proof }, { data: timeoutEvent }] = await Promise.all([
+            const supabaseAdmin = createAdminClient();
+            const [{ data: proof }, { data: timeoutEvent }, { data: googleLink, error: googleLinkError }] = await Promise.all([
                 (supabase.from("task_completion_proofs") as any)
                     .select("*")
                     .eq("task_id", taskId as any)
@@ -2506,10 +2507,27 @@ export async function getTask(taskId: string) {
                     .eq("event_type", "VOUCHER_TIMEOUT")
                     .limit(1)
                     .maybeSingle(),
+                (supabaseAdmin.from("google_calendar_task_links") as any)
+                    .select("last_origin")
+                    .eq("task_id", taskId as any)
+                    .eq("user_id", (task as any).user_id as any)
+                    .maybeSingle(),
             ]);
+
+            if (googleLinkError) {
+                console.error("Failed to load Google sync link for task detail:", googleLinkError);
+            }
+
+            const rawLastOrigin = (googleLink as any)?.last_origin;
+            const lastOrigin =
+                rawLastOrigin === "APP" || rawLastOrigin === "GOOGLE"
+                    ? rawLastOrigin
+                    : null;
 
             (task as any).completion_proof = proof || null;
             (task as any).voucher_timeout_auto_accepted = Boolean(timeoutEvent);
+            (task as any).google_sync_linked = Boolean(googleLink);
+            (task as any).google_sync_last_origin = lastOrigin;
         }
 
         if (isOwner || isVoucher) {

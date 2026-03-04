@@ -249,6 +249,8 @@ export interface TaskWithRelations extends Task {
     subtasks?: TaskSubtask[];
     reminders?: TaskReminder[];
     completion_proof?: TaskCompletionProof | null;
+    google_sync_linked?: boolean;
+    google_sync_last_origin?: "APP" | "GOOGLE" | null;
 }
 
 export type VoucherPendingDisplayType = "ACTIVE" | "AWAITING_VOUCHER";
