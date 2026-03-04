@@ -27,6 +27,14 @@ async function enqueueGoogleCalendarDelete(userId: string, taskId: string) {
     }
 }
 
+async function enqueueGoogleCalendarUpsert(userId: string, taskId: string) {
+    try {
+        await enqueueGoogleCalendarOutbox(userId, taskId, "UPSERT");
+    } catch (error) {
+        console.error(`Failed to enqueue Google Calendar UPSERT for task ${taskId}:`, error);
+    }
+}
+
 const RECTIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const ACTIVE_PENDING_STATUSES: TaskStatus[] = ["CREATED", "POSTPONED"];
 const AWAITING_PENDING_STATUSES: TaskStatus[] = ["AWAITING_VOUCHER", "MARKED_COMPLETED"];
@@ -146,7 +154,7 @@ export async function voucherAccept(taskId: string) {
         to_status: "COMPLETED",
     });
 
-    await enqueueGoogleCalendarDelete((task as any).user_id, taskId);
+    await enqueueGoogleCalendarUpsert((task as any).user_id, taskId);
 
     // Owner dashboard active tasks are cached via getCachedActiveTasksForUser(activeTasksTag).
     // Voucher decisions mutate owner-visible task state, so invalidate owner tags in addition
@@ -323,7 +331,7 @@ export async function voucherDeny(taskId: string) {
         to_status: "FAILED",
     });
 
-    await enqueueGoogleCalendarDelete((task as any).user_id, taskId);
+    await enqueueGoogleCalendarUpsert((task as any).user_id, taskId);
 
     if ((task as any).user?.email) {
         await sendNotification({
@@ -534,7 +542,7 @@ export async function authorizeRectify(taskId: string) {
         to_status: "RECTIFIED",
     });
 
-    await enqueueGoogleCalendarDelete((task as any).user_id, taskId);
+    await enqueueGoogleCalendarUpsert((task as any).user_id, taskId);
 
     revalidatePath("/dashboard/friends");
     revalidatePath(`/dashboard/tasks/${taskId}`);

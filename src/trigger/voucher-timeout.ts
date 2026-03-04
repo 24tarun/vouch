@@ -105,7 +105,7 @@ export const voucherTimeout = schedules.task({
                     console.error(`Failed to cleanup proof for timed-out task ${task.id}:`, cleanup.error);
                 }
 
-                await enqueueGoogleCalendarOutbox(task.user_id, task.id, "DELETE");
+                await enqueueGoogleCalendarOutbox(task.user_id, task.id, "UPSERT");
             } catch (taskError) {
                 console.error(`Unexpected error while processing task ${task.id}:`, taskError);
             }

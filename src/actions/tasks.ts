@@ -1126,7 +1126,7 @@ export async function markTaskCompleteWithProofIntent(
 
         invalidateActiveTasksCache((user as any).id);
         invalidatePendingVoucherRequestsCache((task as any).voucher_id);
-        await enqueueGoogleCalendarDelete((user as any).id, taskId);
+        await enqueueGoogleCalendarUpsert((user as any).id, taskId);
         revalidatePath("/dashboard");
         revalidatePath("/dashboard/stats");
         revalidatePath("/dashboard/friends");
@@ -2361,7 +2361,7 @@ export async function forceMajeureTask(taskId: string) {
         to_status: "SETTLED",
     });
 
-    await enqueueGoogleCalendarDelete(user.id, taskId);
+    await enqueueGoogleCalendarUpsert(user.id, taskId);
 
     revalidatePath(`/dashboard/tasks/${taskId}`);
     revalidatePath("/dashboard");
@@ -2427,7 +2427,7 @@ export async function getTask(taskId: string) {
                     metadata: { reason: "Deadline passed without completion" },
                 });
 
-                await enqueueGoogleCalendarDelete((task as any).user_id, taskId);
+                await enqueueGoogleCalendarUpsert((task as any).user_id, taskId);
 
                 (task as any).status = "FAILED";
                 (task as any).updated_at = now.toISOString();

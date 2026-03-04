@@ -107,7 +107,7 @@ export const deadlineFail = schedules.task({
 
         await Promise.all(claimedTasks.map(async (task) => {
             try {
-                await enqueueGoogleCalendarOutbox(task.user_id, task.id, "DELETE");
+                await enqueueGoogleCalendarOutbox(task.user_id, task.id, "UPSERT");
             } catch (error) {
                 console.error(`Failed to enqueue Google finalize for task ${task.id}:`, error);
             }
