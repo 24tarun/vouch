@@ -200,6 +200,37 @@
     animation: shake 0.2s ease-in-out 0s 2;
   }
 
+  @keyframes toast-slide-in {
+    from {
+      transform: translateX(-110%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes toast-zoom-out {
+    from {
+      transform: translateX(0) scale(1);
+      opacity: 1;
+    }
+    to {
+      transform: translateX(120vw) scale(1.4);
+      opacity: 0;
+    }
+  }
+
+}
+
+/* Toast animations for bottom-left position */
+[data-sonner-toaster][data-x-position="left"] [data-sonner-toast] {
+  animation: toast-slide-in 0.35s cubic-bezier(0.21, 1.02, 0.73, 1) forwards;
+}
+
+[data-sonner-toaster][data-x-position="left"] [data-sonner-toast][data-removed="true"] {
+  animation: toast-zoom-out 0.4s cubic-bezier(0.55, 0, 1, 0.45) forwards !important;
 }
 
 .seven-seg-display {
