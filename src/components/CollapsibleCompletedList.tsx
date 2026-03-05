@@ -54,7 +54,7 @@ export function CollapsibleCompletedList({ tasks }: CollapsibleCompletedListProp
             </Button>
 
             {isOpen && (
-                <div className="mt-2 pl-4 border-l border-slate-800/50 ml-2">
+                <div className="mt-2">
                     <div className="flex flex-col">
                         {tasks.map((task) => (
                             <TaskRow key={task.id} task={task} layoutVariant="completed" />

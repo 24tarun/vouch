@@ -16,6 +16,7 @@ import { TaskInput, type TaskInputCreatePayload } from "@/components/TaskInput";
 import { PostponeDeadlineDialog } from "@/components/PostponeDeadlineDialog";
 import { TaskRow } from "@/components/TaskRow";
 import { CollapsibleCompletedList } from "@/components/CollapsibleCompletedList";
+import { CollapsibleFutureList } from "@/components/CollapsibleFutureList";
 import { TaskDetailPrefetcher } from "@/components/TaskDetailPrefetcher";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import type { Profile, Task } from "@/lib/types";
@@ -27,6 +28,7 @@ import {
     prepareTaskProof,
     type PreparedTaskProof,
 } from "@/lib/task-proof-client";
+import { splitDashboardActiveTaskBuckets } from "@/lib/dashboard-task-buckets";
 import { purgeLocalProofMedia } from "@/lib/proof-media-warmup";
 import { subscribeRealtimeTaskChanges } from "@/lib/realtime-task-events";
 import { isIncomingNewer, patchTaskScalars } from "@/lib/tasks-realtime-patch";
@@ -194,7 +196,13 @@ export default function DashboardClient({
     const proofPickerTaskIdRef = useRef<string | null>(null);
     const activeTasksRef = useRef<Task[]>(split.active);
     const completedTasksRef = useRef<Task[]>(split.completed.slice(0, MAX_COMPLETED_TASKS));
-    const sortedActiveTasks = useMemo(() => sortActiveTasks(activeTasks, sortMode), [activeTasks, sortMode]);
+    const sortedActiveTaskBuckets = useMemo(() => {
+        const { activeDueSoonTasks, futureTasks } = splitDashboardActiveTaskBuckets(activeTasks);
+        return {
+            activeDueSoonTasks: sortActiveTasks(activeDueSoonTasks, sortMode),
+            futureTasks: sortActiveTasks(futureTasks, sortMode),
+        };
+    }, [activeTasks, sortMode]);
     const postponeDialogTask = useMemo(() => {
         if (!postponeDialogTaskId) return null;
         return activeTasks.find((task) => task.id === postponeDialogTaskId) || null;
@@ -210,6 +218,8 @@ export default function DashboardClient({
         postponeDialogTask &&
         canPostponeDialogTask
     );
+    const activeDueSoonTasks = sortedActiveTaskBuckets.activeDueSoonTasks;
+    const futureTasks = sortedActiveTaskBuckets.futureTasks;
 
     useEffect(() => {
         const nextActiveTasks = split.active;
@@ -847,6 +857,24 @@ export default function DashboardClient({
         }
     };
 
+    const renderActiveTaskRow = (task: Task) => (
+        <TaskRow
+            key={task.id}
+            task={task}
+            onComplete={handleCompleteTaskOptimistic}
+            isCompleting={completingTaskIds.has(task.id)}
+            onAttachProof={openTaskProofPicker}
+            hasProofAttached={Boolean(proofByTaskId[task.id])}
+            proofUploadError={proofUploadErrors[task.id] || null}
+            onPostpone={handlePostponeTaskClick}
+            isPostponing={postponingTaskIds.has(task.id)}
+            defaultPomoDurationMinutes={defaultPomoDurationMinutes}
+            onDelete={handleDeleteTaskOptimistic}
+            isDeleting={deletingTaskIds.has(task.id)}
+            layoutVariant="active"
+        />
+    );
+
     const handleToggleTips = async () => {
         if (isTogglingTips) return;
         const nextTipsHidden = !tipsHidden;
@@ -875,7 +903,7 @@ export default function DashboardClient({
 
     return (
         <div className="max-w-3xl mx-auto space-y-6 px-4 md:px-0 pb-14">
-            <TaskDetailPrefetcher tasks={[...sortedActiveTasks, ...completedTasks]} />
+            <TaskDetailPrefetcher tasks={[...activeDueSoonTasks, ...futureTasks, ...completedTasks]} />
             <div className="flex items-center justify-between mb-8">
                 <h1 className="text-2xl font-bold text-white flex items-center gap-2">{`Hi ${username}`}</h1>
                 <DashboardHeaderActions
@@ -920,30 +948,19 @@ export default function DashboardClient({
             )}
 
             <div className="flex flex-col">
-                {sortedActiveTasks.length === 0 ? (
+                {activeDueSoonTasks.length === 0 ? (
                     <div className="text-center py-12">
-                        <p className="text-slate-500 text-sm">All tasks completed! Relax or add more.</p>
+                        <p className="text-slate-500 text-sm">no tasks for today or tmrw, maybe check future?</p>
                     </div>
                 ) : (
-                    sortedActiveTasks.map((task) => (
-                        <TaskRow
-                            key={task.id}
-                            task={task}
-                            onComplete={handleCompleteTaskOptimistic}
-                            isCompleting={completingTaskIds.has(task.id)}
-                            onAttachProof={openTaskProofPicker}
-                            hasProofAttached={Boolean(proofByTaskId[task.id])}
-                            proofUploadError={proofUploadErrors[task.id] || null}
-                            onPostpone={handlePostponeTaskClick}
-                            isPostponing={postponingTaskIds.has(task.id)}
-                            defaultPomoDurationMinutes={defaultPomoDurationMinutes}
-                            onDelete={handleDeleteTaskOptimistic}
-                            isDeleting={deletingTaskIds.has(task.id)}
-                            layoutVariant="active"
-                        />
-                    ))
+                    activeDueSoonTasks.map((task) => renderActiveTaskRow(task))
                 )}
             </div>
+
+            <CollapsibleFutureList
+                tasks={futureTasks}
+                renderTask={renderActiveTaskRow}
+            />
 
             <input
                 ref={proofInputRef}
