@@ -57,7 +57,7 @@ const HIGHLIGHT_TIMER_TOKEN_REGEX = /\b(timer)\s+(\d+)\b/gi;
 const HIGHLIGHT_POMO_TOKEN_REGEX = /\b(pomo)\s+(\d+)\b/gi;
 const HIGHLIGHT_REMIND_TOKEN_REGEX = /\b(remind)\s+(\d{1,2}:\d{2}|\d{4})\b/gi;
 const HIGHLIGHT_TOMORROW_TOKEN_REGEX = /\b(tmrw|tomorrow)\b/gi;
-const HIGHLIGHT_VOUCH_TOKEN_REGEX = /(^|\s)(vouch|\.v)\s+(me|self|myself|\w+)\b/gi;
+const HIGHLIGHT_VOUCH_TOKEN_REGEX = /(^|\s)(vouch|\.v)\s+(me|self|myself|[^\s/]+)(?=\s|$|\/)/gi;
 const HIGHLIGHT_ORDINAL_DATE_TOKEN_REGEX = /\b([12]?\d|3[01])(st|nd|rd|th)\b/gi;
 const HIGHLIGHT_SLASH_DATE_TOKEN_REGEX = /\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}))?\b/g;
 const VALUE_EXPECTING_KEYWORDS = new Set(["-start", "-end", "-color", "remind", "timer", "pomo", "vouch", ".v"]);
@@ -989,12 +989,16 @@ export function TaskInput({
             setDeadlineError(parserResolution.error);
         }
 
-        if (/(?:\bvouch|\.v)\s+(me|self|myself)\b/i.test(title)) {
+        if (/(?:\bvouch|\.v)\s+(me|self|myself)(?=\s|$|\/)/i.test(title)) {
             setSelectedVoucherId(selfUserId);
         } else {
-            const vouchMatch = title.match(/(?:\bvouch|\.v)\s+(\w+)/i);
+            const vouchMatch = title.match(/(?:\bvouch|\.v)\s+([^\s/]+)/i);
             if (vouchMatch) {
-                const name = vouchMatch[1].toLowerCase();
+                const name = vouchMatch[1]
+                    .toLowerCase()
+                    .replace(/^[^a-z0-9@._+-]+/i, "")
+                    .replace(/[^a-z0-9@._+-]+$/i, "");
+                if (!name) return;
                 const friend = friends.find(
                     (f) =>
                         f.username?.toLowerCase().includes(name) ||
@@ -1020,7 +1024,7 @@ export function TaskInput({
             .replace(/\b(?:0?[1-9]|[12]\d|3[01])\/(?:0?[1-9]|1[0-2])(?:\/\d{4})?\b/g, "")
             .replace(/\bremind\s+(?:\d{1,2}:\d{2}|\d{4})\b/gi, "")
             .replace(/\b(?:tmrw|tomorrow)\b/gi, "")
-            .replace(/(?:\bvouch|\.v)\s+\w+/gi, "")
+            .replace(/(?:\bvouch|\.v)\s+[^\s/]+/gi, "")
             .replace(/\bpomo\s+\d+\b/gi, "")
             .replace(/\btimer\s+\d+\b/gi, "")
             .replace(/\s+/g, " ")
