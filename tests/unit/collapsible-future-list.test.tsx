@@ -35,6 +35,7 @@ globalAny.IS_REACT_ACT_ENVIRONMENT = true;
 test.afterEach(() => {
     cleanup();
     document.body.innerHTML = "";
+    window.sessionStorage.clear();
 });
 
 function toLocalIso(
@@ -83,16 +84,16 @@ function renderFutureAccordion(tasks: Task[]) {
     );
 }
 
-test("Future accordion starts collapsed on initial render", () => {
+test("Future accordion starts collapsed when no saved session state exists", () => {
     /*
      * What and why this test checks:
-     * This verifies the refresh-equivalent default state so Future does not persist open state.
+     * This verifies the default behavior is closed when no prior session preference exists.
      *
      * Passing scenario:
      * The Future header renders, its aria-expanded is false, and row content is hidden initially.
      *
      * Failing scenario:
-     * If the accordion starts open, refresh behavior violates the product requirement.
+     * If the accordion starts open by default, it no longer matches Past-style manual expand behavior.
      */
     const view = renderFutureAccordion([buildTask("a", "Future A", toLocalIso(2026, 5, 3, 9, 0))]);
 
@@ -123,16 +124,16 @@ test("Future accordion opens when header is clicked", () => {
     );
 });
 
-test("Future accordion closes on outside click", () => {
+test("Future accordion does not close on outside click", () => {
     /*
      * What and why this test checks:
-     * This ensures the agreed "out of focus" behavior is implemented as outside-click collapse.
+     * This ensures Future now matches Past behavior by only changing state via explicit header toggle.
      *
      * Passing scenario:
-     * After opening Future, a mousedown on document.body collapses the panel and hides rows.
+     * After opening Future, a mousedown on document.body keeps the panel open and rows visible.
      *
      * Failing scenario:
-     * If outside click does not collapse, Future remains open and violates the expected UX behavior.
+     * If outside clicks collapse it, Future still behaves unlike Past.
      */
     const view = renderFutureAccordion([buildTask("a", "Future A", toLocalIso(2026, 5, 3, 9, 0))]);
 
@@ -141,10 +142,32 @@ test("Future accordion closes on outside click", () => {
 
     fireEvent.mouseDown(document.body);
 
-    assert.equal(view.queryByText("Future A"), null);
+    assert.ok(view.getByText("Future A"));
     assert.equal(
         view.getByRole("button", { name: "Future" }).getAttribute("aria-expanded"),
-        "false"
+        "true"
+    );
+});
+
+test("Future accordion restores open state from sessionStorage", () => {
+    /*
+     * What and why this test checks:
+     * This validates Past-style session persistence so a user-expanded Future section remains open on refresh in the same tab.
+     *
+     * Passing scenario:
+     * When sessionStorage contains the Future open key, the accordion renders expanded with its row visible.
+     *
+     * Failing scenario:
+     * If saved session state is ignored, Future will always reset and not match Past behavior.
+     */
+    window.sessionStorage.setItem("dashboard.future.open", "1");
+
+    const view = renderFutureAccordion([buildTask("a", "Future A", toLocalIso(2026, 5, 3, 9, 0))]);
+
+    assert.ok(view.getByText("Future A"));
+    assert.equal(
+        view.getByRole("button", { name: "Future" }).getAttribute("aria-expanded"),
+        "true"
     );
 });
 
