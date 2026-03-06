@@ -1265,7 +1265,7 @@ export function TaskInput({
                         }}
                         onScroll={syncTitleHighlightScroll}
                         enterKeyHint="done"
-                        placeholder="plan sprint -event -start930 -color /write notes remind 1000 vouch bob (.v bob)"
+                        placeholder=""
                         className={cn(
                             "w-full bg-transparent border-none py-4 px-5 text-white placeholder:text-slate-500/70 focus:outline-none transition-all font-medium text-lg",
                             title.length > 0 && "text-transparent caret-white"
