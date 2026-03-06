@@ -15,6 +15,7 @@ import { getWarmProofSrc, purgeLocalProofMedia } from "@/lib/proof-media-warmup"
 import { formatCurrencyFromCents, normalizeCurrency } from "@/lib/currency";
 import { subscribeRealtimeTaskChanges, type RealtimeTaskRow } from "@/lib/realtime-task-events";
 import { isIncomingNewer, patchTaskScalars } from "@/lib/tasks-realtime-patch";
+import { reconcilePendingTasksFromServer } from "@/lib/voucher-pending-reconcile";
 
 interface VoucherDashboardClientProps {
     pendingTasks: VoucherPendingTask[];
@@ -96,6 +97,7 @@ export default function VoucherDashboardClient({
     const historyStateRef = useRef<HistoryTask[]>([]);
     const historyLoadedRef = useRef(false);
     const inFlightIdsRef = useRef<Set<string>>(new Set());
+    const suppressedPendingTaskIdsRef = useRef<Set<string>>(new Set());
 
     const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(() => {
         if (typeof window === "undefined") return false;
@@ -110,12 +112,6 @@ export default function VoucherDashboardClient({
     const [historyOffset, setHistoryOffset] = useState(0);
     const [historyHasMore, setHistoryHasMore] = useState(true);
 
-    const refreshInBackground = () => {
-        startRefreshTransition(() => {
-            router.refresh();
-        });
-    };
-
     const setTaskInFlight = (taskId: string, pending: boolean) => {
         setInFlightIds((prev) => {
             const next = new Set(prev);
@@ -126,6 +122,19 @@ export default function VoucherDashboardClient({
             }
             return next;
         });
+    };
+
+    const suppressPendingTask = (taskId: string) => {
+        const next = new Set(suppressedPendingTaskIdsRef.current);
+        next.add(taskId);
+        suppressedPendingTaskIdsRef.current = next;
+    };
+
+    const unsuppressPendingTask = (taskId: string) => {
+        if (!suppressedPendingTaskIdsRef.current.has(taskId)) return;
+        const next = new Set(suppressedPendingTaskIdsRef.current);
+        next.delete(taskId);
+        suppressedPendingTaskIdsRef.current = next;
     };
 
     const loadHistoryPage = async (offset: number, replace: boolean) => {
@@ -156,8 +165,13 @@ export default function VoucherDashboardClient({
     }, [historyLoaded, historyLoading, isHistoryOpen]);
 
     useEffect(() => {
-        setPendingState(pendingTasks);
-        pendingStateRef.current = pendingTasks;
+        const reconciled = reconcilePendingTasksFromServer(
+            pendingTasks,
+            suppressedPendingTaskIdsRef.current
+        );
+        suppressedPendingTaskIdsRef.current = reconciled.suppressedPendingTaskIds;
+        setPendingState(reconciled.pendingTasks);
+        pendingStateRef.current = reconciled.pendingTasks;
     }, [pendingTasks]);
 
     useEffect(() => {
@@ -273,7 +287,12 @@ export default function VoucherDashboardClient({
         await runOptimisticMutation({
             captureSnapshot: () => ({ pendingState, historyState }),
             applyOptimistic: () => {
-                setPendingState((prev) => prev.filter((task) => task.id !== taskId));
+                suppressPendingTask(taskId);
+                setPendingState((prev) => {
+                    const next = prev.filter((task) => task.id !== taskId);
+                    pendingStateRef.current = next;
+                    return next;
+                });
 
                 if (historyLoaded) {
                     const optimisticHistoryTask: HistoryTask = {
@@ -281,17 +300,23 @@ export default function VoucherDashboardClient({
                         status: "COMPLETED",
                         updated_at: nowIso,
                     };
-                    setHistoryState((prev) => mergeTasksById(prev, [optimisticHistoryTask], "prepend"));
+                    setHistoryState((prev) => {
+                        const next = mergeTasksById(prev, [optimisticHistoryTask], "prepend");
+                        historyStateRef.current = next;
+                        return next;
+                    });
                 }
             },
             runMutation: () => voucherAccept(taskId),
             rollback: (snapshot) => {
+                unsuppressPendingTask(taskId);
+                pendingStateRef.current = snapshot.pendingState;
+                historyStateRef.current = snapshot.historyState;
                 setPendingState(snapshot.pendingState);
                 setHistoryState(snapshot.historyState);
             },
             onSuccess: () => {
                 void purgeLocalProofMedia(taskId);
-                refreshInBackground();
             },
         });
 
@@ -309,7 +334,12 @@ export default function VoucherDashboardClient({
         await runOptimisticMutation({
             captureSnapshot: () => ({ pendingState, historyState }),
             applyOptimistic: () => {
-                setPendingState((prev) => prev.filter((task) => task.id !== taskId));
+                suppressPendingTask(taskId);
+                setPendingState((prev) => {
+                    const next = prev.filter((task) => task.id !== taskId);
+                    pendingStateRef.current = next;
+                    return next;
+                });
 
                 if (historyLoaded) {
                     const optimisticHistoryTask: HistoryTask = {
@@ -317,17 +347,23 @@ export default function VoucherDashboardClient({
                         status: "FAILED",
                         updated_at: nowIso,
                     };
-                    setHistoryState((prev) => mergeTasksById(prev, [optimisticHistoryTask], "prepend"));
+                    setHistoryState((prev) => {
+                        const next = mergeTasksById(prev, [optimisticHistoryTask], "prepend");
+                        historyStateRef.current = next;
+                        return next;
+                    });
                 }
             },
             runMutation: () => voucherDeny(taskId),
             rollback: (snapshot) => {
+                unsuppressPendingTask(taskId);
+                pendingStateRef.current = snapshot.pendingState;
+                historyStateRef.current = snapshot.historyState;
                 setPendingState(snapshot.pendingState);
                 setHistoryState(snapshot.historyState);
             },
             onSuccess: () => {
                 void purgeLocalProofMedia(taskId);
-                refreshInBackground();
             },
         });
 
@@ -368,9 +404,6 @@ export default function VoucherDashboardClient({
             rollback: (snapshot) => {
                 setHistoryState(snapshot.historyState);
             },
-            onSuccess: () => {
-                refreshInBackground();
-            },
         });
 
         setTaskInFlight(taskId, false);
@@ -385,7 +418,6 @@ export default function VoucherDashboardClient({
             toast.error(result.error);
         } else {
             toast.success("Proof request sent.");
-            refreshInBackground();
         }
 
         setTaskInFlight(taskId, false);
