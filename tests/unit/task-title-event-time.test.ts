@@ -265,7 +265,65 @@ test("8) optional space formats (-start 930 / -end 09:30) are accepted", () => {
     assert.equal(result.endDate!.getMinutes(), 45);
 });
 
-test("9) non-event title with @930 remains outside event resolver scope", () => {
+test("9) short and dotted aliases resolve the same as long-form start/end tokens", () => {
+    /*
+     * WHAT + WHY:
+     * This verifies the new parser aliases requested for ergonomics.
+     * The aliases .s/-s and .e/-e must behave exactly like -start and -end so users can type shorter event syntax.
+     *
+     * PASSING SCENARIO:
+     * Titles using "-s" with ".e" resolve to the same explicit same-day schedule as long-form tokens.
+     *
+     * FAILING SCENARIO:
+     * If aliases are ignored or parsed inconsistently, these shorthand titles would either fail validation
+     * or produce incorrect start/end times.
+     */
+    const result = resolveEventSchedule({
+        rawTitle: "demo prep -event -s930 .e10:45",
+        anchorDate: buildAnchorDate(),
+        defaultDurationMinutes: 60,
+        now: buildNowBeforeAnchorDay(),
+    });
+
+    assert.equal(result.error, undefined);
+    assert.ok(result.startDate);
+    assert.ok(result.endDate);
+    assert.equal(result.startDate!.getHours(), 9);
+    assert.equal(result.startDate!.getMinutes(), 30);
+    assert.equal(result.endDate!.getHours(), 10);
+    assert.equal(result.endDate!.getMinutes(), 45);
+});
+
+test("10) mixed long-form and alias boundary tokens still count as duplicates", () => {
+    /*
+     * WHAT + WHY:
+     * This ensures aliases feed the same duplicate-detection rules as the original tokens.
+     * Without this, a title could sneak in conflicting boundaries by mixing token spellings.
+     *
+     * PASSING SCENARIO:
+     * Using "-start" with "-s" or "-end" with ".e" returns the same duplicate-token errors as before.
+     *
+     * FAILING SCENARIO:
+     * If aliases are treated as separate token families, conflicting boundaries would be accepted and parsed arbitrarily.
+     */
+    const duplicateStart = resolveEventSchedule({
+        rawTitle: "workshop -event -start900 -s930",
+        anchorDate: buildAnchorDate(),
+        defaultDurationMinutes: 60,
+        now: buildNowBeforeAnchorDay(),
+    });
+    assert.equal(duplicateStart.error, "Use only one -start token.");
+
+    const duplicateEnd = resolveEventSchedule({
+        rawTitle: "workshop -event -end900 .e930",
+        anchorDate: buildAnchorDate(),
+        defaultDurationMinutes: 60,
+        now: buildNowBeforeAnchorDay(),
+    });
+    assert.equal(duplicateEnd.error, "Use only one -end token.");
+});
+
+test("11) non-event title with @930 remains outside event resolver scope", () => {
     /*
      * WHAT + WHY:
      * This verifies boundary between event parser and legacy non-event @ parser.
@@ -290,7 +348,7 @@ test("9) non-event title with @930 remains outside event resolver scope", () => 
     assert.equal(result.error, undefined);
 });
 
-test("10) -event with @930 but no -start/-end still fails mandatory-token rule", () => {
+test("12) -event with @930 but no -start/-end still fails mandatory-token rule", () => {
     /*
      * WHAT + WHY:
      * This enforces the explicit product decision that @ is non-event-only.
@@ -314,7 +372,7 @@ test("10) -event with @930 but no -start/-end still fails mandatory-token rule",
     assert.equal(result.endDate, null);
 });
 
-test("11) past event windows are accepted when start/end are in the past", () => {
+test("13) past event windows are accepted when start/end are in the past", () => {
     /*
      * WHAT + WHY:
      * Product behavior now allows creating calendar-block events in the past.

@@ -1,6 +1,6 @@
 const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
-const EVENT_START_TOKEN_REGEX = /(^|\s)-start\s*(\d{1,2}:\d{2}|\d{1,4})\b/gi;
-const EVENT_END_TOKEN_REGEX = /(^|\s)-end\s*(\d{1,2}:\d{2}|\d{1,4})\b/gi;
+const EVENT_START_TOKEN_REGEX = /(^|\s)(?:-start|-s|\.s)\s*(\d{1,2}:\d{2}|\d{1,4})\b/gi;
+const EVENT_END_TOKEN_REGEX = /(^|\s)(?:-end|-e|\.e)\s*(\d{1,2}:\d{2}|\d{1,4})\b/gi;
 
 const EVENT_DUPLICATE_START_ERROR = "Use only one -start token.";
 const EVENT_DUPLICATE_END_ERROR = "Use only one -end token.";
