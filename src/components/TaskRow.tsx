@@ -759,7 +759,7 @@ export function TaskRow({
                                         }}
                                         onBlur={() => void handleSubtaskRename()}
                                         autoFocus
-                                        className="flex-1 min-w-0 bg-transparent border-b border-slate-500 text-sm text-slate-300 focus:outline-none focus:border-slate-400 py-0.5"
+                                        className="flex-1 min-w-0 bg-transparent border-b border-slate-500 text-base md:text-sm text-slate-300 focus:outline-none focus:border-slate-400 py-0.5"
                                     />
                                 ) : (
                                     <button
@@ -825,7 +825,7 @@ export function TaskRow({
                                 autoFocus
                                 placeholder="Add subtask…"
                                 ref={newSubtaskInputRef}
-                                className="flex-1 min-w-0 bg-transparent border-b border-slate-700/60 text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-slate-500 py-1"
+                                className="flex-1 min-w-0 bg-transparent border-b border-slate-700/60 text-base md:text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-slate-500 py-1"
                             />
                         </div>
                     )
