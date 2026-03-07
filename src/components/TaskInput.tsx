@@ -41,6 +41,7 @@ import {
     stripEventColorTokens,
     validateEventColorUsage,
 } from "@/lib/task-title-event-color";
+import { shouldRenderTaskTitleOverlay } from "@/lib/task-title-overlay";
 import { toast } from "sonner";
 import {
     fromDateTimeLocalValue,
@@ -498,6 +499,11 @@ export function TaskInput({
         if (!isTitleFocused || isColorPickerVisible) return null;
         return getParserKeywordCompletion(title, titleCaretIndex);
     }, [isTitleFocused, isColorPickerVisible, title, titleCaretIndex]);
+    const showTitleOverlay = shouldRenderTaskTitleOverlay(
+        title,
+        titleHighlightSegments,
+        inlineKeywordCompletion?.suffix
+    );
 
     const syncTitleHighlightScroll = useCallback(() => {
         if (!titleInputRef.current || !titleHighlightRef.current) return;
@@ -1221,11 +1227,11 @@ export function TaskInput({
         <form ref={formRef} onSubmit={handleSubmit} className="relative space-y-3 mb-8">
             <div className="bg-slate-900/50 border border-slate-800/50 focus-within:border-slate-700/50 rounded-xl transition-all shadow-2xl overflow-visible">
                 <div className="relative">
-                    {title.length > 0 && (
+                    {showTitleOverlay && (
                         <div
                             ref={titleHighlightRef}
                             aria-hidden="true"
-                            className="pointer-events-none absolute inset-0 overflow-hidden py-4 px-5 whitespace-pre text-lg font-medium text-white"
+                            className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-5 py-4 text-lg font-medium leading-normal text-white"
                         >
                             {titleHighlightSegments.map((segment, index) => (
                                 <span
@@ -1266,8 +1272,8 @@ export function TaskInput({
                         enterKeyHint="done"
                         placeholder="click the bulb button on the right"
                         className={cn(
-                            "w-full bg-transparent border-none py-4 px-5 text-white placeholder:text-slate-500/70 focus:outline-none transition-all font-medium text-lg",
-                            title.length > 0 && "text-transparent caret-white"
+                            "w-full bg-transparent border-none px-5 py-4 text-lg font-medium leading-normal text-white placeholder:text-slate-500/70 focus:outline-none transition-all",
+                            showTitleOverlay && "text-transparent caret-white"
                         )}
                         disabled={isLoading}
                     />
