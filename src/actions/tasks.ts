@@ -11,6 +11,7 @@ import {
     DEFAULT_EVENT_DURATION_MINUTES,
     DEFAULT_FAILURE_COST_CENTS,
     MAX_SUBTASKS_PER_TASK,
+    MAX_POMO_DURATION_MINUTES,
 } from "@/lib/constants";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
@@ -36,6 +37,7 @@ import {
     stripEventColorTokens,
     validateEventColorUsage,
 } from "@/lib/task-title-event-color";
+import { isValidPomoDurationMinutes } from "@/lib/pomodoro";
 
 const INVALID_DEADLINE_ERROR = "Deadline is invalid.";
 const PAST_DEADLINE_ERROR = "Deadline must be in the future.";
@@ -47,7 +49,8 @@ const ACTIVE_POMO_RUNNING_ERROR = "Stop the running pomodoro for this task befor
 const INVALID_REMINDERS_ERROR = "Invalid reminders payload.";
 const PAST_REMINDER_ERROR = "All reminders must be in the future.";
 const REMINDER_AFTER_DEADLINE_ERROR = "Reminders must be before or at the deadline.";
-const INVALID_REQUIRED_POMO_ERROR = "Required pomodoro minutes must be an integer between 1 and 10000.";
+const INVALID_REQUIRED_POMO_ERROR =
+    `Required pomodoro minutes must be an integer between 1 and ${MAX_POMO_DURATION_MINUTES}.`;
 const INVALID_TASK_PROOF_ERROR = "Invalid proof payload.";
 const TASK_PROOF_TOO_LARGE_ERROR = "Proof must be 5MB or less.";
 const TASK_PROOF_VIDEO_TOO_LONG_ERROR = "Video proof must be 15 seconds or less.";
@@ -334,7 +337,7 @@ function parseRequiredPomoMinutesFromFormData(
     }
 
     const parsed = Number.parseInt(trimmed, 10);
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
+    if (!isValidPomoDurationMinutes(parsed)) {
         return { requiredPomoMinutes: null, error: INVALID_REQUIRED_POMO_ERROR };
     }
 
@@ -2607,6 +2610,11 @@ export async function startPomoSession(taskId: string, durationMinutes: number) 
     } = await supabase.auth.getUser();
 
     if (!user) return { error: "Not authenticated" };
+    if (!isValidPomoDurationMinutes(durationMinutes)) {
+        return {
+            error: `Pomodoro duration must be an integer between 1 and ${MAX_POMO_DURATION_MINUTES} minutes.`,
+        };
+    }
 
     // Verify task ownership
     // @ts-ignore

@@ -28,7 +28,10 @@ import {
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/lib/types";
 import { getCurrencySymbol, getFailureCostBounds, type SupportedCurrency } from "@/lib/currency";
-import { DEFAULT_EVENT_DURATION_MINUTES } from "@/lib/constants";
+import {
+    DEFAULT_EVENT_DURATION_MINUTES,
+    MAX_POMO_DURATION_MINUTES,
+} from "@/lib/constants";
 import { parseClockToken, resolveEventSchedule } from "@/lib/task-title-event-time";
 import {
     GOOGLE_EVENT_COLOR_OPTIONS,
@@ -43,6 +46,7 @@ import {
     fromDateTimeLocalValue,
     toDateTimeLocalValue,
 } from "@/lib/datetime-local";
+import { parseRequiredPomoFromTitle } from "@/lib/pomodoro";
 
 const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
 const TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/i;
@@ -296,7 +300,7 @@ function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
     for (const match of text.matchAll(HIGHLIGHT_POMO_TOKEN_REGEX)) {
         if (!match[0] || !match[2]) continue;
         const parsed = Number.parseInt(match[2], 10);
-        if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) continue;
+        if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_POMO_DURATION_MINUTES) continue;
         const start = match.index ?? 0;
         applyKeywordRange(start, start + match[0].length);
     }
@@ -1033,16 +1037,6 @@ export function TaskInput({
         return stripEventColorTokens(withoutStandardTokens);
     };
 
-    const parseRequiredPomoMinutes = (text: string): number | null => {
-        const match = text.match(/\bpomo\s+(\d+)\b/i);
-        if (!match) return null;
-
-        const parsed = Number.parseInt(match[1], 10);
-        if (!Number.isInteger(parsed)) return null;
-        if (parsed < 1 || parsed > 10000) return null;
-        return parsed;
-    };
-
     const parseTaskTitleAndSubtasks = (text: string) => {
         const cleaned = stripMetadata(text);
         const segments = cleaned.split("/").map((segment) => segment.trim());
@@ -1056,7 +1050,8 @@ export function TaskInput({
         e.preventDefault();
 
         const { taskTitle, subtasks } = parseTaskTitleAndSubtasks(title);
-        const requiredPomoMinutes = parseRequiredPomoMinutes(title);
+        const requiredPomoParse = parseRequiredPomoFromTitle(title);
+        const requiredPomoMinutes = requiredPomoParse.requiredPomoMinutes;
 
         if (!taskTitle || isLoading) return;
 
@@ -1070,6 +1065,10 @@ export function TaskInput({
         const colorValidation = validateEventColorUsage(title, isEventTask);
         if (colorValidation.error) {
             setDeadlineError(colorValidation.error);
+            return;
+        }
+        if (requiredPomoParse.error) {
+            setDeadlineError(requiredPomoParse.error);
             return;
         }
 

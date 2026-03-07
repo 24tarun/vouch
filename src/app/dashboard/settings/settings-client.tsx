@@ -46,7 +46,9 @@ import {
     DEFAULT_EVENT_DURATION_MINUTES,
     DEFAULT_FAILURE_COST_CENTS,
     DEFAULT_POMO_DURATION_MINUTES,
+    MAX_POMO_DURATION_MINUTES,
 } from "@/lib/constants";
+import { normalizePomoDurationMinutes } from "@/lib/pomodoro";
 
 interface SettingsClientProps {
     profile: Profile;
@@ -79,7 +81,12 @@ export default function SettingsClient({
     const [usernameSuccess, setUsernameSuccess] = useState(false);
 
     const [defaultPomoDurationMinutes, setDefaultPomoDurationMinutes] = useState(
-        String(profile.default_pomo_duration_minutes ?? DEFAULT_POMO_DURATION_MINUTES)
+        String(
+            normalizePomoDurationMinutes(
+                profile.default_pomo_duration_minutes,
+                DEFAULT_POMO_DURATION_MINUTES
+            )
+        )
     );
     const [defaultEventDurationMinutes, setDefaultEventDurationMinutes] = useState(
         String(profile.default_event_duration_minutes ?? DEFAULT_EVENT_DURATION_MINUTES)
@@ -181,7 +188,7 @@ export default function SettingsClient({
      * the user is actively typing.
      *
      * Validation order:
-     * 1) Check default pomodoro duration is an integer within 1..720.
+     * 1) Check default pomodoro duration is an integer within 1..120.
      * 2) Check failure cost is parseable to a finite number.
      * 3) Load per-currency bounds via getFailureCostBounds(currency) and validate rounded cents against
      *    minCents/maxCents so client logic matches authoritative server-side logic.
@@ -195,9 +202,9 @@ export default function SettingsClient({
             !Number.isFinite(parsedPomo) ||
             !Number.isInteger(parsedPomo) ||
             parsedPomo < 1 ||
-            parsedPomo > 720
+            parsedPomo > MAX_POMO_DURATION_MINUTES
         ) {
-            return "Default Pomodoro duration must be an integer between 1 and 720.";
+            return `Default Pomodoro duration must be an integer between 1 and ${MAX_POMO_DURATION_MINUTES}.`;
         }
 
         const parsedEventDuration = Number(defaultEventDurationMinutes);
@@ -782,7 +789,7 @@ export default function SettingsClient({
                                 id="defaultPomoDurationMinutes"
                                 type="number"
                                 min="1"
-                                max="720"
+                                max={String(MAX_POMO_DURATION_MINUTES)}
                                 step="1"
                                 value={defaultPomoDurationMinutes}
                                 onChange={(e) => setDefaultPomoDurationMinutes(e.target.value)}

@@ -14,6 +14,8 @@ import {
 import { PomoSession } from "@/lib/types";
 import { PomodoroTimer } from "@/components/PomodoroTimer";
 import { createClient as createSupabaseClient } from "@/lib/supabase/client";
+import { MAX_POMO_DURATION_MINUTES } from "@/lib/constants";
+import { isValidPomoDurationMinutes } from "@/lib/pomodoro";
 
 type PomoEndSource = "manual_stop" | "timer_completed" | "system";
 type PomoSessionWithTask = PomoSession & { task?: { title?: string | null } | null };
@@ -194,6 +196,11 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     }, [session, refreshSession]);
 
     const startSession = async (taskId: string, durationMinutes: number) => {
+        if (!isValidPomoDurationMinutes(durationMinutes)) {
+            toast.error(`Pomodoro duration must be between 1 and ${MAX_POMO_DURATION_MINUTES} minutes.`);
+            return;
+        }
+
         // Guard invalid concurrent starts locally for snappy feedback.
         if (session && (session.status === "ACTIVE" || session.status === "PAUSED")) {
             if (session.task_id !== taskId) {

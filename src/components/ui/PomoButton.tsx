@@ -5,7 +5,11 @@ import { Timer } from "lucide-react";
 import { usePomodoro } from "@/components/PomodoroProvider";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { DEFAULT_POMO_DURATION_MINUTES } from "@/lib/constants";
+import {
+    DEFAULT_POMO_DURATION_MINUTES,
+    MAX_POMO_DURATION_MINUTES,
+} from "@/lib/constants";
+import { isValidPomoDurationMinutes, normalizePomoDurationMinutes } from "@/lib/pomodoro";
 
 interface PomoButtonProps {
     taskId: string;
@@ -21,12 +25,7 @@ export function PomoButton({
     defaultDurationMinutes = DEFAULT_POMO_DURATION_MINUTES,
 }: PomoButtonProps) {
     const { startSession, session, isLoading } = usePomodoro();
-    const normalizedDefaultDuration =
-        Number.isInteger(defaultDurationMinutes) &&
-        defaultDurationMinutes >= 1 &&
-        defaultDurationMinutes <= 720
-            ? defaultDurationMinutes
-            : DEFAULT_POMO_DURATION_MINUTES;
+    const normalizedDefaultDuration = normalizePomoDurationMinutes(defaultDurationMinutes);
     const [durationInput, setDurationInput] = useState(String(normalizedDefaultDuration));
     const isActive = session?.task_id === taskId && session?.status === "ACTIVE";
     const iconButtonClass = "inline-flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
@@ -44,14 +43,8 @@ export function PomoButton({
         }
 
         const minutes = Number(durationInput);
-        const isValid =
-            Number.isFinite(minutes) &&
-            Number.isInteger(minutes) &&
-            minutes >= 1 &&
-            minutes <= 720;
-
-        if (!isValid) {
-            toast.error("Enter a valid duration in minutes (1-720).");
+        if (!isValidPomoDurationMinutes(minutes)) {
+            toast.error(`Enter a valid duration in minutes (1-${MAX_POMO_DURATION_MINUTES}).`);
             return;
         }
 
@@ -88,7 +81,7 @@ export function PomoButton({
                 <input
                     type="number"
                     min="1"
-                    max="720"
+                    max={String(MAX_POMO_DURATION_MINUTES)}
                     step="1"
                     value={durationInput}
                     onChange={(e) => setDurationInput(e.target.value)}

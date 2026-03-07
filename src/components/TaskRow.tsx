@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { canOwnerTemporarilyDelete } from "@/lib/task-delete-window";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import { DEFAULT_POMO_DURATION_MINUTES } from "@/lib/constants";
+import { normalizePomoDurationMinutes } from "@/lib/pomodoro";
 
 interface TaskRowProps {
     task: Task;
@@ -97,12 +98,10 @@ export function TaskRow({
         !isOverdue &&
         !isPostponing
     );
-    const normalizedDefaultPomoDuration =
-        Number.isInteger(defaultPomoDurationMinutes) &&
-            defaultPomoDurationMinutes >= 1 &&
-            defaultPomoDurationMinutes <= 720
-            ? defaultPomoDurationMinutes
-            : DEFAULT_POMO_DURATION_MINUTES;
+    const normalizedDefaultPomoDuration = normalizePomoDurationMinutes(
+        defaultPomoDurationMinutes,
+        DEFAULT_POMO_DURATION_MINUTES
+    );
     const isCompleteActionDisabled =
         isActuallyCompleted ||
         isCompleting ||

@@ -7,6 +7,7 @@ import {
     DEFAULT_POMO_DURATION_MINUTES,
 } from "@/lib/constants";
 import { normalizeCurrency } from "@/lib/currency";
+import { normalizePomoDurationMinutes } from "@/lib/pomodoro";
 import DashboardClient from "@/app/dashboard/dashboard-client";
 import { getCachedActiveTasksForUser } from "@/actions/tasks";
 import { BuildStamp } from "@/components/BuildStamp";
@@ -51,11 +52,10 @@ export default async function DashboardPage() {
     const defaultFailureCostEuros = (
         ((profileDefaults?.default_failure_cost_cents ?? DEFAULT_FAILURE_COST_CENTS) / 100)
     ).toFixed(2);
-    const defaultPomoDurationMinutes =
-        Number.isInteger(profileDefaults?.default_pomo_duration_minutes) &&
-            (profileDefaults?.default_pomo_duration_minutes ?? 0) > 0
-            ? (profileDefaults?.default_pomo_duration_minutes as number)
-            : DEFAULT_POMO_DURATION_MINUTES;
+    const defaultPomoDurationMinutes = normalizePomoDurationMinutes(
+        profileDefaults?.default_pomo_duration_minutes,
+        DEFAULT_POMO_DURATION_MINUTES
+    );
     const defaultEventDurationMinutes =
         Number.isInteger(profileDefaults?.default_event_duration_minutes) &&
             (profileDefaults?.default_event_duration_minutes ?? 0) > 0

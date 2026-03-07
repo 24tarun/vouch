@@ -19,6 +19,7 @@ import {
     DEFAULT_FAILURE_COST_CENTS,
     DEFAULT_EVENT_DURATION_MINUTES,
     DEFAULT_POMO_DURATION_MINUTES,
+    MAX_POMO_DURATION_MINUTES,
 } from "@/lib/constants";
 
 type PomoAutoEndSource = "sign_out_auto_end";
@@ -433,9 +434,11 @@ export async function updateUserDefaults(formData: FormData) {
         !Number.isFinite(defaultPomoDurationMinutes) ||
         !Number.isInteger(defaultPomoDurationMinutes) ||
         defaultPomoDurationMinutes < 1 ||
-        defaultPomoDurationMinutes > 720
+        defaultPomoDurationMinutes > MAX_POMO_DURATION_MINUTES
     ) {
-        return { error: "Default Pomodoro duration must be an integer between 1 and 720." };
+        return {
+            error: `Default Pomodoro duration must be an integer between 1 and ${MAX_POMO_DURATION_MINUTES}.`,
+        };
     }
 
     let defaultEventDurationMinutes: number;

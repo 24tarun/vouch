@@ -938,7 +938,7 @@ export default function DashboardClient({
                     <p>Color tags work only with -event and sync as Google event colors</p>
                     <p>Timer: use timer 25 (minutes from now)</p>
                     <p>Reminder: use remind 10:00 or remind 1000</p>
-                    <p>Pomodoro: use pomo 75</p>
+                    <p>Pomodoro: use pomo 75 (max 120)</p>
                     <p>Voucher: use vouch bob or .v bob</p>
                     <p>Subtasks: separate with /</p>
                     <p>Ticking a task marks it complete instantly</p>
