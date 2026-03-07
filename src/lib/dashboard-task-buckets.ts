@@ -11,6 +11,18 @@ function getStartOfLocalDay(reference: Date): Date {
     return startOfDay;
 }
 
+export function isTaskScheduledForTodayOrTomorrow(
+    task: Pick<Task, "deadline">,
+    reference: Date = new Date()
+): boolean {
+    const deadlineMs = Date.parse(task.deadline);
+    if (Number.isNaN(deadlineMs)) return false;
+
+    const startOfTodayMs = getStartOfLocalDay(reference).getTime();
+    const futureBoundaryMs = getFutureTaskBoundaryLocal(reference).getTime();
+    return deadlineMs >= startOfTodayMs && deadlineMs < futureBoundaryMs;
+}
+
 export function getFutureTaskBoundaryLocal(reference: Date = new Date()): Date {
     const startOfToday = getStartOfLocalDay(reference);
     const startOfDayAfterTomorrow = new Date(startOfToday);

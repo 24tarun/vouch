@@ -10,6 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
 import { deleteTaskProof } from "@/lib/task-proof";
 import { enqueueGoogleCalendarOutbox } from "@/lib/google-calendar/sync";
+import { canVoucherSeeTask } from "@/lib/voucher-task-visibility";
 
 function invalidatePendingVoucherRequestsCache(voucherId: string) {
     revalidateTag(pendingVoucherRequestsTag(voucherId), "max");
@@ -74,11 +75,6 @@ function getPendingDeadline(task: {
     return ACTIVE_PENDING_STATUS_SET.has(task.status)
         ? (task.deadline || null)
         : deriveAwaitingDeadline(task);
-}
-
-function canVoucherSeeTask(task: { status: TaskStatus; user?: { voucher_can_view_active_tasks?: boolean } | null }): boolean {
-    if (!ACTIVE_PENDING_STATUS_SET.has(task.status)) return true;
-    return task.user?.voucher_can_view_active_tasks === true;
 }
 
 function sortPendingTasks(tasks: VoucherPendingTask[]): VoucherPendingTask[] {
@@ -569,6 +565,7 @@ export async function getCachedPendingVouchRequestsForVoucher(voucherId: string)
             const pendingTasks = ((tasks as any[]) || []).filter((task) =>
                 canVoucherSeeTask({
                     status: task.status as TaskStatus,
+                    deadline: task.deadline,
                     user: task.user as { voucher_can_view_active_tasks?: boolean } | null,
                 })
             );
@@ -700,6 +697,7 @@ export async function getAssignedTasksForVoucher() {
     const visibleTasks = ((tasks as any[]) || []).filter((task) =>
         canVoucherSeeTask({
             status: task.status as TaskStatus,
+            deadline: task.deadline,
             user: task.user as { voucher_can_view_active_tasks?: boolean } | null,
         })
     );

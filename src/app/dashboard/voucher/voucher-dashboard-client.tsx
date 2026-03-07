@@ -17,6 +17,7 @@ import { subscribeRealtimeTaskChanges, type RealtimeTaskRow } from "@/lib/realti
 import { isIncomingNewer, patchTaskScalars } from "@/lib/tasks-realtime-patch";
 import { reconcilePendingTasksFromServer } from "@/lib/voucher-pending-reconcile";
 import { ProofMedia } from "@/components/ProofMedia";
+import { canVoucherSeeTask } from "@/lib/voucher-task-visibility";
 
 interface VoucherDashboardClientProps {
     pendingTasks: VoucherPendingTask[];
@@ -236,7 +237,10 @@ export default function VoucherDashboardClient({
             let nextHistoryState = currentHistoryState.filter((task) => task.id !== taskId);
 
             if (pendingTask && ALL_PENDING_STATUSES.has(incoming.status)) {
-                nextPendingState = [toPendingTask(pendingTask, incoming), ...nextPendingState];
+                const nextPendingTask = toPendingTask(pendingTask, incoming);
+                if (canVoucherSeeTask(nextPendingTask)) {
+                    nextPendingState = [nextPendingTask, ...nextPendingState];
+                }
             }
 
             if (historyLoadedRef.current && HISTORY_STATUSES.has(incoming.status)) {
