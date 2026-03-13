@@ -54,12 +54,12 @@ export function PostponeDeadlineDialog({
     );
 }
 
-function getDefaultDeadlineDraftValue(currentDeadlineIso: string | null): string {
+export function getDefaultDeadlineDraftValue(currentDeadlineIso: string | null): string {
     const currentDeadline = currentDeadlineIso ? new Date(currentDeadlineIso) : null;
     const baseDate =
         currentDeadline && !Number.isNaN(currentDeadline.getTime())
-            ? new Date(currentDeadline.getTime() + 60 * 60 * 1000)
-            : new Date(Date.now() + 60 * 60 * 1000);
+            ? new Date(currentDeadline.getTime() + 24 * 60 * 60 * 1000)
+            : new Date(Date.now() + 24 * 60 * 60 * 1000);
     return toDateTimeLocalValue(baseDate);
 }
 

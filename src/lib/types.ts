@@ -260,6 +260,7 @@ export interface VoucherPendingTask extends TaskWithRelations {
     pending_display_type: VoucherPendingDisplayType;
     pending_deadline_at: string | null;
     pending_actionable: boolean;
+    proof_request_count: number;
 }
 
 export interface FriendPomoActivity {

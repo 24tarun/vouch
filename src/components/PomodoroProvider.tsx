@@ -16,6 +16,7 @@ import { PomodoroTimer } from "@/components/PomodoroTimer";
 import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 import { MAX_POMO_DURATION_MINUTES } from "@/lib/constants";
 import { isValidPomoDurationMinutes } from "@/lib/pomodoro";
+import { createAutoLockController, shouldSuppressAutoLock } from "@/lib/auto-lock";
 
 type PomoEndSource = "manual_stop" | "timer_completed" | "system";
 type PomoSessionWithTask = PomoSession & { task?: { title?: string | null } | null };
@@ -57,6 +58,10 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
     const pomoChannelRef = useRef<RealtimeChannel | null>(null);
     const locallyStartedSessionIdRef = useRef<string | null>(null);
     const lastSeenSessionIdRef = useRef<string | null>(null);
+    const autoLockControllerRef = useRef<ReturnType<typeof createAutoLockController> | null>(null);
+    if (!autoLockControllerRef.current) {
+        autoLockControllerRef.current = createAutoLockController();
+    }
 
     const clearPomoChannel = useCallback(() => {
         const channel = pomoChannelRef.current;
@@ -194,6 +199,21 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
 
         return () => window.clearInterval(interval);
     }, [session, refreshSession]);
+
+    const sessionStatus = session?.status;
+
+    useEffect(() => {
+        if (!autoLockControllerRef.current) return;
+        const shouldKeepAwake = shouldSuppressAutoLock(sessionStatus, minimized);
+        void autoLockControllerRef.current.setAutoLockSuppressed(shouldKeepAwake);
+    }, [sessionStatus, minimized]);
+
+    useEffect(() => {
+        return () => {
+            if (!autoLockControllerRef.current) return;
+            void autoLockControllerRef.current.cleanup();
+        };
+    }, []);
 
     const startSession = async (taskId: string, durationMinutes: number) => {
         if (!isValidPomoDurationMinutes(durationMinutes)) {

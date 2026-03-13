@@ -45,6 +45,20 @@ const PENDING_VOUCH_REQUEST_STATUSES: TaskStatus[] = [
 ];
 const ACTIVE_PENDING_STATUS_SET = new Set<TaskStatus>(ACTIVE_PENDING_STATUSES);
 
+type ProofRequestEventRow = {
+    task_id?: string | null;
+};
+
+export function buildProofRequestCountByTaskId(rows: ProofRequestEventRow[]): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+        const taskId = typeof row.task_id === "string" ? row.task_id : null;
+        if (!taskId) continue;
+        counts.set(taskId, (counts.get(taskId) || 0) + 1);
+    }
+    return counts;
+}
+
 function parseTimestamp(value: string | null | undefined): number | null {
     if (!value) return null;
     const ts = new Date(value).getTime();
@@ -574,7 +588,7 @@ export async function getCachedPendingVouchRequestsForVoucher(voucherId: string)
             const taskIds = pendingTasks.map((task) => task.id);
             const ownerIds = [...new Set(pendingTasks.map((task) => task.user_id))];
 
-            const [{ data: sessions }, { data: proofs }] = await Promise.all([
+            const [{ data: sessions }, { data: proofs }, { data: proofEvents }] = await Promise.all([
                 // @ts-ignore
                 (supabaseAdmin.from("pomo_sessions") as any)
                     .select("task_id, elapsed_seconds")
@@ -586,6 +600,11 @@ export async function getCachedPendingVouchRequestsForVoucher(voucherId: string)
                     .select("task_id, media_kind, mime_type, size_bytes, duration_ms, overlay_timestamp_text, upload_state, updated_at")
                     .in("task_id", taskIds as any)
                     .eq("upload_state", "UPLOADED"),
+                // @ts-ignore
+                (supabaseAdmin.from("task_events") as any)
+                    .select("task_id")
+                    .in("task_id", taskIds as any)
+                    .eq("event_type", "PROOF_REQUESTED"),
             ]);
 
             const secondsByTask = new Map<string, number>();
@@ -599,6 +618,7 @@ export async function getCachedPendingVouchRequestsForVoucher(voucherId: string)
             for (const row of (proofs as any[]) || []) {
                 proofByTask.set(row.task_id as string, row);
             }
+            const proofRequestCountsByTask = buildProofRequestCountByTaskId((proofEvents as ProofRequestEventRow[]) || []);
 
             const normalizedTasks = pendingTasks.map((task) => ({
                 ...task,
@@ -612,6 +632,7 @@ export async function getCachedPendingVouchRequestsForVoucher(voucherId: string)
                     marked_completed_at: task.marked_completed_at,
                 }),
                 pending_actionable: (task.status as TaskStatus) === "AWAITING_VOUCHER",
+                proof_request_count: proofRequestCountsByTask.get(task.id) || 0,
             })) as VoucherPendingTask[];
 
             return sortPendingTasks(normalizedTasks);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createTask } from "@/actions/tasks";
 import { Calendar, Check, Loader2, Repeat, User } from "lucide-react";
 import {
@@ -478,6 +478,7 @@ export function TaskInput({
     const colorPickerListRef = useRef<HTMLDivElement>(null);
     const colorOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
     const lastCalendarTapRef = useRef(0);
+    const pendingCaretPositionRef = useRef<number | null>(null);
     const currencySymbol = getCurrencySymbol(defaultCurrency);
     const failureCostBounds = getFailureCostBounds(defaultCurrency);
     const normalizedDefaultEventDurationMinutes =
@@ -520,6 +521,19 @@ export function TaskInput({
         setTitleCaretIndex(input.selectionStart ?? input.value.length);
     }, []);
 
+    // Apply pending caret position synchronously after DOM update (before browser paint),
+    // so keyup's syncTitleCaretFromInput reads the correct position instead of stale value.
+    useLayoutEffect(() => {
+        const pos = pendingCaretPositionRef.current;
+        if (pos === null) return;
+        pendingCaretPositionRef.current = null;
+        const input = titleInputRef.current;
+        if (!input) return;
+        input.focus();
+        input.setSelectionRange(pos, pos);
+        syncTitleHighlightScroll();
+    });
+
     const applyColorPickerSelection = useCallback((aliasToken: string) => {
         const input = titleInputRef.current;
         const caretIndex = input?.selectionStart ?? titleCaretIndex;
@@ -529,15 +543,8 @@ export function TaskInput({
         setTitle(replacement.nextTitle);
         setTitleCaretIndex(replacement.nextCaretIndex);
         setIsColorPickerDismissed(false);
-
-        requestAnimationFrame(() => {
-            const nextInput = titleInputRef.current;
-            if (!nextInput) return;
-            nextInput.focus();
-            nextInput.setSelectionRange(replacement.nextCaretIndex, replacement.nextCaretIndex);
-            syncTitleHighlightScroll();
-        });
-    }, [title, titleCaretIndex, syncTitleHighlightScroll]);
+        pendingCaretPositionRef.current = replacement.nextCaretIndex;
+    }, [title, titleCaretIndex]);
 
     const applyInlineKeywordCompletion = useCallback(() => {
         if (!inlineKeywordCompletion) return;
@@ -547,15 +554,8 @@ export function TaskInput({
 
         setTitle(nextTitle);
         setTitleCaretIndex(nextCaretIndex);
-
-        requestAnimationFrame(() => {
-            const input = titleInputRef.current;
-            if (!input) return;
-            input.focus();
-            input.setSelectionRange(nextCaretIndex, nextCaretIndex);
-            syncTitleHighlightScroll();
-        });
-    }, [inlineKeywordCompletion, title, syncTitleHighlightScroll]);
+        pendingCaretPositionRef.current = nextCaretIndex;
+    }, [inlineKeywordCompletion, title]);
 
     useEffect(() => {
         if (!nearestColorHelperToken) return;

@@ -84,7 +84,26 @@ function toPendingTask(task: VoucherPendingTask, incoming: RealtimeTaskRow): Vou
         pending_display_type: pendingDisplayType,
         pending_deadline_at: pendingDeadlineAt,
         pending_actionable: patched.status === "AWAITING_VOUCHER",
+        proof_request_count: task.proof_request_count || 0,
     };
+}
+
+export function applyProofRequestSuccessToPendingTasks(
+    tasks: VoucherPendingTask[],
+    taskId: string,
+    nowIso: string = new Date().toISOString()
+): VoucherPendingTask[] {
+    return tasks.map((task) =>
+        task.id === taskId
+            ? {
+                ...task,
+                proof_request_open: true,
+                proof_requested_at: nowIso,
+                updated_at: nowIso,
+                proof_request_count: Math.max(0, task.proof_request_count || 0) + 1,
+            }
+            : task
+    );
 }
 
 export default function VoucherDashboardClient({
@@ -399,6 +418,12 @@ export default function VoucherDashboardClient({
         if (result?.error) {
             toast.error(result.error);
         } else {
+            const nowIso = new Date().toISOString();
+            setPendingState((prev) => {
+                const next = applyProofRequestSuccessToPendingTasks(prev, taskId, nowIso);
+                pendingStateRef.current = next;
+                return next;
+            });
             toast.success("Proof request sent.");
         }
 
@@ -521,7 +546,7 @@ export default function VoucherDashboardClient({
     );
 }
 
-function CompactPendingItem({
+export function CompactPendingItem({
     task,
     onAccept,
     onDeny,
@@ -590,6 +615,7 @@ function CompactPendingItem({
         : null;
     const ownerCurrency = normalizeCurrency(task.user?.currency);
     const formattedFailureCost = formatCurrencyFromCents(task.failure_cost_cents, ownerCurrency);
+    const showProofRequestBadge = Boolean(task.proof_request_open) && (task.proof_request_count || 0) > 0;
 
     useEffect(() => {
         if (!isProofFullscreen) return;
@@ -625,6 +651,11 @@ function CompactPendingItem({
                         <Badge variant="outline" className="bg-emerald-500/10 text-emerald-300 border-emerald-500/30 text-[10px]">
                             <Timer className="h-3 w-3 mr-1" />
                             {formatPomoBadge(pomoTotalSeconds)}
+                        </Badge>
+                    )}
+                    {showProofRequestBadge && (
+                        <Badge variant="outline" className="bg-amber-500/10 text-amber-300 border-amber-500/30 text-[10px]">
+                            {`?${task.proof_request_count}`}
                         </Badge>
                     )}
                 </div>
