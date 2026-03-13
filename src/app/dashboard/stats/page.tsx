@@ -3,7 +3,6 @@ import type { TaskWithRelations } from "@/lib/types";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
 import { StatsActiveTaskList } from "@/components/StatsActiveTaskList";
 import { StatsHistoryTaskList } from "@/components/StatsHistoryTaskList";
-import { Badge } from "@/components/ui/badge";
 import { sortStatsActiveTasks } from "@/lib/stats-active-task-sort";
 
 const ACTIVE_SECTION_STATUSES = new Set(["CREATED", "POSTPONED", "AWAITING_VOUCHER", "MARKED_COMPLETED"]);
@@ -64,10 +63,6 @@ export default async function OverviewPage() {
         voucher_timeout_auto_accepted: timeoutAcceptedTaskIds.has(task.id),
         completion_proof: proofByTaskId.get(task.id) || null,
     }));
-    const openProofRequestCount = tasks.filter((task) =>
-        Boolean(task.proof_request_open) &&
-        ["AWAITING_VOUCHER", "MARKED_COMPLETED"].includes(task.status)
-    ).length;
     const allSessions = (pomoSessionsResult.data as Array<{
         task_id: string;
         elapsed_seconds: number;
@@ -117,13 +112,6 @@ export default async function OverviewPage() {
             <div className="flex items-start justify-between gap-3">
                 <div>
                     <h1 className="text-3xl font-bold text-white">Overview</h1>
-                    {openProofRequestCount > 0 && (
-                        <div className="mt-2">
-                            <Badge className="bg-amber-500/20 text-amber-200 border border-amber-500/40">
-                                {openProofRequestCount} proof request{openProofRequestCount === 1 ? "" : "s"}
-                            </Badge>
-                        </div>
-                    )}
                 </div>
                 <HardRefreshButton />
             </div>
