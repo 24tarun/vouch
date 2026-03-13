@@ -11,6 +11,7 @@ import { activeTasksTag, pendingVoucherRequestsTag } from "@/lib/cache-tags";
 import { deleteTaskProof } from "@/lib/task-proof";
 import { enqueueGoogleCalendarOutbox } from "@/lib/google-calendar/sync";
 import { canVoucherSeeTask } from "@/lib/voucher-task-visibility";
+import { buildProofRequestCountByTaskId, type ProofRequestEventRow } from "@/lib/voucher-proof-request";
 
 function invalidatePendingVoucherRequestsCache(voucherId: string) {
     revalidateTag(pendingVoucherRequestsTag(voucherId), "max");
@@ -45,19 +46,6 @@ const PENDING_VOUCH_REQUEST_STATUSES: TaskStatus[] = [
 ];
 const ACTIVE_PENDING_STATUS_SET = new Set<TaskStatus>(ACTIVE_PENDING_STATUSES);
 
-type ProofRequestEventRow = {
-    task_id?: string | null;
-};
-
-export function buildProofRequestCountByTaskId(rows: ProofRequestEventRow[]): Map<string, number> {
-    const counts = new Map<string, number>();
-    for (const row of rows) {
-        const taskId = typeof row.task_id === "string" ? row.task_id : null;
-        if (!taskId) continue;
-        counts.set(taskId, (counts.get(taskId) || 0) + 1);
-    }
-    return counts;
-}
 
 function parseTimestamp(value: string | null | undefined): number | null {
     if (!value) return null;

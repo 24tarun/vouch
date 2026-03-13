@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildProofRequestCountByTaskId } from "../../src/actions/voucher";
+import { buildProofRequestCountByTaskId } from "../../src/lib/voucher-proof-request";
 
 test("proof request count aggregation groups PROOF_REQUESTED rows by task id", () => {
     const rows = [
