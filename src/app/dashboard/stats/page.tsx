@@ -44,23 +44,8 @@ export default async function OverviewPage() {
         }
     }
 
-    let timeoutAcceptedTaskIds = new Set<string>();
-    if (taskIds.length > 0) {
-        const { data: timeoutEventsRaw } = await supabase
-            .from("task_events")
-            .select("task_id")
-            .in("task_id", taskIds)
-            .eq("event_type", "VOUCHER_TIMEOUT");
-        const timeoutEvents = (timeoutEventsRaw || []) as Array<{ task_id: string | null }>;
-        timeoutAcceptedTaskIds = new Set(
-            timeoutEvents
-                .map((event) => event.task_id)
-                .filter((taskId): taskId is string => Boolean(taskId))
-        );
-    }
     const tasks = rawTasks.map((task) => ({
         ...task,
-        voucher_timeout_auto_accepted: timeoutAcceptedTaskIds.has(task.id),
         completion_proof: proofByTaskId.get(task.id) || null,
     }));
     const allSessions = (pomoSessionsResult.data as Array<{

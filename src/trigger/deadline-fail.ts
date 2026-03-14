@@ -27,7 +27,7 @@ export const deadlineFail = schedules.task({
             .from("tasks")
             .select("id, user_id, status, failure_cost_cents, deadline, google_sync_for_task, google_event_end_at")
             .in("status", ["CREATED", "POSTPONED"])
-            .or(`deadline.lt.${nowIso},google_event_end_at.lt.${nowIso}`) as any;
+            .or(`deadline.lt.${nowIso},and(google_sync_for_task.eq.true,google_event_end_at.lt.${nowIso})`) as any;
 
         const rawCandidates = (data || []) as Array<{
             id: string;

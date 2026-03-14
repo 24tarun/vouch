@@ -2,7 +2,7 @@
  * Trigger: recurrence-generator
  * Runs: Every hour at minute 0 (`0 * * * *`).
  * What it does when it runs:
- * 1) Loads all active recurrence_rules.
+ * 1) Loads all recurrence_rules (table only stores active rules).
  * 2) For each rule, evaluates whether a task should be generated for the current date in the rule's timezone.
  * 3) If due, creates a new CREATED task using the rule settings (title, voucher, cost, deadline, recurrence_rule_id).
  * 4) Updates recurrence_rules.last_generated_date so the same date is not generated twice.
@@ -24,14 +24,13 @@ export const recurrenceGenerator = schedules.task({
         const supabase = createAdminClient();
         console.log("Starting recurrence generator check...");
 
-        // Fetch active recurrence rules
+        // Fetch recurrence rules (table only stores active rules)
         // @ts-ignore
         const { data: rules, error } = await supabase
             .from("recurrence_rules")
             .select(
                 "id, user_id, voucher_id, title, description, failure_cost_cents, required_pomo_minutes, rule_config, timezone, last_generated_date, created_at, manual_reminder_offsets_ms, google_sync_for_rule, google_event_duration_minutes, google_event_color_id"
-            )
-            .eq("active", true) as { data: RecurrenceRule[] | null, error: any };
+            ) as { data: RecurrenceRule[] | null, error: any };
 
         if (error) {
             console.error("Failed to fetch recurrence rules:", error);
@@ -39,11 +38,11 @@ export const recurrenceGenerator = schedules.task({
         }
 
         if (!rules || rules.length === 0) {
-            console.log("No active recurrence rules found.");
+            console.log("No recurrence rules found.");
             return;
         }
 
-        console.log(`Processing ${rules.length} active rules...`);
+        console.log(`Processing ${rules.length} recurrence rules...`);
         let generatedCount = 0;
         const reminderDefaultsByUser = new Map<
             string,

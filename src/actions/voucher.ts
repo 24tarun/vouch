@@ -801,17 +801,6 @@ export async function getVouchHistoryPage(offsetInput: number, limitInput: numbe
 
     const currentPeriod = new Date().toISOString().slice(0, 7);
     const ownerIds = [...new Set(visibleRows.map((task) => task.user_id as string).filter(Boolean))];
-    const visibleTaskIds = visibleRows.map((task) => task.id as string).filter(Boolean);
-
-    let timeoutAcceptedTaskIds = new Set<string>();
-    if (visibleTaskIds.length > 0) {
-        // @ts-ignore
-        const { data: timeoutEvents } = await (supabase.from("task_events") as any)
-            .select("task_id")
-            .in("task_id", visibleTaskIds as any)
-            .eq("event_type", "VOUCHER_TIMEOUT");
-        timeoutAcceptedTaskIds = new Set(((timeoutEvents as any[]) || []).map((event) => event.task_id as string));
-    }
 
     const ownerCountEntries = await Promise.all(ownerIds.map(async (ownerId) => {
         const { count } = await supabase
@@ -827,7 +816,6 @@ export async function getVouchHistoryPage(offsetInput: number, limitInput: numbe
     const tasks = visibleRows.map((task) => ({
         ...task,
         rectify_passes_used: countsByOwner.get(task.user_id) || 0,
-        voucher_timeout_auto_accepted: timeoutAcceptedTaskIds.has(task.id),
     }));
 
     return {
@@ -837,55 +825,3 @@ export async function getVouchHistoryPage(offsetInput: number, limitInput: numbe
     };
 }
 
-export async function getVouchHistory() {
-    const supabase = await createClient();
-    const {
-        data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) return [];
-
-    const currentPeriod = new Date().toISOString().slice(0, 7);
-
-    // @ts-ignore
-    const { data: tasks } = await (supabase.from("tasks") as any)
-        .select(`
-      *,
-      user:profiles!tasks_user_id_fkey(*)
-    `)
-        .eq("voucher_id", (user as any).id)
-        .neq("user_id", (user as any).id)
-        .in("status", FINAL_HISTORY_STATUSES)
-        .order("updated_at", { ascending: false });
-
-    if (!tasks) return [];
-
-    const taskIds = (tasks as any[]).map((task) => task.id as string).filter(Boolean);
-    let timeoutAcceptedTaskIds = new Set<string>();
-    if (taskIds.length > 0) {
-        // @ts-ignore
-        const { data: timeoutEvents } = await (supabase.from("task_events") as any)
-            .select("task_id")
-            .in("task_id", taskIds as any)
-            .eq("event_type", "VOUCHER_TIMEOUT");
-        timeoutAcceptedTaskIds = new Set(((timeoutEvents as any[]) || []).map((event) => event.task_id as string));
-    }
-
-    const ownerIds = [...new Set((tasks as any[]).map((task) => task.user_id as string).filter(Boolean))];
-    const ownerCountEntries = await Promise.all(ownerIds.map(async (ownerId) => {
-        const { count } = await supabase
-            .from("rectify_passes" as any)
-            .select("*", { count: "exact", head: true })
-            .eq("user_id", ownerId as any)
-            .eq("period", currentPeriod);
-
-        return [ownerId, count || 0] as const;
-    }));
-
-    const countsByOwner = new Map<string, number>(ownerCountEntries);
-    return (tasks as any[]).map((task) => ({
-        ...task,
-        rectify_passes_used: countsByOwner.get(task.user_id) || 0,
-        voucher_timeout_auto_accepted: timeoutAcceptedTaskIds.has(task.id),
-    }));
-}

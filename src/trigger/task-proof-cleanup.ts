@@ -31,14 +31,31 @@ export const taskProofCleanup = schedules.task({
         const supabase = createAdminClient();
         const nowMs = Date.now();
 
-        const { data, error } = await (supabase.from("task_completion_proofs") as any)
-            .select(`
-                task_id,
-                upload_state,
-                created_at,
-                task:tasks!task_completion_proofs_task_id_fkey(status, voucher_response_deadline)
-            `)
-            .limit(1000);
+        const staleUploadCutoff = new Date(nowMs - STALE_PENDING_UPLOAD_MS).toISOString();
+        // Two targeted queries instead of a full table scan:
+        // 1. PENDING/FAILED proofs — always cleanup candidates
+        // 2. UPLOADED proofs older than 10 minutes — task may have moved out of AWAITING_VOUCHER
+        const uploadedCheckCutoff = new Date(nowMs - 10 * 60 * 1000).toISOString();
+        const selectFields = `
+            task_id,
+            upload_state,
+            created_at,
+            task:tasks!task_completion_proofs_task_id_fkey(status, voucher_response_deadline)
+        `;
+        const [{ data: pendingData, error: pendingError }, { data: uploadedData, error: uploadedError }] = await Promise.all([
+            (supabase.from("task_completion_proofs") as any)
+                .select(selectFields)
+                .in("upload_state", ["PENDING", "FAILED"])
+                .limit(500),
+            (supabase.from("task_completion_proofs") as any)
+                .select(selectFields)
+                .eq("upload_state", "UPLOADED")
+                .lt("created_at", uploadedCheckCutoff)
+                .limit(500),
+        ]);
+
+        const error = pendingError || uploadedError;
+        const data = [...(pendingData || []), ...(uploadedData || [])];
 
         if (error) {
             console.error("Failed to load proof candidates for cleanup:", error);

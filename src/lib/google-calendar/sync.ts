@@ -607,7 +607,6 @@ export async function upsertGoogleConnectionTokens(
 
     const row = {
         user_id: userId,
-        sync_enabled: false,
         sync_app_to_google_enabled: false,
         sync_google_to_app_enabled: false,
         google_account_email: accountEmail,
@@ -734,7 +733,6 @@ export async function enableGoogleCalendarAppToGoogleForUser(userId: string): Pr
 
     const { error } = await (supabase.from("google_calendar_connections") as any)
         .update({
-            sync_enabled: true,
             sync_app_to_google_enabled: true,
             last_error: null,
         } as any)
@@ -751,10 +749,8 @@ export async function disableGoogleCalendarAppToGoogleForUser(userId: string): P
 
     if (!connection) return;
 
-    const syncEnabledNext = Boolean(connection.sync_google_to_app_enabled);
     const { error } = await (supabase.from("google_calendar_connections") as any)
         .update({
-            sync_enabled: syncEnabledNext,
             sync_app_to_google_enabled: false,
             last_error: null,
         } as any)
@@ -799,7 +795,6 @@ export async function enableGoogleCalendarGoogleToAppForUser(userId: string): Pr
 
     const { error } = await (supabase.from("google_calendar_connections") as any)
         .update({
-            sync_enabled: true,
             sync_google_to_app_enabled: true,
             watch_channel_id: watch.id,
             watch_resource_id: watch.resourceId,
@@ -835,7 +830,6 @@ export async function disableGoogleCalendarGoogleToAppForUser(userId: string): P
 
     const { error } = await (supabase.from("google_calendar_connections") as any)
         .update({
-            sync_enabled: Boolean(connection.sync_app_to_google_enabled),
             sync_google_to_app_enabled: false,
             watch_channel_id: null,
             watch_resource_id: null,

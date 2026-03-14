@@ -48,7 +48,7 @@ export const voucherTimeout = schedules.task({
         const candidateIds = candidates.map((task) => task.id);
         const { data: updatedRows, error: bulkUpdateError } = await (supabase
             .from("tasks") as any)
-            .update({ status: "COMPLETED", updated_at: now })
+            .update({ status: "COMPLETED", voucher_timeout_auto_accepted: true, updated_at: now })
             .in("id", candidateIds as any)
             .eq("status", "AWAITING_VOUCHER" as any)
             .select("id");

@@ -164,7 +164,6 @@ export interface VoucherReminderLog {
 
 export interface GoogleCalendarConnection {
     user_id: string;
-    sync_enabled: boolean;
     sync_app_to_google_enabled: boolean;
     sync_google_to_app_enabled: boolean;
     import_only_tagged_google_events: boolean;
@@ -231,7 +230,6 @@ export interface RecurrenceRule {
     required_pomo_minutes: number | null;
     rule_config: RecurrenceRuleConfig;
     timezone: string;
-    active: boolean;
     google_sync_for_rule: boolean;
     google_event_duration_minutes?: number | null;
     google_event_color_id?: string | null;

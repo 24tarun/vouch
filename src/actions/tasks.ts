@@ -621,14 +621,16 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
         return { error: seededReminderInsert.error };
     }
 
-    const subtaskInsert = await insertTaskSubtasks(
-        supabase,
-        user.id,
-        (task as any).id,
-        normalizedSubtasks.titles
-    );
-    if (subtaskInsert.error) {
-        return { error: subtaskInsert.error };
+    if (!shouldAutoCompletePastEvent) {
+        const subtaskInsert = await insertTaskSubtasks(
+            supabase,
+            user.id,
+            (task as any).id,
+            normalizedSubtasks.titles
+        );
+        if (subtaskInsert.error) {
+            return { error: subtaskInsert.error };
+        }
     }
 
     // Event
@@ -869,7 +871,6 @@ export async function createTask(formData: FormData) {
                 required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,
                 rule_config: ruleConfig,
                 timezone: userTimezone,
-                active: true,
                 google_sync_for_rule: titleSelection.googleSyncForTask,
                 google_event_duration_minutes: eventDurationMinutes,
                 google_event_color_id: googleEventColorId,
@@ -946,14 +947,16 @@ export async function createTask(formData: FormData) {
         return { error: seededReminderInsert.error };
     }
 
-    const subtaskInsert = await insertTaskSubtasks(
-        supabase,
-        (user as any).id,
-        (task as any).id,
-        subtasksInput.titles
-    );
-    if (subtaskInsert.error) {
-        return { error: subtaskInsert.error };
+    if (!shouldAutoCompletePastEvent) {
+        const subtaskInsert = await insertTaskSubtasks(
+            supabase,
+            (user as any).id,
+            (task as any).id,
+            subtasksInput.titles
+        );
+        if (subtaskInsert.error) {
+            return { error: subtaskInsert.error };
+        }
     }
 
     // Log the creation event
@@ -2466,7 +2469,7 @@ export async function getTask(taskId: string) {
                     entry_type: "failure",
                 });
 
-                await (supabase.from("task_events") as any).insert({
+                const { error: deadlineEventError } = await (supabase.from("task_events") as any).insert({
                     task_id: (task as any).id,
                     event_type: "DEADLINE_MISSED",
                     actor_id: null,
@@ -2474,6 +2477,9 @@ export async function getTask(taskId: string) {
                     to_status: "FAILED",
                     metadata: { reason: "Deadline passed without completion" },
                 });
+                if (deadlineEventError && deadlineEventError.code !== "23505") {
+                    console.error("Failed to log DEADLINE_MISSED event:", deadlineEventError);
+                }
 
                 await enqueueGoogleCalendarUpsert((task as any).user_id, taskId);
 
@@ -2505,16 +2511,10 @@ export async function getTask(taskId: string) {
 
         if (isOwner || isVoucher) {
             const supabaseAdmin = createAdminClient();
-            const [{ data: proof }, { data: timeoutEvent }, { data: googleLink, error: googleLinkError }] = await Promise.all([
+            const [{ data: proof }, { data: googleLink, error: googleLinkError }] = await Promise.all([
                 (supabase.from("task_completion_proofs") as any)
                     .select("*")
                     .eq("task_id", taskId as any)
-                    .maybeSingle(),
-                (supabase.from("task_events") as any)
-                    .select("id")
-                    .eq("task_id", taskId as any)
-                    .eq("event_type", "VOUCHER_TIMEOUT")
-                    .limit(1)
                     .maybeSingle(),
                 (supabaseAdmin.from("google_calendar_task_links") as any)
                     .select("last_origin")
@@ -2534,7 +2534,6 @@ export async function getTask(taskId: string) {
                     : null;
 
             (task as any).completion_proof = proof || null;
-            (task as any).voucher_timeout_auto_accepted = Boolean(timeoutEvent);
             (task as any).google_sync_linked = Boolean(googleLink);
             (task as any).google_sync_last_origin = lastOrigin;
         }
@@ -2829,7 +2828,7 @@ export async function endPomoSession(
             .single();
 
         if (task?.status) {
-            await (supabase.from("task_events") as any).insert({
+            const { error: pomoEventError } = await (supabase.from("task_events") as any).insert({
                 task_id: session.task_id,
                 event_type: "POMO_COMPLETED",
                 actor_id: user.id,
@@ -2842,6 +2841,9 @@ export async function endPomoSession(
                     source,
                 },
             });
+            if (pomoEventError && pomoEventError.code !== "23505") {
+                console.error("Failed to log POMO_COMPLETED event:", pomoEventError);
+            }
 
             await sendNotification({
                 to: user.email || undefined,

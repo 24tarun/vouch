@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createTask } from "@/actions/tasks";
 import { Calendar, Check, Loader2, Repeat, User } from "lucide-react";
 import {
@@ -32,16 +32,14 @@ import {
     DEFAULT_EVENT_DURATION_MINUTES,
     MAX_POMO_DURATION_MINUTES,
 } from "@/lib/constants";
-import { parseClockToken, resolveEventSchedule } from "@/lib/task-title-event-time";
+import { resolveEventSchedule } from "@/lib/task-title-event-time";
 import {
     GOOGLE_EVENT_COLOR_OPTIONS,
-    extractEventColorMatches,
     findNearestColorHelperToken,
     replaceNearestColorHelperToken,
     stripEventColorTokens,
     validateEventColorUsage,
 } from "@/lib/task-title-event-color";
-import { shouldRenderTaskTitleOverlay } from "@/lib/task-title-overlay";
 import { toast } from "sonner";
 import {
     fromDateTimeLocalValue,
@@ -52,95 +50,23 @@ import {
     normalizeReminderDates,
     resolveDateSheetDraftSubmission,
 } from "@/lib/task-deadline-sheet";
+import {
+    extractWeekdayDateTokens,
+    resolveUpcomingWeekdayDate,
+    WEEKDAY_TOKEN_REGEX,
+} from "@/lib/task-title-weekday";
+import {
+    applyParserKeywordCompletion,
+    buildTaskTitleOverlayModel,
+    parseTaskInputTimeToken,
+} from "@/lib/task-input-editor";
 
 const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
 const TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/i;
 const ORDINAL_DATE_TOKEN_REGEX = /\b([12]?\d|3[01])(st|nd|rd|th)\b/gi;
 const SLASH_DATE_TOKEN_REGEX = /\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}))?\b/g;
-const HIGHLIGHT_EVENT_TOKEN_REGEX = /(^|\s)(-event)(?=\s|$)/gi;
-const HIGHLIGHT_TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g;
-const HIGHLIGHT_EVENT_START_TOKEN_REGEX = /(^|\s)(-start\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
-const HIGHLIGHT_EVENT_END_TOKEN_REGEX = /(^|\s)(-end\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
-const HIGHLIGHT_EVENT_COLOR_HELPER_TOKEN_REGEX = /(^|\s)(-color)(?=\s|$)/gi;
-const HIGHLIGHT_TIMER_TOKEN_REGEX = /\b(timer)\s+(\d+)\b/gi;
-const HIGHLIGHT_POMO_TOKEN_REGEX = /\b(pomo)\s+(\d+)\b/gi;
-const HIGHLIGHT_REMIND_TOKEN_REGEX = /\b(remind)\s+(\d{1,2}:\d{2}|\d{4})\b/gi;
-const HIGHLIGHT_TOMORROW_TOKEN_REGEX = /\b(tmrw|tomorrow)\b/gi;
-const HIGHLIGHT_VOUCH_TOKEN_REGEX = /(^|\s)(vouch|\.v)\s+(me|self|myself|[^\s/]+)(?=\s|$|\/)/gi;
-const HIGHLIGHT_ORDINAL_DATE_TOKEN_REGEX = /\b([12]?\d|3[01])(st|nd|rd|th)\b/gi;
-const HIGHLIGHT_SLASH_DATE_TOKEN_REGEX = /\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}))?\b/g;
-const VALUE_EXPECTING_KEYWORDS = new Set(["-start", "-end", "-color", "remind", "timer", "pomo", "vouch", ".v"]);
-const COLOR_COMPLETION_TOKENS = [
-    ...GOOGLE_EVENT_COLOR_OPTIONS.map((option) => option.aliasToken),
-    ...GOOGLE_EVENT_COLOR_OPTIONS.map((option) => option.nativeToken),
-    "-lightgreen",
-    "-light-green",
-    "-lightblue",
-    "-light-blue",
-];
-const PARSER_KEYWORD_COMPLETION_TOKENS = Array.from(new Set([
-    "-event",
-    "-start",
-    "-end",
-    "-color",
-    "remind",
-    "timer",
-    "pomo",
-    "vouch",
-    ".v",
-    "tmrw",
-    "tomorrow",
-    ...COLOR_COMPLETION_TOKENS,
-]));
-
-interface TitleHighlightSegment {
-    text: string;
-    className: string;
-    style?: CSSProperties;
-}
-
-interface ParserKeywordCompletion {
-    fragmentStart: number;
-    fragment: string;
-    suggestion: string;
-    suffix: string;
-    insertText: string;
-}
-
-function parseTimeToken(token: string, allowHourOnly: boolean) {
-    const normalized = token.trim();
-    let hours = Number.NaN;
-    let minutes = Number.NaN;
-
-    const colonMatch = normalized.match(/^(\d{1,2}):(\d{2})$/);
-    if (colonMatch) {
-        hours = Number.parseInt(colonMatch[1], 10);
-        minutes = Number.parseInt(colonMatch[2], 10);
-    } else {
-        const compactFourMatch = normalized.match(/^(\d{4})$/);
-        if (compactFourMatch) {
-            hours = Number.parseInt(compactFourMatch[1].slice(0, 2), 10);
-            minutes = Number.parseInt(compactFourMatch[1].slice(2, 4), 10);
-        } else {
-            const compactThreeMatch = normalized.match(/^(\d{3})$/);
-            if (compactThreeMatch) {
-                hours = Number.parseInt(compactThreeMatch[1].slice(0, 1), 10);
-                minutes = Number.parseInt(compactThreeMatch[1].slice(1, 3), 10);
-            } else if (allowHourOnly) {
-                const hourOnlyMatch = normalized.match(/^(\d{1,2})$/);
-                if (hourOnlyMatch) {
-                    hours = Number.parseInt(hourOnlyMatch[1], 10);
-                    minutes = 0;
-                }
-            }
-        }
-    }
-
-    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
-    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-
-    return { hours, minutes };
-}
+const TITLE_TEXT_METRICS_CLASS =
+    "text-lg font-medium leading-normal [font-kerning:none] [font-variant-ligatures:none] [font-feature-settings:'liga'_0,'clig'_0]";
 
 function parseTimerMinutesToken(text: string): number | null {
     const match = text.match(/\btimer\s+(\d+)\b/i);
@@ -231,205 +157,6 @@ function formatTimeUntilDeadline(deadline: Date, now: Date = new Date()): string
     return `${parts.join(" ")} until deadline`;
 }
 
-function buildTitleHighlightSegments(text: string): TitleHighlightSegment[] {
-    if (!text) return [{ text: "", className: "text-white" }];
-
-    const classNames = Array<string>(text.length).fill("text-white");
-    const inlineStyles = Array<CSSProperties | undefined>(text.length).fill(undefined);
-    const applyKeywordRange = (start: number, end: number) => {
-        const clampedStart = Math.max(0, start);
-        const clampedEnd = Math.min(text.length, end);
-        for (let index = clampedStart; index < clampedEnd; index += 1) {
-            if (classNames[index] === "text-white") {
-                classNames[index] = "text-orange-400";
-            }
-        }
-    };
-    const applyColorRange = (start: number, end: number, colorHex: string) => {
-        const clampedStart = Math.max(0, start);
-        const clampedEnd = Math.min(text.length, end);
-        for (let index = clampedStart; index < clampedEnd; index += 1) {
-            classNames[index] = "";
-            inlineStyles[index] = { color: colorHex };
-        }
-    };
-
-    const isEventTask = EVENT_TOKEN_REGEX.test(text);
-
-    for (const match of text.matchAll(HIGHLIGHT_EVENT_TOKEN_REGEX)) {
-        if (!match[2]) continue;
-        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        applyKeywordRange(start, start + match[2].length);
-    }
-
-    if (!isEventTask) {
-        for (const match of text.matchAll(HIGHLIGHT_TIME_TOKEN_REGEX)) {
-            const rawToken = match[0];
-            const parsed = parseTimeToken(rawToken.slice(1), true);
-            if (!parsed) continue;
-            const start = match.index ?? 0;
-            applyKeywordRange(start, start + rawToken.length);
-        }
-    }
-
-    for (const match of text.matchAll(HIGHLIGHT_EVENT_START_TOKEN_REGEX)) {
-        if (!match[2] || !match[3]) continue;
-        const parsed = parseClockToken(match[3]);
-        if (!parsed) continue;
-        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        applyKeywordRange(start, start + match[2].length);
-    }
-
-    for (const match of text.matchAll(HIGHLIGHT_EVENT_END_TOKEN_REGEX)) {
-        if (!match[2] || !match[3]) continue;
-        const parsed = parseClockToken(match[3]);
-        if (!parsed) continue;
-        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        applyKeywordRange(start, start + match[2].length);
-    }
-
-    for (const match of text.matchAll(HIGHLIGHT_EVENT_COLOR_HELPER_TOKEN_REGEX)) {
-        if (!match[2]) continue;
-        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        applyKeywordRange(start, start + match[2].length);
-    }
-
-    for (const match of text.matchAll(HIGHLIGHT_TIMER_TOKEN_REGEX)) {
-        if (!match[0] || !match[2]) continue;
-        const parsed = Number.parseInt(match[2], 10);
-        if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) continue;
-        const start = match.index ?? 0;
-        applyKeywordRange(start, start + match[0].length);
-    }
-
-    for (const match of text.matchAll(HIGHLIGHT_POMO_TOKEN_REGEX)) {
-        if (!match[0] || !match[2]) continue;
-        const parsed = Number.parseInt(match[2], 10);
-        if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_POMO_DURATION_MINUTES) continue;
-        const start = match.index ?? 0;
-        applyKeywordRange(start, start + match[0].length);
-    }
-
-    for (const match of text.matchAll(HIGHLIGHT_REMIND_TOKEN_REGEX)) {
-        if (!match[0] || !match[2]) continue;
-        const parsed = parseTimeToken(match[2], false);
-        if (!parsed) continue;
-        const start = match.index ?? 0;
-        applyKeywordRange(start, start + match[0].length);
-    }
-
-    for (const match of text.matchAll(HIGHLIGHT_TOMORROW_TOKEN_REGEX)) {
-        if (!match[0]) continue;
-        const start = match.index ?? 0;
-        applyKeywordRange(start, start + match[0].length);
-    }
-
-    for (const match of text.matchAll(HIGHLIGHT_VOUCH_TOKEN_REGEX)) {
-        if (!match[2] || !match[3]) continue;
-        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        applyKeywordRange(start, start + `${match[2]} ${match[3]}`.length);
-    }
-
-    for (const match of text.matchAll(HIGHLIGHT_ORDINAL_DATE_TOKEN_REGEX)) {
-        if (!match[0] || !match[1]) continue;
-        const parsedDay = Number.parseInt(match[1], 10);
-        if (!Number.isInteger(parsedDay) || parsedDay < 1 || parsedDay > 31) continue;
-        const start = match.index ?? 0;
-        applyKeywordRange(start, start + match[0].length);
-    }
-
-    for (const match of text.matchAll(HIGHLIGHT_SLASH_DATE_TOKEN_REGEX)) {
-        if (!match[0]) continue;
-        const start = match.index ?? 0;
-        applyKeywordRange(start, start + match[0].length);
-    }
-
-    for (const colorMatch of extractEventColorMatches(text)) {
-        const colorOption = GOOGLE_EVENT_COLOR_OPTIONS.find((option) => option.colorId === colorMatch.colorId);
-        if (!colorOption) continue;
-        applyColorRange(colorMatch.start, colorMatch.end, colorOption.swatchHex);
-    }
-
-    const segments: TitleHighlightSegment[] = [];
-    let segmentStart = 0;
-    for (let index = 1; index < text.length; index += 1) {
-        const classChanged = classNames[index] !== classNames[index - 1];
-        const styleChanged = inlineStyles[index]?.color !== inlineStyles[index - 1]?.color;
-        if (!classChanged && !styleChanged) continue;
-        segments.push({
-            text: text.slice(segmentStart, index),
-            className: classNames[index - 1],
-            style: inlineStyles[index - 1],
-        });
-        segmentStart = index;
-    }
-    segments.push({
-        text: text.slice(segmentStart),
-        className: classNames[text.length - 1],
-        style: inlineStyles[text.length - 1],
-    });
-
-    return segments;
-}
-
-function getParserKeywordCompletion(text: string, caretIndex: number, friends: Profile[]): ParserKeywordCompletion | null {
-    if (caretIndex !== text.length) return null;
-
-    const leading = text.slice(0, caretIndex);
-
-    // Voucher name completion: detect `vouch <fragment>` or `.v <fragment>` at end of input.
-    const voucherMatch = leading.match(/(?:^|\s)(?:vouch|\.v)\s+([^\s]+)$/i);
-    if (voucherMatch) {
-        const nameFragment = voucherMatch[1];
-        const normalized = nameFragment.toLowerCase();
-        if (!["me", "self", "myself"].includes(normalized)) {
-            const match = friends.find(
-                (f) => f.username.toLowerCase().startsWith(normalized) && f.username.toLowerCase() !== normalized
-            );
-            if (match) {
-                const suffix = match.username.slice(nameFragment.length);
-                if (suffix) {
-                    return {
-                        fragmentStart: caretIndex - nameFragment.length,
-                        fragment: nameFragment,
-                        suggestion: match.username,
-                        suffix,
-                        insertText: match.username,
-                    };
-                }
-            }
-        }
-        return null;
-    }
-
-    const tokenMatch = leading.match(/(^|\s)([^\s]+)$/);
-    if (!tokenMatch) return null;
-
-    const fragment = tokenMatch[2];
-    if (!fragment || fragment.length < 2) return null;
-    if (/[0-9:\/]/.test(fragment)) return null;
-
-    const normalized = fragment.toLowerCase();
-    if (PARSER_KEYWORD_COMPLETION_TOKENS.includes(normalized)) return null;
-
-    const suggestion = PARSER_KEYWORD_COMPLETION_TOKENS.find((keyword) => keyword.startsWith(normalized));
-    if (!suggestion) return null;
-
-    const insertText = VALUE_EXPECTING_KEYWORDS.has(suggestion)
-        ? `${suggestion} `
-        : suggestion;
-    const suffix = insertText.slice(fragment.length);
-    if (!suffix) return null;
-
-    return {
-        fragmentStart: caretIndex - fragment.length,
-        fragment,
-        suggestion,
-        suffix,
-        insertText,
-    };
-}
-
 interface TaskInputProps {
     friends: Profile[];
     defaultFailureCostEuros: string;
@@ -504,6 +231,7 @@ export function TaskInput({
     const colorPickerListRef = useRef<HTMLDivElement>(null);
     const colorOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
     const lastCalendarTapRef = useRef(0);
+    const isComposingRef = useRef(false);
     const pendingCaretPositionRef = useRef<number | null>(null);
     const currencySymbol = getCurrencySymbol(defaultCurrency);
     const failureCostBounds = getFailureCostBounds(defaultCurrency);
@@ -513,7 +241,6 @@ export function TaskInput({
             defaultEventDurationMinutes <= 720
             ? defaultEventDurationMinutes
             : DEFAULT_EVENT_DURATION_MINUTES;
-    const titleHighlightSegments = buildTitleHighlightSegments(title);
     const nearestColorHelperToken =
         isTitleFocused ? findNearestColorHelperToken(title, titleCaretIndex) : null;
     const isCaretNearColorHelper = Boolean(
@@ -526,14 +253,13 @@ export function TaskInput({
         isCaretNearColorHelper &&
         !isColorPickerDismissed
     );
-    const inlineKeywordCompletion = useMemo(() => {
-        if (!isTitleFocused || isColorPickerVisible) return null;
-        return getParserKeywordCompletion(title, titleCaretIndex, friends);
-    }, [isTitleFocused, isColorPickerVisible, title, titleCaretIndex, friends]);
-    const showTitleOverlay = shouldRenderTaskTitleOverlay(
-        title,
+    const {
         titleHighlightSegments,
-        inlineKeywordCompletion?.suffix
+        inlineKeywordCompletion,
+        showTitleOverlay,
+    } = useMemo(
+        () => buildTaskTitleOverlayModel(title, titleCaretIndex, isTitleFocused, isColorPickerVisible, friends),
+        [friends, isColorPickerVisible, isTitleFocused, title, titleCaretIndex]
     );
 
     const syncTitleHighlightScroll = useCallback(() => {
@@ -541,14 +267,23 @@ export function TaskInput({
         titleHighlightRef.current.scrollLeft = titleInputRef.current.scrollLeft;
     }, []);
 
-    const syncTitleCaretFromInput = useCallback(() => {
-        const input = titleInputRef.current;
+    const syncTitleCaretFromElement = useCallback((input: HTMLInputElement | null) => {
         if (!input) return;
         setTitleCaretIndex(input.selectionStart ?? input.value.length);
     }, []);
 
-    // Apply pending caret position synchronously after DOM update (before browser paint),
-    // so keyup's syncTitleCaretFromInput reads the correct position instead of stale value.
+    const syncTitleCaretFromInput = useCallback(() => {
+        syncTitleCaretFromElement(titleInputRef.current);
+    }, [syncTitleCaretFromElement]);
+
+    const commitTitleAndCaret = useCallback((nextTitle: string, nextCaretIndex: number) => {
+        setTitle(nextTitle);
+        setTitleCaretIndex(nextCaretIndex);
+        pendingCaretPositionRef.current = nextCaretIndex;
+    }, []);
+
+    // Apply pending caret position synchronously after DOM update (before browser paint)
+    // so visual selection and overlay model stay in lockstep across desktop and mobile keyboards.
     useLayoutEffect(() => {
         const pos = pendingCaretPositionRef.current;
         if (pos === null) return;
@@ -557,8 +292,9 @@ export function TaskInput({
         if (!input) return;
         input.focus();
         input.setSelectionRange(pos, pos);
+        syncTitleCaretFromElement(input);
         syncTitleHighlightScroll();
-    });
+    }, [syncTitleCaretFromElement, syncTitleHighlightScroll]);
 
     const applyColorPickerSelection = useCallback((aliasToken: string) => {
         const input = titleInputRef.current;
@@ -566,22 +302,15 @@ export function TaskInput({
         const replacement = replaceNearestColorHelperToken(title, caretIndex, aliasToken);
         if (!replacement.replaced) return;
 
-        setTitle(replacement.nextTitle);
-        setTitleCaretIndex(replacement.nextCaretIndex);
+        commitTitleAndCaret(replacement.nextTitle, replacement.nextCaretIndex);
         setIsColorPickerDismissed(false);
-        pendingCaretPositionRef.current = replacement.nextCaretIndex;
-    }, [title, titleCaretIndex]);
+    }, [commitTitleAndCaret, title, titleCaretIndex]);
 
     const applyInlineKeywordCompletion = useCallback(() => {
         if (!inlineKeywordCompletion) return;
-        const fragmentEnd = inlineKeywordCompletion.fragmentStart + inlineKeywordCompletion.fragment.length;
-        const nextTitle = `${title.slice(0, inlineKeywordCompletion.fragmentStart)}${inlineKeywordCompletion.insertText}${title.slice(fragmentEnd)}`;
-        const nextCaretIndex = inlineKeywordCompletion.fragmentStart + inlineKeywordCompletion.insertText.length;
-
-        setTitle(nextTitle);
-        setTitleCaretIndex(nextCaretIndex);
-        pendingCaretPositionRef.current = nextCaretIndex;
-    }, [inlineKeywordCompletion, title]);
+        const { nextTitle, nextCaretIndex } = applyParserKeywordCompletion(title, inlineKeywordCompletion);
+        commitTitleAndCaret(nextTitle, nextCaretIndex);
+    }, [commitTitleAndCaret, inlineKeywordCompletion, title]);
 
     useEffect(() => {
         if (!nearestColorHelperToken) return;
@@ -720,7 +449,7 @@ export function TaskInput({
         let match: RegExpExecArray | null;
 
         while ((match = regex.exec(text)) !== null) {
-            const parsed = parseTimeToken(match[1], false);
+            const parsed = parseTaskInputTimeToken(match[1], false);
             if (!parsed) continue;
             results.push(parsed);
         }
@@ -730,10 +459,11 @@ export function TaskInput({
 
     const resolveEventAnchorDateFromTitle = useCallback((text: string, now: Date = new Date()) => {
         const parsedDateTokens = parseDateTokens(text);
-        if (parsedDateTokens.length > 1) {
+        const parsedWeekdayTokens = extractWeekdayDateTokens(text);
+        if (parsedDateTokens.length > 1 || parsedWeekdayTokens.length > 1) {
             return {
                 anchorDate: getDefaultDeadline(now),
-                error: "Use only one date token (for example: 28th or 05/03).",
+                error: "Use only one date token (for example: monday, 28th or 05/03).",
             };
         }
 
@@ -756,6 +486,12 @@ export function TaskInput({
                 anchorDate: new Date(year, month - 1, day, 12, 0, 0, 0),
                 error: null as string | null,
             };
+        }
+
+        if (parsedWeekdayTokens.length === 1) {
+            const anchorDate = resolveUpcomingWeekdayDate(parsedWeekdayTokens[0].weekday, now);
+            anchorDate.setHours(12, 0, 0, 0);
+            return { anchorDate, error: null as string | null };
         }
 
         if (hasTomorrowKeyword) {
@@ -814,16 +550,17 @@ export function TaskInput({
         }
 
         const parsedDateTokens = parseDateTokens(text);
-        if (parsedDateTokens.length > 1) {
+        const parsedWeekdayTokens = extractWeekdayDateTokens(text);
+        if (parsedDateTokens.length > 1 || parsedWeekdayTokens.length > 1) {
             return {
                 deadline: defaultDeadline,
-                error: "Use only one date token (for example: 28th or 05/03).",
+                error: "Use only one date token (for example: monday, 28th or 05/03).",
             };
         }
 
         const hasTomorrowKeyword = TOMORROW_KEYWORD_REGEX.test(text);
         const timeMatch = text.match(TIME_TOKEN_REGEX);
-        const parsedTime = timeMatch ? parseTimeToken(timeMatch[1], true) : null;
+        const parsedTime = timeMatch ? parseTaskInputTimeToken(timeMatch[1], true) : null;
 
         if (timeMatch && !parsedTime) {
             return { deadline: defaultDeadline, error: "Deadline is invalid." };
@@ -848,6 +585,18 @@ export function TaskInput({
                 0,
                 0
             );
+
+            if (deadline.getTime() <= now.getTime()) {
+                return { deadline, error: "Deadline must be in the future." };
+            }
+
+            return { deadline, error: null as string | null };
+        }
+
+        if (parsedWeekdayTokens.length === 1) {
+            const weekdayToken = parsedWeekdayTokens[0];
+            const deadline = resolveUpcomingWeekdayDate(weekdayToken.weekday, now);
+            deadline.setHours(parsedTime?.hours ?? 23, parsedTime?.minutes ?? 59, 0, 0);
 
             if (deadline.getTime() <= now.getTime()) {
                 return { deadline, error: "Deadline must be in the future." };
@@ -971,6 +720,13 @@ export function TaskInput({
     };
 
     const handleTitleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        syncTitleCaretFromInput();
+
+        const isComposing = isComposingRef.current || e.nativeEvent.isComposing;
+        if (isComposing && (e.key === "Enter" || e.key === "Tab")) {
+            return;
+        }
+
         if (isColorPickerVisible) {
             if (e.key === "ArrowDown") {
                 e.preventDefault();
@@ -1004,7 +760,6 @@ export function TaskInput({
         }
 
         if (e.key !== "Enter") return;
-        if (e.nativeEvent.isComposing) return;
         e.preventDefault();
         formRef.current?.requestSubmit();
     };
@@ -1038,9 +793,9 @@ export function TaskInput({
         }
     }, [title, friends, isDeadlineManuallyPicked, selfUserId, resolveDeadlineFromTitle]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         syncTitleHighlightScroll();
-    }, [title, syncTitleHighlightScroll]);
+    }, [showTitleOverlay, syncTitleHighlightScroll, title, titleCaretIndex]);
 
     const stripMetadata = (text: string) => {
         const withoutStandardTokens = text
@@ -1051,6 +806,7 @@ export function TaskInput({
             .replace(/\b(?:0?[1-9]|[12]\d|3[01])\/(?:0?[1-9]|1[0-2])(?:\/\d{4})?\b/g, "")
             .replace(/\bremind\s+(?:\d{1,2}:\d{2}|\d{4})\b/gi, "")
             .replace(/\b(?:tmrw|tomorrow)\b/gi, "")
+            .replace(new RegExp(WEEKDAY_TOKEN_REGEX.source, "gi"), "")
             .replace(/(?:\bvouch|\.v)\s+[^\s/]+/gi, "")
             .replace(/\bpomo\s+\d+\b/gi, "")
             .replace(/\btimer\s+\d+\b/gi, "")
@@ -1274,19 +1030,35 @@ export function TaskInput({
                         <div
                             ref={titleHighlightRef}
                             aria-hidden="true"
-                            className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-5 py-4 text-lg font-medium leading-normal text-white"
+                            className={cn(
+                                "pointer-events-none absolute inset-0 overflow-hidden px-5 py-4 text-white",
+                                TITLE_TEXT_METRICS_CLASS
+                            )}
                         >
-                            {titleHighlightSegments.map((segment, index) => (
-                                <span
-                                    key={`${index}-${segment.text}`}
-                                    className={segment.className || undefined}
-                                    style={segment.style}
-                                >
-                                    {segment.text}
-                                </span>
-                            ))}
+                            <span className="whitespace-pre">
+                                {titleHighlightSegments.map((segment, index) => {
+                                    const overlayClassName =
+                                        segment.style?.color
+                                            ? undefined
+                                            : segment.className === "text-white"
+                                                ? "text-transparent"
+                                                : segment.className;
+                                    return (
+                                        <span
+                                            key={`${index}-${segment.text}`}
+                                            className={overlayClassName}
+                                            style={segment.style}
+                                        >
+                                            {segment.text}
+                                        </span>
+                                    );
+                                })}
+                            </span>
                             {inlineKeywordCompletion?.suffix && (
-                                <span className="text-slate-500/75">
+                                <span
+                                    data-testid="task-input-completion-suffix"
+                                    className="whitespace-pre text-slate-500/75"
+                                >
                                     {inlineKeywordCompletion.suffix}
                                 </span>
                             )}
@@ -1297,13 +1069,12 @@ export function TaskInput({
                         type="text"
                         value={title}
                         onChange={(e) => {
-                            setTitle(e.target.value);
-                            setTitleCaretIndex(e.target.selectionStart ?? e.target.value.length);
+                            setTitle(e.currentTarget.value);
+                            syncTitleCaretFromElement(e.currentTarget);
                         }}
                         onKeyDown={handleTitleKeyDown}
-                        onKeyUp={syncTitleCaretFromInput}
-                        onClick={syncTitleCaretFromInput}
                         onSelect={syncTitleCaretFromInput}
+                        onClick={syncTitleCaretFromInput}
                         onFocus={() => {
                             setIsTitleFocused(true);
                             syncTitleCaretFromInput();
@@ -1311,12 +1082,19 @@ export function TaskInput({
                         onBlur={() => {
                             setIsTitleFocused(false);
                         }}
+                        onCompositionStart={() => {
+                            isComposingRef.current = true;
+                        }}
+                        onCompositionEnd={(e) => {
+                            isComposingRef.current = false;
+                            syncTitleCaretFromElement(e.currentTarget);
+                        }}
                         onScroll={syncTitleHighlightScroll}
                         enterKeyHint="done"
                         placeholder="click the bulb button on the right"
                         className={cn(
-                            "w-full bg-transparent border-none px-5 py-4 text-lg font-medium leading-normal text-white placeholder:text-slate-500/70 focus:outline-none transition-all",
-                            showTitleOverlay && "text-transparent caret-white"
+                            "w-full bg-transparent border-none px-5 py-4 text-white placeholder:text-slate-500/70 focus:outline-none transition-all caret-white",
+                            TITLE_TEXT_METRICS_CLASS
                         )}
                         disabled={isLoading}
                     />

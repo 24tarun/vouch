@@ -366,6 +366,37 @@ export async function deleteAccount(): Promise<{ success: true } | { error: stri
     return { success: true };
 }
 
+export async function getActiveVoucherTasks():
+Promise<{ tasks: Array<{ id: string; title: string; ownerUsername: string }> } | { error: string }> {
+    const supabase = await createClient();
+    const {
+        data: { user },
+        error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+        return { error: "Not authenticated" };
+    }
+
+    const supabaseAdmin = createAdminClient();
+    const { data, error } = await (supabaseAdmin.from("tasks") as any)
+        .select("id, title, owner:profiles!tasks_user_id_fkey(username)")
+        .eq("voucher_id", user.id as any)
+        .in("status", ["CREATED", "POSTPONED", "AWAITING_VOUCHER", "MARKED_COMPLETED"] as any);
+
+    if (error) {
+        return { error: error.message };
+    }
+
+    const tasks = ((data as any[]) || []).map((task) => ({
+        id: String(task.id),
+        title: String(task.title || ""),
+        ownerUsername: String(task.owner?.username || "unknown"),
+    }));
+
+    return { tasks };
+}
+
 export async function getUser() {
     const supabase = await createClient();
     const {

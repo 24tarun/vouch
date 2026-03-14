@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { deleteAccount, updateUserDefaults, updateUsername } from "@/actions/auth";
+import { deleteAccount, getActiveVoucherTasks, updateUserDefaults, updateUsername } from "@/actions/auth";
 import { addFriend, getFriends, removeFriend } from "@/actions/friends";
 import {
     disconnectGoogleCalendar,
@@ -55,6 +55,12 @@ interface SettingsClientProps {
     friends: Profile[];
     googleCalendarIntegration: GoogleCalendarIntegrationState;
 }
+
+type VoucherConflictTask = {
+    id: string;
+    title: string;
+    ownerUsername: string;
+};
 
 export default function SettingsClient({
     profile,
@@ -118,6 +124,9 @@ export default function SettingsClient({
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
     const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
     const [deleteAccountSuccess, setDeleteAccountSuccess] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [voucherConflicts, setVoucherConflicts] = useState<VoucherConflictTask[]>([]);
+    const [isCheckingVoucherConflicts, setIsCheckingVoucherConflicts] = useState(false);
     const [googleConnected, setGoogleConnected] = useState(googleCalendarIntegration.connected);
     const [googleSyncAppToGoogleEnabled, setGoogleSyncAppToGoogleEnabled] = useState(
         googleCalendarIntegration.syncAppToGoogleEnabled
@@ -594,13 +603,8 @@ export default function SettingsClient({
         }
     }
 
-    async function handleDeleteAccount() {
+    async function performAccountDeletion() {
         if (isDeletingAccount || deleteAccountSuccess) return;
-
-        const confirmed = window.confirm(
-            "This permanently deletes your account and all associated data. This action cannot be undone. Continue?"
-        );
-        if (!confirmed) return;
 
         setIsDeletingAccount(true);
         setDeleteAccountError(null);
@@ -623,6 +627,35 @@ export default function SettingsClient({
             setDeleteAccountError("Failed to delete account.");
             setIsDeletingAccount(false);
         }
+    }
+
+    async function handleDeleteAccount() {
+        if (isDeletingAccount || deleteAccountSuccess || isCheckingVoucherConflicts) return;
+
+        setIsCheckingVoucherConflicts(true);
+        setDeleteAccountError(null);
+
+        try {
+            const result = await getActiveVoucherTasks();
+            if ("error" in result) {
+                setDeleteAccountError(result.error);
+                return;
+            }
+
+            setVoucherConflicts(result.tasks);
+            setShowDeleteModal(true);
+        } catch (error) {
+            console.error(error);
+            setDeleteAccountError("Failed to check active voucher tasks.");
+        } finally {
+            setIsCheckingVoucherConflicts(false);
+        }
+    }
+
+    async function handleDeleteAccountConfirm() {
+        if (isDeletingAccount || deleteAccountSuccess) return;
+        setShowDeleteModal(false);
+        await performAccountDeletion();
     }
 
     return (
@@ -1181,10 +1214,16 @@ export default function SettingsClient({
                         type="button"
                         variant="destructive"
                         onClick={handleDeleteAccount}
-                        disabled={isDeletingAccount || deleteAccountSuccess}
+                        disabled={isDeletingAccount || deleteAccountSuccess || isCheckingVoucherConflicts}
                         className="bg-red-700 hover:bg-red-600 text-white"
                     >
-                        {deleteAccountSuccess ? "Account Deleted" : isDeletingAccount ? "Deleting Account..." : "Delete Account"}
+                        {deleteAccountSuccess
+                            ? "Account Deleted"
+                            : isDeletingAccount
+                                ? "Deleting Account..."
+                                : isCheckingVoucherConflicts
+                                    ? "Checking..."
+                                    : "Delete Account"}
                     </Button>
                 </CardContent>
             </Card>
@@ -1203,6 +1242,60 @@ export default function SettingsClient({
                     </p>
                 </CardContent>
             </Card>
+
+            {showDeleteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+                    <div className="w-full max-w-xl rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+                        <h3 className="text-lg font-semibold text-white">
+                            {voucherConflicts.length > 0
+                                ? "You are an active voucher"
+                                : "Delete account?"}
+                        </h3>
+
+                        {voucherConflicts.length > 0 ? (
+                            <div className="mt-4 space-y-4">
+                                <p className="text-sm text-slate-300">
+                                    Deleting your account will remove you as voucher for these tasks. The task owners will not be notified.
+                                </p>
+                                <ul className="max-h-56 overflow-auto rounded-lg border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-200">
+                                    {voucherConflicts.map((task) => (
+                                        <li key={task.id} className="py-1">
+                                            {"\u2022"} {task.title} {"\u2014"} owned by @{task.ownerUsername}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ) : (
+                            <p className="mt-4 text-sm text-slate-300">
+                                This permanently deletes your account and all associated data. This action cannot be undone.
+                            </p>
+                        )}
+
+                        <div className="mt-6 flex justify-end gap-3">
+                            <Button
+                                type="button"
+                                onClick={() => setShowDeleteModal(false)}
+                                disabled={isDeletingAccount}
+                                className="bg-slate-800 text-slate-100 hover:bg-slate-700"
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="button"
+                                onClick={handleDeleteAccountConfirm}
+                                disabled={isDeletingAccount}
+                                className="bg-red-700 hover:bg-red-600 text-white"
+                            >
+                                {isDeletingAccount
+                                    ? "Deleting Account..."
+                                    : voucherConflicts.length > 0
+                                        ? "Delete Anyway"
+                                        : "Delete Account"}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </div>
     );
