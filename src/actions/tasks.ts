@@ -37,6 +37,10 @@ import {
     stripEventColorTokens,
     validateEventColorUsage,
 } from "@/lib/task-title-event-color";
+import {
+    parseProofRequiredFromTitle,
+    stripProofRequiredTokens,
+} from "@/lib/task-title-parser";
 import { isValidPomoDurationMinutes } from "@/lib/pomodoro";
 import { normalizeProofTimestampText } from "@/lib/proof-timestamp";
 
@@ -55,6 +59,8 @@ const INVALID_REQUIRED_POMO_ERROR =
 const INVALID_TASK_PROOF_ERROR = "Invalid proof payload.";
 const TASK_PROOF_TOO_LARGE_ERROR = "Proof must be 5MB or less.";
 const TASK_PROOF_VIDEO_TOO_LONG_ERROR = "Video proof must be 15 seconds or less.";
+const REQUIRED_PROOF_FOR_COMPLETION_ERROR = "Attach proof before marking this task complete.";
+const INVALID_REQUIRES_PROOF_ERROR = "Invalid requires-proof payload.";
 const TITLE_REQUIRED_ERROR = "Title cannot be empty.";
 
 function isValidTimeZone(timeZone: string): boolean {
@@ -155,12 +161,12 @@ async function enqueueGoogleCalendarDelete(
 
 function normalizeTaskTitleAndSyncKind(rawTitle: string): { normalizedTitle: string; googleSyncForTask: boolean } {
     const hasEventToken = /(^|\s)-event(?=\s|$)/i.test(rawTitle);
-    const normalizedTitle = stripEventColorTokens(rawTitle)
+    const normalizedTitle = stripProofRequiredTokens(stripEventColorTokens(rawTitle)
         .replace(/(^|\s)-event(?=\s|$)/gi, " ")
         .replace(/(?:^|\s)-start\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
         .replace(/(?:^|\s)-end\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
         .replace(/\s+/g, " ")
-        .trim();
+        .trim());
 
     return {
         normalizedTitle,
@@ -345,6 +351,29 @@ function parseRequiredPomoMinutesFromFormData(
     return { requiredPomoMinutes: parsed };
 }
 
+function parseRequiresProofFromFormData(
+    formValue: FormDataEntryValue | null,
+    fallback: boolean
+): { requiresProof: boolean; error?: string } {
+    if (formValue == null || formValue === "") {
+        return { requiresProof: fallback };
+    }
+
+    if (typeof formValue !== "string") {
+        return { requiresProof: fallback, error: INVALID_REQUIRES_PROOF_ERROR };
+    }
+
+    const normalized = formValue.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+        return { requiresProof: true };
+    }
+    if (["0", "false", "no", "off"].includes(normalized)) {
+        return { requiresProof: false };
+    }
+
+    return { requiresProof: fallback, error: INVALID_REQUIRES_PROOF_ERROR };
+}
+
 function validateProofIntent(rawProofIntent?: TaskProofIntent | null): { proofIntent?: TaskProofIntent; error?: string } {
     if (!rawProofIntent) return {};
 
@@ -504,6 +533,7 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
 
     if (!user) return { error: "Not authenticated" };
 
+    const requiresProof = parseProofRequiredFromTitle(title);
     const normalizedTitle = normalizeTaskTitleAndSyncKind(title);
     const colorValidation = validateEventColorUsage(title, normalizedTitle.googleSyncForTask);
     if (colorValidation.error) {
@@ -589,6 +619,7 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
             title: normalizedTitle.normalizedTitle,
             description: null,
             failure_cost_cents: defaultFailureCostCents,
+            requires_proof: requiresProof,
             deadline: deadline.toISOString(),
             status: shouldAutoCompletePastEvent ? "COMPLETED" : "CREATED",
             marked_completed_at: shouldAutoCompletePastEvent ? creationNowIso : null,
@@ -641,7 +672,11 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
         actor_id: user.id,
         from_status: "CREATED",
         to_status: "CREATED",
-        metadata: { title: normalizedTitle.normalizedTitle, type: "simple" },
+        metadata: {
+            title: normalizedTitle.normalizedTitle,
+            type: "simple",
+            requires_proof: requiresProof,
+        },
     }];
     if (shouldAutoCompletePastEvent) {
         taskEvents.push({
@@ -714,8 +749,13 @@ export async function createTask(formData: FormData) {
         typeof rawTitleForm === "string" && rawTitleForm.trim()
             ? rawTitleForm
             : (submittedTitle || "");
+    const parserSourceTitle = rawTitle || submittedTitle || "";
     const titleSelection = normalizeTaskTitleAndSyncKind(rawTitle || "");
     const title = normalizeTaskTitleAndSyncKind(submittedTitle || rawTitle).normalizedTitle;
+    const requiresProofInput = parseRequiresProofFromFormData(
+        formData.get("requiresProof"),
+        parseProofRequiredFromTitle(parserSourceTitle)
+    );
     const colorValidation = validateEventColorUsage(rawTitle || "", titleSelection.googleSyncForTask);
     if (colorValidation.error) {
         return { error: colorValidation.error };
@@ -741,6 +781,9 @@ export async function createTask(formData: FormData) {
     }
     if (requiredPomoInput.error) {
         return { error: requiredPomoInput.error };
+    }
+    if (requiresProofInput.error) {
+        return { error: requiresProofInput.error };
     }
 
     const { data: reminderDefaultsProfile } = await supabase
@@ -869,6 +912,7 @@ export async function createTask(formData: FormData) {
                 description: description || null,
                 failure_cost_cents: failureCostCents,
                 required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,
+                requires_proof: requiresProofInput.requiresProof,
                 rule_config: ruleConfig,
                 timezone: userTimezone,
                 google_sync_for_rule: titleSelection.googleSyncForTask,
@@ -902,6 +946,7 @@ export async function createTask(formData: FormData) {
             description: description || null,
             failure_cost_cents: failureCostCents,
             required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,
+            requires_proof: requiresProofInput.requiresProof,
             deadline: validatedDeadline.toISOString(),
             status: shouldAutoCompletePastEvent ? "COMPLETED" : "CREATED",
             marked_completed_at: shouldAutoCompletePastEvent ? creationNowIso : null,
@@ -974,6 +1019,7 @@ export async function createTask(formData: FormData) {
             recurrence_rule_id: recurrenceRuleId,
             reminder_count: remindersInput.reminderDates.length,
             required_pomo_minutes: requiredPomoInput.requiredPomoMinutes,
+            requires_proof: requiresProofInput.requiresProof,
         },
     }];
     if (shouldAutoCompletePastEvent) {
@@ -1116,6 +1162,7 @@ export async function markTaskCompleteWithProofIntent(
     }
 
     const isSelfVouched = (task as any).voucher_id === (user as any).id;
+    const requiresProofForCompletion = Boolean((task as any).requires_proof) && !isSelfVouched;
     const nowIso = new Date().toISOString();
 
     if (isSelfVouched) {
@@ -1176,6 +1223,9 @@ export async function markTaskCompleteWithProofIntent(
     }
 
     const proofIntent = proofValidation.proofIntent;
+    if (requiresProofForCompletion && !proofIntent) {
+        return { error: REQUIRED_PROOF_FOR_COMPLETION_ERROR };
+    }
     const voucherResponseDeadline = getVoucherResponseDeadlineUtc(new Date(), userTimeZone);
 
     // @ts-ignore

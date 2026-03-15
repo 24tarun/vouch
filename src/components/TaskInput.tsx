@@ -58,6 +58,7 @@ import {
     getDefaultDeadline,
     isValidCalendarDate,
     parseDateTokens,
+    parseProofRequiredFromTitle,
     parseReminderTimesFromTitle,
     parseTaskInputTimeToken,
     parseTimerMinutesToken,
@@ -110,6 +111,7 @@ export interface TaskInputCreatePayload {
     rawTitle: string;
     subtasks: string[];
     requiredPomoMinutes: number | null;
+    requiresProof: boolean;
     deadlineIso: string;
     eventEndIso: string | null;
     reminderIsos: string[];
@@ -814,6 +816,7 @@ export function TaskInput({
             .replace(/\b(?:tmrw|tomorrow)\b/gi, "")
             .replace(new RegExp(WEEKDAY_TOKEN_REGEX.source, "gi"), "")
             .replace(/(?:\bvouch|\.v)\s+[^\s/]+/gi, "")
+            .replace(/(?:^|\s)-proof(?=\s|$)/gi, " ")
             .replace(/\bpomo\s+\d+\b/gi, "")
             .replace(/\btimer\s+\d+\b/gi, "")
             .replace(/\s+/g, " ")
@@ -863,6 +866,7 @@ export function TaskInput({
         const { taskTitle, subtasks } = parseTaskTitleAndSubtasks(title);
         const requiredPomoParse = parseRequiredPomoFromTitle(title);
         const requiredPomoMinutes = requiredPomoParse.requiredPomoMinutes;
+        const requiresProof = parseProofRequiredFromTitle(title);
 
         if (!taskTitle || isLoading) return;
 
@@ -957,6 +961,7 @@ export function TaskInput({
             rawTitle: title,
             subtasks,
             requiredPomoMinutes,
+            requiresProof,
             deadlineIso: deadlineToSubmit.toISOString(),
             eventEndIso: eventEndDate ? eventEndDate.toISOString() : null,
             reminderIsos: remindersToSubmit.map((reminder) => reminder.toISOString()),
@@ -996,6 +1001,7 @@ export function TaskInput({
             if (payload.requiredPomoMinutes != null) {
                 formData.append("requiredPomoMinutes", String(payload.requiredPomoMinutes));
             }
+            formData.append("requiresProof", payload.requiresProof ? "true" : "false");
             if (payload.reminderIsos.length > 0) {
                 formData.append("reminders", JSON.stringify(payload.reminderIsos));
             }

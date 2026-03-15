@@ -33,6 +33,7 @@ export interface Task {
     description: string | null;
     failure_cost_cents: number;
     required_pomo_minutes: number | null;
+    requires_proof?: boolean;
     deadline: string;
     status: TaskStatus;
     postponed_at: string | null;
@@ -228,6 +229,7 @@ export interface RecurrenceRule {
     description: string | null;
     failure_cost_cents: number;
     required_pomo_minutes: number | null;
+    requires_proof?: boolean;
     rule_config: RecurrenceRuleConfig;
     timezone: string;
     google_sync_for_rule: boolean;

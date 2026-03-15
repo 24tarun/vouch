@@ -13,6 +13,7 @@ export type RealtimeTaskRow = Pick<
     | "description"
     | "failure_cost_cents"
     | "required_pomo_minutes"
+    | "requires_proof"
     | "deadline"
     | "status"
     | "postponed_at"

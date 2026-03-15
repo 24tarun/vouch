@@ -29,7 +29,7 @@ export const recurrenceGenerator = schedules.task({
         const { data: rules, error } = await supabase
             .from("recurrence_rules")
             .select(
-                "id, user_id, voucher_id, title, description, failure_cost_cents, required_pomo_minutes, rule_config, timezone, last_generated_date, created_at, manual_reminder_offsets_ms, google_sync_for_rule, google_event_duration_minutes, google_event_color_id"
+                "id, user_id, voucher_id, title, description, failure_cost_cents, required_pomo_minutes, requires_proof, rule_config, timezone, last_generated_date, created_at, manual_reminder_offsets_ms, google_sync_for_rule, google_event_duration_minutes, google_event_color_id"
             ) as { data: RecurrenceRule[] | null, error: any };
 
         if (error) {
@@ -489,6 +489,7 @@ async function processRule(
                 description: rule.description,
                 failure_cost_cents: rule.failure_cost_cents,
                 required_pomo_minutes: rule.required_pomo_minutes ?? null,
+                requires_proof: Boolean(rule.requires_proof),
                 deadline: deadlineIso,
                 status: "CREATED",
                 google_sync_for_task: Boolean(rule.google_sync_for_rule),

@@ -145,6 +145,7 @@ export default function TaskDetailClient({
     const canTempDelete = canOwnerTemporarilyDelete(taskState, nowMs);
     const isOwner = taskState.user_id === viewerId;
     const isSelfVouched = taskState.voucher_id === taskState.user_id;
+    const requiresProofForCompletion = Boolean(taskState.requires_proof) && !isSelfVouched;
     const isActiveParentTask = taskState.status === "CREATED" || taskState.status === "POSTPONED";
     const completedSubtasksCount = subtasks.filter((subtask) => subtask.is_completed).length;
     const incompleteSubtasksCount = subtasks.length - completedSubtasksCount;
@@ -859,6 +860,10 @@ export default function TaskDetailClient({
         }
         if (hasRunningPomoForTask) {
             toast.error("Stop the running pomodoro for this task before marking it complete.");
+            return;
+        }
+        if (requiresProofForCompletion && !proofDraft && !storedProof) {
+            toast.error("Attach proof before marking this task complete.");
             return;
         }
         setActionPending("markComplete", true);
@@ -1704,7 +1709,7 @@ export default function TaskDetailClient({
                                             ? "text-blue-300 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20"
                                             : "text-slate-300 border-slate-700/80 hover:text-white hover:bg-slate-800"
                                     )}
-                                    title={proofDraft ? "Proof attached" : "Attach proof (optional)"}
+                                    title={proofDraft ? "Proof attached" : (requiresProofForCompletion ? "Attach proof (required)" : "Attach proof (optional)")}
                                     aria-label="Attach proof"
                                 >
                                     <Camera className="h-4 w-4" />

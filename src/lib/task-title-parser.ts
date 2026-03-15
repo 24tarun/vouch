@@ -137,6 +137,7 @@ const HIGHLIGHT_TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g;
 const HIGHLIGHT_EVENT_START_TOKEN_REGEX = /(^|\s)(-start\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
 const HIGHLIGHT_EVENT_END_TOKEN_REGEX = /(^|\s)(-end\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
 const HIGHLIGHT_EVENT_COLOR_HELPER_TOKEN_REGEX = /(^|\s)(-color)(?=\s|$)/gi;
+const HIGHLIGHT_PROOF_TOKEN_REGEX = /(^|\s)(-proof)(?=\s|$)/gi;
 const HIGHLIGHT_TIMER_TOKEN_REGEX = /\b(timer)\s+(\d+)\b/gi;
 const HIGHLIGHT_POMO_TOKEN_REGEX = /\b(pomo)\s+(\d+)\b/gi;
 const HIGHLIGHT_REMIND_TOKEN_REGEX = /\b(remind)\s+(\d{1,2}:\d{2}|\d{4})\b/gi;
@@ -158,6 +159,7 @@ const PARSER_KEYWORD_COMPLETION_TOKENS = Array.from(new Set([
     "-start",
     "-end",
     "-color",
+    "-proof",
     "remind",
     "timer",
     "pomo",
@@ -258,6 +260,12 @@ export function buildTaskTitleHighlightSegments(text: string): TaskTitleHighligh
     }
 
     for (const match of text.matchAll(HIGHLIGHT_EVENT_COLOR_HELPER_TOKEN_REGEX)) {
+        if (!match[2]) continue;
+        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+        applyKeywordRange(start, start + match[2].length);
+    }
+
+    for (const match of text.matchAll(HIGHLIGHT_PROOF_TOKEN_REGEX)) {
         if (!match[2]) continue;
         const start = (match.index ?? 0) + (match[1]?.length ?? 0);
         applyKeywordRange(start, start + match[2].length);
@@ -518,6 +526,22 @@ export function parseTimerMinutesToken(text: string): number | null {
     const parsed = Number.parseInt(match[1], 10);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) return null;
     return parsed;
+}
+
+export const PROOF_REQUIRED_TOKEN_REGEX = /(^|\s)-proof(?=\s|$)/i;
+const PROOF_REQUIRED_TOKEN_GLOBAL_REGEX = /(^|\s)-proof(?=\s|$)/gi;
+
+export function parseProofRequiredFromTitle(text: string): boolean {
+    if (!text) return false;
+    return PROOF_REQUIRED_TOKEN_REGEX.test(text);
+}
+
+export function stripProofRequiredTokens(text: string): string {
+    if (!text) return "";
+    return text
+        .replace(PROOF_REQUIRED_TOKEN_GLOBAL_REGEX, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 }
 
 export function parseReminderTimesFromTitle(text: string): Array<{ hours: number; minutes: number }> {

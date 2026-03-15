@@ -73,6 +73,8 @@ export function TaskRow({
     const pomoTotalSeconds = task.pomo_total_seconds || 0;
     const hasIncompletePomoRequirement =
         requiredPomoSeconds > 0 && pomoTotalSeconds < requiredPomoSeconds;
+    const isSelfVouched = task.voucher_id === task.user_id;
+    const requiresProofForCompletion = Boolean(task.requires_proof) && !isSelfVouched;
     const hasRunningPomoForTask = session?.status === "ACTIVE" && session.task_id === task.id;
     const disabledCompleteTitle = hasIncompleteSubtasks
         ? "Complete all subtasks first"
@@ -126,7 +128,15 @@ export function TaskRow({
     };
 
     const handleCheck = () => {
-        if (!onComplete || isCompleting || isActuallyCompleted || isOverdue || hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask) return;
+        if (
+            !onComplete ||
+            isCompleting ||
+            isActuallyCompleted ||
+            isOverdue ||
+            hasIncompleteSubtasks ||
+            hasIncompletePomoRequirement ||
+            hasRunningPomoForTask
+        ) return;
         onComplete(task);
     };
 
@@ -371,7 +381,9 @@ export function TaskRow({
             disabled={isCompleteActionDisabled}
             className={cn(
                 `${quickActionButtonClass} group flex items-center justify-center shrink-0`,
-                (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask) && !isActuallyCompleted && "opacity-60 cursor-not-allowed"
+                (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask) &&
+                !isActuallyCompleted &&
+                "opacity-60 cursor-not-allowed"
             )}
             title={disabledCompleteTitle}
             aria-label="Mark complete"
@@ -404,7 +416,7 @@ export function TaskRow({
                     !canAttachProof && "cursor-not-allowed opacity-50"
                 )}
                 aria-label="Attach proof"
-                title={hasProofAttached ? "Proof attached" : "Attach proof (optional)"}
+                title={hasProofAttached ? "Proof attached" : (requiresProofForCompletion ? "Attach proof (required)" : "Attach proof (optional)")}
             >
                 <Camera className="h-[18px] w-[18px]" />
             </Button>
@@ -505,7 +517,9 @@ export function TaskRow({
                         disabled={isActuallyCompleted || isCompleting || isOverdue || !onComplete || hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask}
                         className={cn(
                             "flex-shrink-0 h-10 w-10 p-0 flex items-center justify-center transition-all",
-                            (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask) && !isActuallyCompleted && "opacity-50 cursor-not-allowed"
+                            (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask) &&
+                            !isActuallyCompleted &&
+                            "opacity-50 cursor-not-allowed"
                         )}
                         title={disabledCompleteTitle}
                     >
@@ -575,7 +589,7 @@ export function TaskRow({
                                         : "text-slate-300 border-slate-700/80 hover:text-white hover:bg-slate-800"
                                 )}
                                 aria-label="Attach proof"
-                                title={hasProofAttached ? "Proof attached" : "Attach proof (optional)"}
+                                title={hasProofAttached ? "Proof attached" : (requiresProofForCompletion ? "Attach proof (required)" : "Attach proof (optional)")}
                             >
                                 <Camera className="h-3.5 w-3.5" />
                             </Button>

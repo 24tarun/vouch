@@ -141,6 +141,7 @@ function buildCreateTaskFormData(payload: TaskInputCreatePayload): FormData {
     if (payload.requiredPomoMinutes != null) {
         formData.append("requiredPomoMinutes", String(payload.requiredPomoMinutes));
     }
+    formData.append("requiresProof", payload.requiresProof ? "true" : "false");
     if (payload.reminderIsos.length > 0) {
         formData.append("reminders", JSON.stringify(payload.reminderIsos));
     }
@@ -577,6 +578,7 @@ export default function DashboardClient({
             description: null,
             failure_cost_cents: Math.round(Number(payload.failureCost) * 100),
             required_pomo_minutes: payload.requiredPomoMinutes,
+            requires_proof: payload.requiresProof,
             deadline: payload.deadlineIso,
             status: shouldAutoCompletePastEvent ? "COMPLETED" : "CREATED",
             postponed_at: null,
@@ -668,13 +670,19 @@ export default function DashboardClient({
 
     const handleCompleteTaskOptimistic = async (task: Task) => {
         if (completingTaskIds.has(task.id)) return;
+        const isSelfVouched = task.voucher_id === userId;
+        const requiresProofForCompletion = Boolean(task.requires_proof) && !isSelfVouched;
+        const proofDraft = proofByTaskId[task.id] || null;
+        if (requiresProofForCompletion && !proofDraft) {
+            toast.error("Attach proof before marking this task complete.");
+            return;
+        }
+
         setTaskCompleting(task.id, true);
 
         const now = new Date();
-        const isSelfVouched = task.voucher_id === userId;
         const voucherResponseDeadline = getVoucherResponseDeadlineLocal(now);
         const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-        const proofDraft = proofByTaskId[task.id] || null;
         const proofIntent = proofDraft ? getProofIntentFromPreparedProof(proofDraft.proof) : null;
         if (proofIntent || task.completion_proof) {
             void purgeLocalProofMedia(task.id);
@@ -934,6 +942,7 @@ export default function DashboardClient({
                     <p>Timer: use timer 25 (minutes from now)</p>
                     <p>Reminder: use remind 10:00 or remind 1000</p>
                     <p>Pomodoro: use pomo 75 (max 120)</p>
+                    <p>Proof required: use -proof (blocks completion until proof is attached)</p>
                     <p>Voucher: use vouch bob or .v bob</p>
                     <p>Subtasks: separate with /</p>
                     <p>Ticking a task marks it complete instantly</p>
