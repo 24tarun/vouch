@@ -155,6 +155,132 @@ test("Tab accepts completion atomically and places caret at inserted token end",
     assert.equal(view.queryByTestId("task-input-completion-suffix"), null);
 });
 
+test("tapping ghost suffix accepts completion and places caret at inserted token end", async () => {
+    const selfId = "self-1";
+    const friends = [buildProfile("friend-1", "madhu", "madhu@example.com")];
+
+    const view = render(
+        <TaskInput
+            friends={friends}
+            defaultFailureCostEuros="1.00"
+            defaultCurrency="EUR"
+            defaultVoucherId={selfId}
+            defaultEventDurationMinutes={60}
+            selfUserId={selfId}
+        />
+    );
+
+    const input = view.getByPlaceholderText("click the bulb button on the right") as HTMLInputElement;
+    const typed = "check dustbin emptiness tmr";
+    setTitleInputValueAndCaret(input, typed);
+    const suffix = await waitFor(() => {
+        const node = view.getByTestId("task-input-completion-suffix");
+        assert.equal(node.textContent, "w");
+        return node;
+    });
+    fireEvent.click(suffix);
+
+    /*
+     * What and why this test checks:
+     * This validates the mobile tap path for inline autocomplete by tapping the rendered ghost suffix itself.
+     * The interaction must mirror Tab acceptance so touch users get deterministic completion behavior without a hardware keyboard.
+     *
+     * Passing scenario:
+     * Tapping the suffix applies `tmrw` atomically, places caret at the end, and removes the suffix overlay node.
+     *
+     * Failing scenario:
+     * If tap does not apply completion (or leaves caret/suffix in stale state), mobile users lose parity with the desktop Tab flow.
+     */
+    await waitFor(() => {
+        assert.equal(input.value, "check dustbin emptiness tmrw");
+        assert.equal(input.selectionStart, input.value.length);
+    });
+    assert.equal(view.queryByTestId("task-input-completion-suffix"), null);
+});
+
+test("tapping completion fragment accepts completion and places caret at inserted token end", async () => {
+    const selfId = "self-1";
+    const friends = [buildProfile("friend-1", "madhu", "madhu@example.com")];
+
+    const view = render(
+        <TaskInput
+            friends={friends}
+            defaultFailureCostEuros="1.00"
+            defaultCurrency="EUR"
+            defaultVoucherId={selfId}
+            defaultEventDurationMinutes={60}
+            selfUserId={selfId}
+        />
+    );
+
+    const input = view.getByPlaceholderText("click the bulb button on the right") as HTMLInputElement;
+    const typed = "check dustbin emptiness tmr";
+    setTitleInputValueAndCaret(input, typed);
+    const fragmentNode = await waitFor(() => {
+        const candidates = view.getAllByTestId("task-input-completion-fragment");
+        const target = candidates.find((node) => node.textContent === "tmr");
+        assert.ok(target);
+        return target;
+    });
+    fireEvent.click(fragmentNode);
+
+    /*
+     * What and why this test checks:
+     * This validates tap-accept behavior when users tap the existing keyword fragment rather than the suffix.
+     * It confirms the fragment region is intentionally interactive for mobile editing instead of requiring exact suffix taps.
+     *
+     * Passing scenario:
+     * Tapping the fragment applies `tmrw` atomically and moves caret to the inserted token end.
+     *
+     * Failing scenario:
+     * If fragment taps are inert or mis-apply replacement, touch completion becomes inconsistent and easy to miss.
+     */
+    await waitFor(() => {
+        assert.equal(input.value, "check dustbin emptiness tmrw");
+        assert.equal(input.selectionStart, input.value.length);
+    });
+    assert.equal(view.queryByTestId("task-input-completion-suffix"), null);
+});
+
+test("weekday completion suffix is contiguous with typed fragment in overlay stream", async () => {
+    const selfId = "self-1";
+    const friends = [buildProfile("friend-1", "madhu", "madhu@example.com")];
+
+    const view = render(
+        <TaskInput
+            friends={friends}
+            defaultFailureCostEuros="1.00"
+            defaultCurrency="EUR"
+            defaultVoucherId={selfId}
+            defaultEventDurationMinutes={60}
+            selfUserId={selfId}
+        />
+    );
+
+    const input = view.getByPlaceholderText("click the bulb button on the right") as HTMLInputElement;
+    const typed = "groceries mond";
+    setTitleInputValueAndCaret(input, typed);
+
+    const suffix = await waitFor(() => {
+        const node = view.getByTestId("task-input-completion-suffix");
+        assert.equal(node.textContent, "ay");
+        return node;
+    });
+
+    /*
+     * What and why this test checks:
+     * This verifies the overlay render stream keeps typed fragment and ghost suffix contiguous for weekday completion.
+     * It prevents the visual split bug where `mond` and `ay` appear separated by an unintended extra space/gap.
+     *
+     * Passing scenario:
+     * The overlay text stream reads exactly `groceries monday`, with no inserted whitespace between fragment and suffix.
+     *
+     * Failing scenario:
+     * If text stream contains additional whitespace around suffix, users see a visible gap and misaligned inline completion.
+     */
+    assert.equal(suffix.parentElement?.textContent, "groceries monday");
+});
+
 test("Tab completion is ignored during composition and only applies after composition ends", async () => {
     const selfId = "self-1";
     const friends = [buildProfile("friend-1", "madhu", "madhu@example.com")];

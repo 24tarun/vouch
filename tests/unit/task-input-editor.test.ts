@@ -58,14 +58,14 @@ test("weekday shorthand suggests full weekday keyword completion", () => {
 
     /*
      * What and why this test checks:
-     * This verifies parser autocomplete now supports weekday shorthand, so typing `mon` offers `monday`.
-     * It keeps weekday deadlines discoverable while preserving the existing ghost-completion UX.
+     * This verifies parser autocomplete supports weekday shorthand so typing `mon` offers `monday`.
+     * It keeps weekday deadlines discoverable with the same ghost-completion UX as other parser keywords.
      *
      * Passing scenario:
      * End-of-input `mon` returns `monday` with suffix `day`.
      *
      * Failing scenario:
-     * If no completion is returned, users lose guidance for the new weekday date keywords.
+     * If completion is missing, weekday keyword discoverability regresses and users lose expected inline assistance.
      */
     assert.equal(completion?.insertText, "monday");
     assert.equal(completion?.suffix, "day");

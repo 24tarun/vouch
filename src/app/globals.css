@@ -186,6 +186,21 @@
     min-height: env(safe-area-inset-top);
   }
 
+  @keyframes title-caret-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .title-caret {
+    display: inline-block;
+    width: 2px;
+    height: 1.1em;
+    background-color: white;
+    vertical-align: text-bottom;
+    border-radius: 1px;
+    animation: title-caret-blink 1.2s step-end infinite;
+  }
+
   @keyframes shake {
 
     0%,

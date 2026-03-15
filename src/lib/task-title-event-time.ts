@@ -1,3 +1,8 @@
+import { parseClockToken } from "@/lib/task-title-parser";
+import type { ParsedClockToken } from "@/lib/task-title-parser";
+export { parseClockToken };
+export type { ParsedClockToken };
+
 const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
 const EVENT_START_TOKEN_REGEX = /(^|\s)(?:-start|-s|\.s)\s*(\d{1,2}:\d{2}|\d{1,4})\b/gi;
 const EVENT_END_TOKEN_REGEX = /(^|\s)(?:-end|-e|\.e)\s*(\d{1,2}:\d{2}|\d{1,4})\b/gi;
@@ -8,11 +13,6 @@ const EVENT_MISSING_TIME_ERROR = "Event tasks require -startHHMM or -endHHMM.";
 const EVENT_START_INVALID_ERROR = "Event start time is invalid. Use -start930 or -start09:30.";
 const EVENT_END_INVALID_ERROR = "Event end time is invalid. Use -end930 or -end15:00.";
 const EVENT_END_BEFORE_START_ERROR = "Event end time must be after start time.";
-
-export interface ParsedClockToken {
-    hours: number;
-    minutes: number;
-}
 
 export interface ExtractedEventTokens {
     hasEvent: boolean;
@@ -33,41 +33,6 @@ export interface ResolveEventScheduleResult {
     startDate: Date | null;
     endDate: Date | null;
     error?: string;
-}
-
-export function parseClockToken(raw: string): ParsedClockToken | null {
-    const normalized = raw.trim();
-    let hours = Number.NaN;
-    let minutes = Number.NaN;
-
-    const colonMatch = normalized.match(/^(\d{1,2}):(\d{2})$/);
-    if (colonMatch) {
-        hours = Number.parseInt(colonMatch[1], 10);
-        minutes = Number.parseInt(colonMatch[2], 10);
-    } else {
-        const compactFourMatch = normalized.match(/^(\d{4})$/);
-        if (compactFourMatch) {
-            hours = Number.parseInt(compactFourMatch[1].slice(0, 2), 10);
-            minutes = Number.parseInt(compactFourMatch[1].slice(2, 4), 10);
-        } else {
-            const compactThreeMatch = normalized.match(/^(\d{3})$/);
-            if (compactThreeMatch) {
-                hours = Number.parseInt(compactThreeMatch[1].slice(0, 1), 10);
-                minutes = Number.parseInt(compactThreeMatch[1].slice(1, 3), 10);
-            } else {
-                const hourOnlyMatch = normalized.match(/^(\d{1,2})$/);
-                if (hourOnlyMatch) {
-                    hours = Number.parseInt(hourOnlyMatch[1], 10);
-                    minutes = 0;
-                }
-            }
-        }
-    }
-
-    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
-    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-
-    return { hours, minutes };
 }
 
 export function extractEventTokens(rawTitle: string): ExtractedEventTokens {

@@ -51,89 +51,27 @@ import {
     resolveDateSheetDraftSubmission,
 } from "@/lib/task-deadline-sheet";
 import {
-    extractWeekdayDateTokens,
-    resolveUpcomingWeekdayDate,
-    WEEKDAY_TOKEN_REGEX,
-} from "@/lib/task-title-weekday";
-import {
     applyParserKeywordCompletion,
     buildTaskTitleOverlayModel,
+    EVENT_TOKEN_REGEX,
+    extractWeekdayDateTokens,
+    getDefaultDeadline,
+    isValidCalendarDate,
+    parseDateTokens,
+    parseReminderTimesFromTitle,
     parseTaskInputTimeToken,
-} from "@/lib/task-input-editor";
+    parseTimerMinutesToken,
+    resolveEventAnchorDate,
+    resolveUpcomingWeekdayDate,
+    TOMORROW_KEYWORD_REGEX,
+    WEEKDAY_TOKEN_REGEX,
+} from "@/lib/task-title-parser";
+import type { ParserKeywordCompletion } from "@/lib/task-title-parser";
 
-const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
 const TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/i;
-const ORDINAL_DATE_TOKEN_REGEX = /\b([12]?\d|3[01])(st|nd|rd|th)\b/gi;
-const SLASH_DATE_TOKEN_REGEX = /\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}))?\b/g;
 const TITLE_TEXT_METRICS_CLASS =
     "text-lg font-medium leading-normal [font-kerning:none] [font-variant-ligatures:none] [font-feature-settings:'liga'_0,'clig'_0]";
 
-function parseTimerMinutesToken(text: string): number | null {
-    const match = text.match(/\btimer\s+(\d+)\b/i);
-    if (!match) return null;
-
-    const parsed = Number.parseInt(match[1], 10);
-    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 10000) return null;
-    return parsed;
-}
-
-const TOMORROW_KEYWORD_REGEX = /\b(?:tmrw|tomorrow)\b/i;
-
-type ParsedDateToken =
-    | { kind: "ordinal"; day: number; index: number }
-    | { kind: "slash"; day: number; month: number; year: number | null; index: number };
-
-function isValidCalendarDate(year: number, month: number, day: number): boolean {
-    const candidate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
-    return (
-        candidate.getUTCFullYear() === year &&
-        candidate.getUTCMonth() + 1 === month &&
-        candidate.getUTCDate() === day
-    );
-}
-
-function parseDateTokens(text: string): ParsedDateToken[] {
-    const tokens: ParsedDateToken[] = [];
-
-    const ordinalRegex = new RegExp(ORDINAL_DATE_TOKEN_REGEX.source, "gi");
-    let ordinalMatch: RegExpExecArray | null;
-    while ((ordinalMatch = ordinalRegex.exec(text)) !== null) {
-        const parsedDay = Number.parseInt(ordinalMatch[1], 10);
-        if (parsedDay >= 1 && parsedDay <= 31) {
-            tokens.push({
-                kind: "ordinal",
-                day: parsedDay,
-                index: ordinalMatch.index,
-            });
-        }
-    }
-
-    const slashRegex = new RegExp(SLASH_DATE_TOKEN_REGEX.source, "g");
-    let slashMatch: RegExpExecArray | null;
-    while ((slashMatch = slashRegex.exec(text)) !== null) {
-        const parsedDay = Number.parseInt(slashMatch[1], 10);
-        const parsedMonth = Number.parseInt(slashMatch[2], 10);
-        const parsedYear = slashMatch[3] ? Number.parseInt(slashMatch[3], 10) : null;
-        tokens.push({
-            kind: "slash",
-            day: parsedDay,
-            month: parsedMonth,
-            year: parsedYear,
-            index: slashMatch.index,
-        });
-    }
-
-    return tokens.sort((a, b) => a.index - b.index);
-}
-
-function getDefaultDeadline(now: Date = new Date()): Date {
-    const deadline = new Date(now);
-    deadline.setHours(23, 59, 0, 0);
-    if (deadline.getTime() <= now.getTime()) {
-        deadline.setDate(deadline.getDate() + 1);
-    }
-    return deadline;
-}
 
 function formatTimeUntilDeadline(deadline: Date, now: Date = new Date()): string {
     const diffMs = deadline.getTime() - now.getTime();
@@ -233,6 +171,8 @@ export function TaskInput({
     const lastCalendarTapRef = useRef(0);
     const isComposingRef = useRef(false);
     const pendingCaretPositionRef = useRef<number | null>(null);
+    const completionTapInProgressRef = useRef(false);
+    const pendingTapCompletionRef = useRef<ParserKeywordCompletion | null>(null);
     const currencySymbol = getCurrencySymbol(defaultCurrency);
     const failureCostBounds = getFailureCostBounds(defaultCurrency);
     const normalizedDefaultEventDurationMinutes =
@@ -261,7 +201,6 @@ export function TaskInput({
         () => buildTaskTitleOverlayModel(title, titleCaretIndex, isTitleFocused, isColorPickerVisible, friends),
         [friends, isColorPickerVisible, isTitleFocused, title, titleCaretIndex]
     );
-
     const syncTitleHighlightScroll = useCallback(() => {
         if (!titleInputRef.current || !titleHighlightRef.current) return;
         titleHighlightRef.current.scrollLeft = titleInputRef.current.scrollLeft;
@@ -294,7 +233,7 @@ export function TaskInput({
         input.setSelectionRange(pos, pos);
         syncTitleCaretFromElement(input);
         syncTitleHighlightScroll();
-    }, [syncTitleCaretFromElement, syncTitleHighlightScroll]);
+    }, [syncTitleCaretFromElement, syncTitleHighlightScroll, title, titleCaretIndex]);
 
     const applyColorPickerSelection = useCallback((aliasToken: string) => {
         const input = titleInputRef.current;
@@ -311,6 +250,136 @@ export function TaskInput({
         const { nextTitle, nextCaretIndex } = applyParserKeywordCompletion(title, inlineKeywordCompletion);
         commitTitleAndCaret(nextTitle, nextCaretIndex);
     }, [commitTitleAndCaret, inlineKeywordCompletion, title]);
+
+    const handleInlineCompletionPointerDown = useCallback(
+        (event: React.PointerEvent<HTMLElement>) => {
+            pendingTapCompletionRef.current = inlineKeywordCompletion;
+            completionTapInProgressRef.current = true;
+            event.preventDefault();
+        },
+        [inlineKeywordCompletion]
+    );
+
+    const handleInlineCompletionTap = useCallback(
+        (event: React.MouseEvent<HTMLElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
+            completionTapInProgressRef.current = false;
+            const completion = pendingTapCompletionRef.current ?? inlineKeywordCompletion;
+            pendingTapCompletionRef.current = null;
+            if (!completion) return;
+            const { nextTitle, nextCaretIndex } = applyParserKeywordCompletion(title, completion);
+            commitTitleAndCaret(nextTitle, nextCaretIndex);
+        },
+        [commitTitleAndCaret, inlineKeywordCompletion, title]
+    );
+
+    const titleOverlayRuns = useMemo(() => {
+        const runs: React.ReactNode[] = [];
+        const completionFragmentStart = inlineKeywordCompletion?.fragmentStart ?? -1;
+        const completionFragmentEnd =
+            inlineKeywordCompletion && inlineKeywordCompletion.fragment.length > 0
+                ? completionFragmentStart + inlineKeywordCompletion.fragment.length
+                : -1;
+        let absoluteIndex = 0;
+        let cursorInserted = false;
+
+        const insertCursor = () => {
+            runs.push(
+                <span
+                    key={`title-caret-${titleCaretIndex}`}
+                    className="title-caret"
+                    aria-hidden="true"
+                />
+            );
+            cursorInserted = true;
+        };
+
+        for (const [index, segment] of titleHighlightSegments.entries()) {
+            const segmentStart = absoluteIndex;
+            const segmentEnd = segmentStart + segment.text.length;
+            absoluteIndex = segmentEnd;
+            const overlayClassName =
+                segment.style?.color
+                    ? undefined
+                    : segment.className;
+
+            const splitPoints = [segmentStart, segmentEnd];
+            if (completionFragmentStart > segmentStart && completionFragmentStart < segmentEnd) {
+                splitPoints.push(completionFragmentStart);
+            }
+            if (completionFragmentEnd > segmentStart && completionFragmentEnd < segmentEnd) {
+                splitPoints.push(completionFragmentEnd);
+            }
+            if (isTitleFocused && titleCaretIndex > segmentStart && titleCaretIndex < segmentEnd) {
+                splitPoints.push(titleCaretIndex);
+            }
+            splitPoints.sort((a, b) => a - b);
+
+            if (isTitleFocused && !cursorInserted && titleCaretIndex === segmentStart) {
+                insertCursor();
+            }
+
+            for (let splitIndex = 0; splitIndex < splitPoints.length - 1; splitIndex += 1) {
+                const partStart = splitPoints[splitIndex];
+                const partEnd = splitPoints[splitIndex + 1];
+                if (partEnd <= partStart) continue;
+
+                const partText = segment.text.slice(partStart - segmentStart, partEnd - segmentStart);
+                const isCompletionFragmentPart =
+                    completionFragmentEnd > completionFragmentStart &&
+                    partStart < completionFragmentEnd &&
+                    partEnd > completionFragmentStart;
+
+                runs.push(
+                    <span
+                        key={`${index}-${partStart}`}
+                        data-testid={isCompletionFragmentPart ? "task-input-completion-fragment" : undefined}
+                        className={cn(
+                            overlayClassName,
+                            isCompletionFragmentPart && "pointer-events-auto cursor-pointer"
+                        )}
+                        style={segment.style}
+                        onPointerDown={isCompletionFragmentPart ? handleInlineCompletionPointerDown : undefined}
+                        onClick={isCompletionFragmentPart ? handleInlineCompletionTap : undefined}
+                    >
+                        {partText}
+                    </span>
+                );
+
+                if (isTitleFocused && !cursorInserted && titleCaretIndex === partEnd) {
+                    insertCursor();
+                }
+            }
+        }
+
+        if (inlineKeywordCompletion?.suffix) {
+            runs.push(
+                <span
+                    key="inline-keyword-suffix"
+                    data-testid="task-input-completion-suffix"
+                    className="text-slate-500/75 align-baseline pointer-events-auto cursor-pointer"
+                    onPointerDown={handleInlineCompletionPointerDown}
+                    onClick={handleInlineCompletionTap}
+                >
+                    {inlineKeywordCompletion.suffix}
+                </span>
+            );
+        }
+
+        if (isTitleFocused && !cursorInserted) {
+            insertCursor();
+        }
+
+        return runs;
+    }, [
+        handleInlineCompletionPointerDown,
+        handleInlineCompletionTap,
+        inlineKeywordCompletion,
+        isTitleFocused,
+        titleCaretIndex,
+        titleHighlightSegments,
+    ]);
 
     useEffect(() => {
         if (!nearestColorHelperToken) return;
@@ -443,69 +512,6 @@ export function TaskInput({
         return reminderDate;
     };
 
-    const parseReminderTimesFromTitle = (text: string) => {
-        const regex = /\bremind\s+(\d{1,2}:\d{2}|\d{4})\b/gi;
-        const results: Array<{ hours: number; minutes: number }> = [];
-        let match: RegExpExecArray | null;
-
-        while ((match = regex.exec(text)) !== null) {
-            const parsed = parseTaskInputTimeToken(match[1], false);
-            if (!parsed) continue;
-            results.push(parsed);
-        }
-
-        return results;
-    };
-
-    const resolveEventAnchorDateFromTitle = useCallback((text: string, now: Date = new Date()) => {
-        const parsedDateTokens = parseDateTokens(text);
-        const parsedWeekdayTokens = extractWeekdayDateTokens(text);
-        if (parsedDateTokens.length > 1 || parsedWeekdayTokens.length > 1) {
-            return {
-                anchorDate: getDefaultDeadline(now),
-                error: "Use only one date token (for example: monday, 28th or 05/03).",
-            };
-        }
-
-        const hasTomorrowKeyword = TOMORROW_KEYWORD_REGEX.test(text);
-
-        if (parsedDateTokens.length === 1) {
-            const dateToken = parsedDateTokens[0];
-            const year = dateToken.kind === "slash" ? (dateToken.year ?? now.getFullYear()) : now.getFullYear();
-            const month = dateToken.kind === "slash" ? dateToken.month : now.getMonth() + 1;
-            const day = dateToken.day;
-
-            if (!isValidCalendarDate(year, month, day)) {
-                return {
-                    anchorDate: getDefaultDeadline(now),
-                    error: "Date is invalid. Use 28th, 05/03, or 05/03/2026.",
-                };
-            }
-
-            return {
-                anchorDate: new Date(year, month - 1, day, 12, 0, 0, 0),
-                error: null as string | null,
-            };
-        }
-
-        if (parsedWeekdayTokens.length === 1) {
-            const anchorDate = resolveUpcomingWeekdayDate(parsedWeekdayTokens[0].weekday, now);
-            anchorDate.setHours(12, 0, 0, 0);
-            return { anchorDate, error: null as string | null };
-        }
-
-        if (hasTomorrowKeyword) {
-            const anchorDate = new Date(now);
-            anchorDate.setDate(anchorDate.getDate() + 1);
-            anchorDate.setHours(12, 0, 0, 0);
-            return { anchorDate, error: null as string | null };
-        }
-
-        return {
-            anchorDate: getDefaultDeadline(now),
-            error: null as string | null,
-        };
-    }, []);
 
     const resolveDeadlineFromTitle = useCallback((text: string) => {
         const now = new Date();
@@ -513,7 +519,7 @@ export function TaskInput({
         const isEventTask = EVENT_TOKEN_REGEX.test(text);
 
         if (isEventTask) {
-            const anchorResolution = resolveEventAnchorDateFromTitle(text, now);
+            const anchorResolution = resolveEventAnchorDate(text, now);
             if (anchorResolution.error) {
                 return {
                     deadline: defaultDeadline,
@@ -625,7 +631,7 @@ export function TaskInput({
         }
 
         return { deadline: defaultDeadline, error: null as string | null };
-    }, [normalizedDefaultEventDurationMinutes, resolveEventAnchorDateFromTitle]);
+    }, [normalizedDefaultEventDurationMinutes]);
 
     const resetDeadlineToDefault = () => {
         setDeadlineError(null);
@@ -892,7 +898,7 @@ export function TaskInput({
                     anchorDate: effectiveSelectedDate ?? getDefaultDeadline(),
                     error: null as string | null,
                 }
-                : resolveEventAnchorDateFromTitle(title);
+                : resolveEventAnchorDate(title);
 
             if (anchorDateResolution.error) {
                 setDeadlineError(anchorDateResolution.error);
@@ -1035,33 +1041,7 @@ export function TaskInput({
                                 TITLE_TEXT_METRICS_CLASS
                             )}
                         >
-                            <span className="whitespace-pre">
-                                {titleHighlightSegments.map((segment, index) => {
-                                    const overlayClassName =
-                                        segment.style?.color
-                                            ? undefined
-                                            : segment.className === "text-white"
-                                                ? "text-transparent"
-                                                : segment.className;
-                                    return (
-                                        <span
-                                            key={`${index}-${segment.text}`}
-                                            className={overlayClassName}
-                                            style={segment.style}
-                                        >
-                                            {segment.text}
-                                        </span>
-                                    );
-                                })}
-                            </span>
-                            {inlineKeywordCompletion?.suffix && (
-                                <span
-                                    data-testid="task-input-completion-suffix"
-                                    className="whitespace-pre text-slate-500/75"
-                                >
-                                    {inlineKeywordCompletion.suffix}
-                                </span>
-                            )}
+                            <span className="whitespace-pre">{titleOverlayRuns}</span>
                         </div>
                     )}
                     <input
@@ -1076,10 +1056,12 @@ export function TaskInput({
                         onSelect={syncTitleCaretFromInput}
                         onClick={syncTitleCaretFromInput}
                         onFocus={() => {
+                            completionTapInProgressRef.current = false;
                             setIsTitleFocused(true);
                             syncTitleCaretFromInput();
                         }}
                         onBlur={() => {
+                            if (completionTapInProgressRef.current) return;
                             setIsTitleFocused(false);
                         }}
                         onCompositionStart={() => {
@@ -1093,7 +1075,8 @@ export function TaskInput({
                         enterKeyHint="done"
                         placeholder="click the bulb button on the right"
                         className={cn(
-                            "w-full bg-transparent border-none px-5 py-4 text-white placeholder:text-slate-500/70 focus:outline-none transition-all caret-white",
+                            "w-full bg-transparent border-none px-5 py-4 placeholder:text-slate-500/70 focus:outline-none transition-all",
+                            showTitleOverlay ? "text-transparent [caret-color:transparent]" : "text-white caret-white",
                             TITLE_TEXT_METRICS_CLASS
                         )}
                         disabled={isLoading}
