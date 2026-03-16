@@ -5,6 +5,7 @@ import {
     touchGoogleWebhookReceipt,
     triggerGoogleCalendarSyncConnection,
 } from "@/lib/google-calendar/sync";
+import { webhookLimiter, checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
     const channelId = request.headers.get("x-goog-channel-id");
@@ -17,7 +18,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Missing channel id." }, { status: 400 });
     }
 
-    if (expectedToken && channelToken !== expectedToken) {
+    const { limited } = await checkRateLimit(webhookLimiter, `webhook:${channelId}`);
+    if (limited) {
+        return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
+    if (!expectedToken || channelToken !== expectedToken) {
         return NextResponse.json({ error: "Invalid channel token." }, { status: 403 });
     }
 

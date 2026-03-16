@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { sendNotification } from "@/lib/notifications";
+import { apiLimiter, checkRateLimit } from "@/lib/rate-limit";
+
+const sessionIdSchema = z.string().uuid();
 
 export async function POST(req: NextRequest) {
     try {
@@ -13,6 +17,11 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
         }
 
+        const { limited } = await checkRateLimit(apiLimiter, `pomo:${user.id}`);
+        if (limited) {
+            return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+        }
+
         let sessionId: string | undefined;
         try {
             const raw = await req.text();
@@ -22,6 +31,13 @@ export async function POST(req: NextRequest) {
             }
         } catch {
             // Ignore malformed payload; we'll fallback to latest active session.
+        }
+
+        if (sessionId !== undefined) {
+            const parsedSessionId = sessionIdSchema.safeParse(sessionId);
+            if (!parsedSessionId.success) {
+                return NextResponse.json({ error: "Invalid session id" }, { status: 400 });
+            }
         }
 
         let session: any = null;

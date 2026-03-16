@@ -1,5 +1,6 @@
 "use server";
 
+import { z } from "zod";
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -62,6 +63,15 @@ const TASK_PROOF_VIDEO_TOO_LONG_ERROR = "Video proof must be 15 seconds or less.
 const REQUIRED_PROOF_FOR_COMPLETION_ERROR = "Attach proof before marking this task complete.";
 const INVALID_REQUIRES_PROOF_ERROR = "Invalid requires-proof payload.";
 const TITLE_REQUIRED_ERROR = "Title cannot be empty.";
+
+const createTaskSchema = z.object({
+    title: z.string().trim().min(1, "Title is required").max(500, "Title too long"),
+});
+
+const ALLOWED_PROOF_MIME_TYPES = new Set([
+    "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif",
+    "video/mp4", "video/quicktime", "video/webm",
+]);
 
 function isValidTimeZone(timeZone: string): boolean {
     try {
@@ -386,6 +396,10 @@ function validateProofIntent(rawProofIntent?: TaskProofIntent | null): { proofIn
         return { error: INVALID_TASK_PROOF_ERROR };
     }
 
+    if (!ALLOWED_PROOF_MIME_TYPES.has(rawProofIntent.mimeType)) {
+        return { error: INVALID_TASK_PROOF_ERROR };
+    }
+
     const sizeBytes = Number(rawProofIntent.sizeBytes || 0);
     if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
         return { error: INVALID_TASK_PROOF_ERROR };
@@ -528,6 +542,11 @@ async function getOwnedParentTask(
 
 // Wrapper for simple task creation (inline)
 export async function createTaskSimple(title: string, subtasksInput?: string[]) {
+    const parsedTaskSimple = createTaskSchema.safeParse({ title });
+    if (!parsedTaskSimple.success) {
+        return { error: parsedTaskSimple.error.issues[0].message };
+    }
+
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -768,6 +787,11 @@ export async function createTask(formData: FormData) {
     const voucherId = formData.get("voucherId") as string;
     const subtasksInput = normalizeSubtasksFromFormData(formData.get("subtasks"));
     const requiredPomoInput = parseRequiredPomoMinutesFromFormData(formData.get("requiredPomoMinutes"));
+
+    const parsedCreateTask = createTaskSchema.safeParse({ title: title || "" });
+    if (!parsedCreateTask.success) {
+        return { error: parsedCreateTask.error.issues[0].message };
+    }
 
     if (!title) {
         return { error: TITLE_REQUIRED_ERROR };
@@ -2268,7 +2292,8 @@ export async function postponeTask(taskId: string, newDeadlineIso: string) {
             deadline: newDeadlineDate.toISOString(),
             postponed_at: new Date().toISOString(),
         } as any)
-        .eq("id", (taskId as any));
+        .eq("id", (taskId as any))
+        .eq("user_id", user.id);
 
     if (error) {
         return { error: error.message };
@@ -2420,7 +2445,8 @@ export async function forceMajeureTask(taskId: string) {
     // Update status to SETTLED
     const { error } = await (supabase.from("tasks") as any)
         .update({ status: "SETTLED", updated_at: now.toISOString() } as any)
-        .eq("id", (taskId as any));
+        .eq("id", (taskId as any))
+        .eq("user_id", user.id);
 
     if (error) {
         return { error: error.message };
@@ -2598,11 +2624,22 @@ export async function getTask(taskId: string) {
 
 export async function getTaskEvents(taskId: string) {
     const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return [];
 
-    // @ts-ignore
+    // Verify caller is owner or voucher
+    const { data: task } = await (supabase.from("tasks") as any)
+        .select("user_id, voucher_id")
+        .eq("id", taskId as any)
+        .single();
+
+    if (!task || (task.user_id !== user.id && task.voucher_id !== user.id)) {
+        return [];
+    }
+
     const { data: events } = await (supabase.from("task_events") as any)
         .select("*")
-        .eq("task_id", (taskId as any))
+        .eq("task_id", taskId as any)
         .order("created_at", { ascending: true });
 
     return (events as any) || [];

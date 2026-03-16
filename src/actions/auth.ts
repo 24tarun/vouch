@@ -2,8 +2,10 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { authLimiter, signupLimiter, passwordResetLimiter, checkRateLimit } from "@/lib/rate-limit";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types";
 import {
@@ -24,6 +26,30 @@ import {
 
 type PomoAutoEndSource = "sign_out_auto_end";
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
+
+const signInSchema = z.object({
+    email: z.string().email("Invalid email address"),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+const signUpSchema = z.object({
+    email: z.string().email("Invalid email address"),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+const usernameSchema = z.string()
+    .trim()
+    .min(3, "Username must be at least 3 characters")
+    .max(30, "Username must be at most 30 characters")
+    .regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores");
+
+const passwordResetSchema = z.object({
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    confirmPassword: z.string(),
+}).refine(data => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+});
 
 async function autoEndLingeringPomoSession(
     supabase: SupabaseClient<Database>,
@@ -118,6 +144,16 @@ export async function signIn(formData: FormData) {
     const password = formData.get("password") as string;
     const supabase = await createClient();
 
+    const parsedSignIn = signInSchema.safeParse({ email, password });
+    if (!parsedSignIn.success) {
+        return { error: parsedSignIn.error.issues[0].message };
+    }
+
+    const { limited: signInLimited } = await checkRateLimit(authLimiter, `signin:${email}`);
+    if (signInLimited) {
+        return { error: "Too many attempts. Please try again later." };
+    }
+
     console.log("Attemping sign in for:", email);
 
     const { error, data } = await supabase.auth.signInWithPassword({
@@ -158,6 +194,16 @@ export async function signUp(formData: FormData) {
     const password = formData.get("password") as string;
     const supabase = await createClient();
 
+    const parsedSignUp = signUpSchema.safeParse({ email, password });
+    if (!parsedSignUp.success) {
+        return { error: parsedSignUp.error.issues[0].message };
+    }
+
+    const { limited: signUpLimited } = await checkRateLimit(signupLimiter, `signup:${email}`);
+    if (signUpLimited) {
+        return { error: "Too many attempts. Please try again later." };
+    }
+
     console.log("Attemping sign up for:", email);
 
     const { error, data } = await supabase.auth.signUp({
@@ -187,6 +233,16 @@ export async function requestPasswordReset(formData: FormData) {
         return { error: "Email is required." };
     }
 
+    const parsedEmail = z.string().email("Invalid email address").safeParse(email);
+    if (!parsedEmail.success) {
+        return { error: parsedEmail.error.issues[0].message };
+    }
+
+    const { limited: pwResetLimited } = await checkRateLimit(passwordResetLimiter, `pwreset:${email}`);
+    if (pwResetLimited) {
+        return { error: "Too many attempts. Please try again later." };
+    }
+
     const supabase = await createClient();
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const resetRedirectTo = `${appUrl}/auth/callback?next=${encodeURIComponent("/login?mode=reset")}`;
@@ -210,11 +266,9 @@ export async function completePasswordReset(formData: FormData) {
     const password = (formData.get("password") as string | null) || "";
     const confirmPassword = (formData.get("confirmPassword") as string | null) || "";
 
-    if (!password || password.length < 6) {
-        return { error: "Password must be at least 6 characters." };
-    }
-    if (password !== confirmPassword) {
-        return { error: "Passwords do not match." };
+    const parsedReset = passwordResetSchema.safeParse({ password, confirmPassword });
+    if (!parsedReset.success) {
+        return { error: parsedReset.error.issues[0].message };
     }
 
     const supabase = await createClient();
@@ -646,8 +700,9 @@ export async function updateUsername(formData: FormData) {
     const supabase = await createClient();
     const username = formData.get("username") as string;
 
-    if (!username || username.length < 3) {
-        return { error: "Username must be at least 3 characters" };
+    const parsedUsername = usernameSchema.safeParse(username);
+    if (!parsedUsername.success) {
+        return { error: parsedUsername.error.issues[0].message };
     }
 
     const {

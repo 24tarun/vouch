@@ -1,12 +1,26 @@
 "use server";
 
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+
+const pushSubscriptionSchema = z.object({
+    endpoint: z.string().url(),
+    keys: z.object({
+        p256dh: z.string().min(1),
+        auth: z.string().min(1),
+    }),
+});
 
 /**
  * Saves a web push subscription for the current user.
  */
 export async function saveSubscription(subscription: any) {
+    const parsedSubscription = pushSubscriptionSchema.safeParse(subscription);
+    if (!parsedSubscription.success) {
+        return { success: false, error: "Invalid push subscription data" };
+    }
+
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 

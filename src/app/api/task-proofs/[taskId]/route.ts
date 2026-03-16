@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { TASK_PROOFS_BUCKET } from "@/lib/task-proof-shared";
+import { proofUploadLimiter, checkRateLimit } from "@/lib/rate-limit";
 
 interface ProofAccessTask {
     id: string;
@@ -57,6 +58,11 @@ export async function GET(_req: NextRequest, context: { params: Promise<{ taskId
 
     if (!user) {
         return jsonNoStore({ error: "Not authenticated" }, 401);
+    }
+
+    const { limited } = await checkRateLimit(proofUploadLimiter, `proof:${user.id}`);
+    if (limited) {
+        return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
     const { taskId } = await context.params;

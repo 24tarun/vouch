@@ -112,7 +112,8 @@ export async function voucherAccept(taskId: string) {
             proof_requested_at: null,
             proof_requested_by: null,
         } as any)
-        .eq("id", (taskId as any));
+        .eq("id", (taskId as any))
+        .eq("voucher_id", user.id);
 
     if (error) {
         return { error: error.message };
@@ -280,7 +281,8 @@ export async function voucherDeny(taskId: string) {
             proof_requested_at: null,
             proof_requested_by: null,
         } as any)
-        .eq("id", (taskId as any));
+        .eq("id", (taskId as any))
+        .eq("voucher_id", user.id);
 
     if (error) {
         return { error: error.message };
@@ -483,7 +485,8 @@ export async function authorizeRectify(taskId: string) {
     // Update task
     const { error } = await (supabase.from("tasks") as any)
         .update({ status: "RECTIFIED" } as any)
-        .eq("id", (taskId as any));
+        .eq("id", (taskId as any))
+        .eq("voucher_id", user.id);
 
     if (error) {
         return { error: error.message };

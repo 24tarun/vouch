@@ -14,7 +14,10 @@
       "Bash(npm *)",
       "Bash(npx *)",
       "Bash(pnpm *)",
-      "Read(**)"
+      "Read(**)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(cat:*)"
     ]
   }
 }
