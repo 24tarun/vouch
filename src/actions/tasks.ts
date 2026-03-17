@@ -55,6 +55,10 @@ const ACTIVE_POMO_RUNNING_ERROR = "Stop the running pomodoro for this task befor
 const INVALID_REMINDERS_ERROR = "Invalid reminders payload.";
 const PAST_REMINDER_ERROR = "All reminders must be in the future.";
 const REMINDER_AFTER_DEADLINE_ERROR = "Reminders must be before or at the deadline.";
+const EVENT_BOUNDARY_REQUIRED_ERROR = "Event tasks require both -startHHMM and -endHHMM.";
+const INVALID_EVENT_END_ERROR = "Event end time is invalid.";
+const INVALID_EVENT_START_ERROR = "Event start time is invalid.";
+const EVENT_END_NOT_AFTER_START_ERROR = "Event end time must be after start time.";
 const INVALID_REQUIRED_POMO_ERROR =
     `Required pomodoro minutes must be an integer between 1 and ${MAX_POMO_DURATION_MINUTES}.`;
 const INVALID_TASK_PROOF_ERROR = "Invalid proof payload.";
@@ -607,6 +611,7 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
 
     // Default params: Deadline = End of today
     let deadline = getDefaultTaskDeadline();
+    let eventStartAtIso: string | null = null;
     let eventEndAtIso: string | null = null;
     let shouldAutoCompletePastEvent = false;
     const creationNow = new Date();
@@ -623,7 +628,8 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
             return { error: eventResolution.error || "Event time is invalid." };
         }
 
-        deadline = eventResolution.startDate;
+        deadline = eventResolution.endDate;
+        eventStartAtIso = eventResolution.startDate.toISOString();
         eventEndAtIso = eventResolution.endDate.toISOString();
         shouldAutoCompletePastEvent =
             eventResolution.startDate.getTime() <= creationNow.getTime() &&
@@ -644,6 +650,7 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
             marked_completed_at: shouldAutoCompletePastEvent ? creationNowIso : null,
             voucher_response_deadline: null,
             google_sync_for_task: normalizedTitle.googleSyncForTask,
+            google_event_start_at: eventStartAtIso,
             google_event_end_at: eventEndAtIso,
             google_event_color_id: googleEventColorId,
         })
@@ -784,6 +791,16 @@ export async function createTask(formData: FormData) {
     const description = formData.get("description") as string;
     const failureCostMajor = Number(formData.get("failureCost"));
     const deadline = formData.get("deadline") as string;
+    const submittedEventStartIsoRaw = formData.get("eventStartIso");
+    const submittedEventStartIso =
+        typeof submittedEventStartIsoRaw === "string"
+            ? submittedEventStartIsoRaw.trim()
+            : "";
+    const submittedEventEndIsoRaw = formData.get("eventEndIso");
+    const submittedEventEndIso =
+        typeof submittedEventEndIsoRaw === "string"
+            ? submittedEventEndIsoRaw.trim()
+            : "";
     const voucherId = formData.get("voucherId") as string;
     const subtasksInput = normalizeSubtasksFromFormData(formData.get("subtasks"));
     const requiredPomoInput = parseRequiredPomoMinutesFromFormData(formData.get("requiredPomoMinutes"));
@@ -828,6 +845,7 @@ export async function createTask(formData: FormData) {
         return { error: PAST_DEADLINE_ERROR };
     }
     const validatedDeadline = parsedDeadline;
+    let eventStartAtIso: string | null = null;
     let eventEndAtIso: string | null = null;
     let shouldAutoCompletePastEvent = false;
     const creationNow = new Date();
@@ -849,15 +867,33 @@ export async function createTask(formData: FormData) {
             defaultDurationMinutes: defaultEventDurationMinutes,
         });
 
-        if (eventResolution.error || !eventResolution.startDate || !eventResolution.endDate) {
-            return { error: eventResolution.error || "Event time is invalid." };
+        if (eventResolution.error) {
+            return { error: eventResolution.error };
         }
 
-        validatedDeadline.setTime(eventResolution.startDate.getTime());
-        eventEndAtIso = eventResolution.endDate.toISOString();
+        if (!submittedEventStartIso || !submittedEventEndIso) {
+            return { error: EVENT_BOUNDARY_REQUIRED_ERROR };
+        }
+
+        const parsedEventStart = new Date(submittedEventStartIso);
+        if (Number.isNaN(parsedEventStart.getTime())) {
+            return { error: INVALID_EVENT_START_ERROR };
+        }
+
+        const parsedEventEnd = new Date(submittedEventEndIso);
+        if (Number.isNaN(parsedEventEnd.getTime())) {
+            return { error: INVALID_EVENT_END_ERROR };
+        }
+        if (parsedEventEnd.getTime() <= parsedEventStart.getTime()) {
+            return { error: EVENT_END_NOT_AFTER_START_ERROR };
+        }
+
+        validatedDeadline.setTime(parsedEventEnd.getTime());
+        eventStartAtIso = parsedEventStart.toISOString();
+        eventEndAtIso = parsedEventEnd.toISOString();
         shouldAutoCompletePastEvent =
-            eventResolution.startDate.getTime() <= creationNow.getTime() &&
-            eventResolution.endDate.getTime() <= creationNow.getTime();
+            parsedEventStart.getTime() <= creationNow.getTime() &&
+            parsedEventEnd.getTime() <= creationNow.getTime();
     }
     const remindersInput = normalizeRemindersFromFormData(formData.get("reminders"), validatedDeadline);
     if (remindersInput.error) {
@@ -867,8 +903,8 @@ export async function createTask(formData: FormData) {
         validatedDeadline,
         remindersInput.reminderDates
     );
-    const eventDurationMinutes = eventEndAtIso
-        ? Math.max(1, Math.round((new Date(eventEndAtIso).getTime() - validatedDeadline.getTime()) / (1000 * 60)))
+    const eventDurationMinutes = eventStartAtIso
+        ? Math.max(1, Math.round((validatedDeadline.getTime() - new Date(eventStartAtIso).getTime()) / (1000 * 60)))
         : null;
 
     if (failureCostCents < failureCostBounds.minCents || failureCostCents > failureCostBounds.maxCents) {
@@ -976,6 +1012,7 @@ export async function createTask(formData: FormData) {
             marked_completed_at: shouldAutoCompletePastEvent ? creationNowIso : null,
             voucher_response_deadline: null,
             google_sync_for_task: titleSelection.googleSyncForTask,
+            google_event_start_at: eventStartAtIso,
             google_event_end_at: eventEndAtIso,
             google_event_color_id: googleEventColorId,
             recurrence_rule_id: recurrenceRuleId
@@ -2517,17 +2554,8 @@ export async function getTask(taskId: string) {
         if (isOwner || isVoucher) {
             const now = new Date();
             const deadline = new Date((task as any).deadline);
-            const eventEndRaw = (task as any).google_event_end_at;
-            const parsedEventEnd =
-                typeof eventEndRaw === "string" ? new Date(eventEndRaw) : null;
-            const effectiveDeadline =
-                (task as any).google_sync_for_task &&
-                    parsedEventEnd &&
-                    !Number.isNaN(parsedEventEnd.getTime())
-                    ? parsedEventEnd
-                    : deadline;
             const shouldAutoFail =
-                now >= effectiveDeadline &&
+                now >= deadline &&
                 ["CREATED", "POSTPONED"].includes((task as any).status);
 
             if (shouldAutoFail) {

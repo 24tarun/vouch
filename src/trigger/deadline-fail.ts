@@ -2,8 +2,7 @@
  * Trigger: deadline-fail
  * Runs: Every 5 minutes (configured with a 5-minute cron interval).
  * What it does when it runs:
- * 1) Finds tasks in CREATED or POSTPONED whose effective due time has passed
- *    (event end-time for synced events, otherwise deadline).
+ * 1) Finds tasks in CREATED or POSTPONED whose deadline has passed.
  * 2) Marks each matched task as FAILED.
  * 3) Writes a positive failure ledger entry for the task owner.
  * 4) Logs a DEADLINE_MISSED system event in task_events.
@@ -25,9 +24,9 @@ export const deadlineFail = schedules.task({
         // across overlapping runs.
         const { data, error } = await supabase
             .from("tasks")
-            .select("id, user_id, status, failure_cost_cents, deadline, google_sync_for_task, google_event_end_at")
+            .select("id, user_id, status, failure_cost_cents, deadline")
             .in("status", ["CREATED", "POSTPONED"])
-            .or(`deadline.lt.${nowIso},and(google_sync_for_task.eq.true,google_event_end_at.lt.${nowIso})`) as any;
+            .lt("deadline", nowIso as any) as any;
 
         const rawCandidates = (data || []) as Array<{
             id: string;
@@ -35,8 +34,6 @@ export const deadlineFail = schedules.task({
             status: "CREATED" | "POSTPONED";
             failure_cost_cents: number;
             deadline: string;
-            google_sync_for_task: boolean;
-            google_event_end_at: string | null;
         }>;
 
         if (error) {
@@ -47,18 +44,7 @@ export const deadlineFail = schedules.task({
         const candidates = rawCandidates.filter((task) => {
             const deadlineTs = Date.parse(task.deadline);
             if (Number.isNaN(deadlineTs)) return false;
-
-            const eventEndTs =
-                typeof task.google_event_end_at === "string"
-                    ? Date.parse(task.google_event_end_at)
-                    : Number.NaN;
-
-            const effectiveDueTs =
-                task.google_sync_for_task && Number.isFinite(eventEndTs)
-                    ? eventEndTs
-                    : deadlineTs;
-
-            return effectiveDueTs < now.getTime();
+            return deadlineTs < now.getTime();
         });
 
         if (candidates.length === 0) {

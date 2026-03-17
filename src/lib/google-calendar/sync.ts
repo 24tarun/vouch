@@ -85,7 +85,7 @@ interface GoogleCalendarOutboxPayload {
 
 type GoogleSyncTaskSnapshot = Pick<
     Task,
-    "id" | "user_id" | "title" | "description" | "deadline" | "status" | "updated_at" | "google_sync_for_task" | "google_event_end_at" | "google_event_color_id"
+    "id" | "user_id" | "title" | "description" | "deadline" | "status" | "updated_at" | "google_sync_for_task" | "google_event_start_at" | "google_event_end_at" | "google_event_color_id"
 >;
 
 function getRequiredEnv(name: string): string {
@@ -310,7 +310,7 @@ function shouldImportGoogleEventByTag(event: GoogleCalendarEvent): boolean {
     return hasEventTagToken(event.summary) || hasEventTagToken(event.description);
 }
 
-function mapGoogleEventToDeadline(event: GoogleCalendarEvent): string | null {
+function mapGoogleEventToStart(event: GoogleCalendarEvent): string | null {
     const start = event.start;
     if (!start) return null;
 
@@ -348,18 +348,29 @@ function mapGoogleEventToEnd(event: GoogleCalendarEvent): string | null {
     return null;
 }
 
-function buildGoogleEventPayload(task: Pick<Task, "id" | "title" | "description" | "deadline" | "google_event_end_at" | "google_event_color_id">): GoogleCalendarEvent {
-    const start = new Date(task.deadline);
-    const explicitEnd = task.google_event_end_at ? new Date(task.google_event_end_at) : null;
+export function buildGoogleEventPayload(task: Pick<Task, "id" | "title" | "description" | "deadline" | "google_event_start_at" | "google_event_end_at" | "google_event_color_id">): GoogleCalendarEvent {
+    const deadlineAsEnd = new Date(task.deadline);
+    const explicitStart = task.google_event_start_at ? new Date(task.google_event_start_at) : null;
+    const explicitLegacyEnd = task.google_event_end_at ? new Date(task.google_event_end_at) : null;
     const colorId = isGoogleEventColorId(task.google_event_color_id) ? task.google_event_color_id : undefined;
-    const hasValidExplicitEnd = Boolean(
-        explicitEnd &&
-        !Number.isNaN(explicitEnd.getTime()) &&
-        explicitEnd.getTime() > start.getTime()
+    const hasValidExplicitStart = Boolean(
+        explicitStart &&
+        !Number.isNaN(explicitStart.getTime()) &&
+        !Number.isNaN(deadlineAsEnd.getTime()) &&
+        deadlineAsEnd.getTime() > explicitStart.getTime()
     );
-    const end = hasValidExplicitEnd
-        ? explicitEnd as Date
-        : new Date(start.getTime() + 30 * 60 * 1000);
+    const start = hasValidExplicitStart
+        ? (explicitStart as Date)
+        : deadlineAsEnd;
+    const end = hasValidExplicitStart
+        ? deadlineAsEnd
+        : Boolean(
+            explicitLegacyEnd &&
+            !Number.isNaN(explicitLegacyEnd.getTime()) &&
+            explicitLegacyEnd.getTime() > start.getTime()
+        )
+            ? (explicitLegacyEnd as Date)
+            : new Date(start.getTime() + 30 * 60 * 1000);
 
     return {
         summary: task.title,
@@ -384,7 +395,7 @@ function buildGoogleEventPayload(task: Pick<Task, "id" | "title" | "description"
 async function googleCreateOrUpdateEvent(
     accessToken: string,
     calendarId: string,
-    task: Pick<Task, "id" | "title" | "description" | "deadline" | "google_event_end_at" | "google_event_color_id">,
+    task: Pick<Task, "id" | "title" | "description" | "deadline" | "google_event_start_at" | "google_event_end_at" | "google_event_color_id">,
     existingEventId?: string
 ): Promise<GoogleCalendarEvent> {
     const payload = buildGoogleEventPayload(task);
@@ -934,12 +945,20 @@ export async function enqueueGoogleCalendarOutbox(
         return;
     }
 
+    const outboxId = (data as { id: number }).id;
+
     try {
         await triggerTasks.trigger("google-calendar-dispatch", {
-            outboxId: (data as { id: number }).id,
+            outboxId,
         });
     } catch (triggerError) {
         console.error("Could not trigger google-calendar-dispatch task:", triggerError);
+        // Fallback for environments where Trigger dispatch is unavailable.
+        try {
+            await processGoogleCalendarOutboxItem(outboxId);
+        } catch (fallbackError) {
+            console.error("Could not process google-calendar-dispatch fallback:", fallbackError);
+        }
     }
 }
 
@@ -1011,7 +1030,7 @@ async function getTaskSnapshotForGoogleSync(
     userId: string
 ): Promise<GoogleSyncTaskSnapshot | null> {
     const { data } = await (supabase.from("tasks") as any)
-        .select("id, user_id, title, description, deadline, status, updated_at, google_sync_for_task, google_event_end_at, google_event_color_id")
+        .select("id, user_id, title, description, deadline, status, updated_at, google_sync_for_task, google_event_start_at, google_event_end_at, google_event_color_id")
         .eq("id", taskId as any)
         .eq("user_id", userId as any)
         .maybeSingle();
@@ -1338,11 +1357,11 @@ export async function processGoogleCalendarDeltaForUser(userId: string): Promise
                 continue;
             }
 
-            const deadlineIso = mapGoogleEventToDeadline(event);
-            if (!deadlineIso) {
+            const eventStartIso = mapGoogleEventToStart(event);
+            const eventEndIso = mapGoogleEventToEnd(event);
+            if (!eventEndIso) {
                 continue;
             }
-            const eventEndIso = mapGoogleEventToEnd(event);
             const eventColorId = isGoogleEventColorId(event.colorId) ? event.colorId : null;
 
             const googleUpdatedTs = parseIsoTimestamp(event.updated);
@@ -1374,7 +1393,8 @@ export async function processGoogleCalendarDeltaForUser(userId: string): Promise
                     .update({
                         title: normalizeGoogleEventTitle(event),
                         description: event.description || null,
-                        deadline: deadlineIso,
+                        deadline: eventEndIso,
+                        google_event_start_at: eventStartIso,
                         google_event_end_at: eventEndIso,
                         google_event_color_id: eventColorId,
                         google_sync_for_task: true,
@@ -1403,7 +1423,8 @@ export async function processGoogleCalendarDeltaForUser(userId: string): Promise
                     title: normalizeGoogleEventTitle(event),
                     description: event.description || null,
                     failure_cost_cents: defaultFailureCostCents,
-                    deadline: deadlineIso,
+                    deadline: eventEndIso,
+                    google_event_start_at: eventStartIso,
                     google_event_end_at: eventEndIso,
                     google_event_color_id: eventColorId,
                     status: "CREATED",

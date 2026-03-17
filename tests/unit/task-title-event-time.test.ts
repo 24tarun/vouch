@@ -49,19 +49,16 @@ test("parseClockToken accepts and rejects supported clock formats", () => {
     assert.equal(parseClockToken("9960"), null);
 });
 
-test("1) -event -start930 resolves start=09:30 and end=+defaultDuration", () => {
+test("1) -event -start930 is rejected because -end is mandatory", () => {
     /*
-     * WHAT + WHY:
-     * This checks the primary "start-only" contract for event tasks.
-     * The product rule says if only -start is provided, end must auto-fill using default duration.
+     * What and why this test checks:
+     * Event mode now requires both boundary tokens, so start-only input must be rejected deterministically.
      *
-     * PASSING SCENARIO:
-     * "-event -start930" with defaultDuration=60 should produce:
-     * - start at 09:30 on anchor day
-     * - end exactly 60 minutes later (10:30)
+     * Passing scenario:
+     * Resolver returns the strict missing-boundary validation error and no resolved start/end dates.
      *
-     * FAILING SCENARIO:
-     * If resolver did not auto-fill end (or used wrong duration), the end timestamp would be incorrect.
+     * Failing scenario:
+     * If start-only resolves successfully, users can bypass the required dual-boundary contract.
      */
     const anchor = buildAnchorDate();
     const result = resolveEventSchedule({
@@ -71,25 +68,21 @@ test("1) -event -start930 resolves start=09:30 and end=+defaultDuration", () => 
         now: buildNowBeforeAnchorDay(),
     });
 
-    assert.equal(result.error, undefined);
-    assert.ok(result.startDate);
-    assert.ok(result.endDate);
-    assert.equal(result.startDate!.getHours(), 9);
-    assert.equal(result.startDate!.getMinutes(), 30);
-    assert.equal(result.endDate!.getTime() - result.startDate!.getTime(), 60 * 60 * 1000);
+    assert.equal(result.error, "Event tasks require both -startHHMM and -endHHMM.");
+    assert.equal(result.startDate, null);
+    assert.equal(result.endDate, null);
 });
 
-test("2) -event -end930 resolves end=09:30 and start=-defaultDuration", () => {
+test("2) -event -end930 is rejected because -start is mandatory", () => {
     /*
-     * WHAT + WHY:
-     * This checks the "end-only" contract, which is the inverse of start-only auto-fill.
-     * It prevents ambiguity for users who prefer typing only end times.
+     * What and why this test checks:
+     * Event mode now requires both boundary tokens, so end-only input must be rejected deterministically.
      *
-     * PASSING SCENARIO:
-     * "-event -end930" with defaultDuration=60 should backfill start to 08:30.
+     * Passing scenario:
+     * Resolver returns the strict missing-boundary validation error and no resolved start/end dates.
      *
-     * FAILING SCENARIO:
-     * If backfill logic is missing or reversed, computed start would not be exactly one hour earlier.
+     * Failing scenario:
+     * If end-only resolves successfully, users can bypass the required dual-boundary contract.
      */
     const anchor = buildAnchorDate();
     const result = resolveEventSchedule({
@@ -99,14 +92,9 @@ test("2) -event -end930 resolves end=09:30 and start=-defaultDuration", () => {
         now: buildNowBeforeAnchorDay(),
     });
 
-    assert.equal(result.error, undefined);
-    assert.ok(result.startDate);
-    assert.ok(result.endDate);
-    assert.equal(result.endDate!.getHours(), 9);
-    assert.equal(result.endDate!.getMinutes(), 30);
-    assert.equal(result.endDate!.getTime() - result.startDate!.getTime(), 60 * 60 * 1000);
-    assert.equal(result.startDate!.getHours(), 8);
-    assert.equal(result.startDate!.getMinutes(), 30);
+    assert.equal(result.error, "Event tasks require both -startHHMM and -endHHMM.");
+    assert.equal(result.startDate, null);
+    assert.equal(result.endDate, null);
 });
 
 test("3) -event -start930 -end1030 resolves explicit start/end", () => {
@@ -139,14 +127,14 @@ test("3) -event -start930 -end1030 resolves explicit start/end", () => {
 
 test("4) -event with no -start/-end is rejected as mandatory-token violation", () => {
     /*
-     * WHAT + WHY:
-     * This enforces the new strict rule: event tasks must provide at least one time boundary token.
+     * What and why this test checks:
+     * This enforces the strict rule that event tasks must provide both boundary tokens.
      * Without this check, events would silently fallback and violate product requirements.
      *
-     * PASSING SCENARIO:
+     * Passing scenario:
      * Resolver returns a validation error for "-event" without start/end.
      *
-     * FAILING SCENARIO:
+     * Failing scenario:
      * If this returned success, event tasks could be created with ambiguous time semantics.
      */
     const result = resolveEventSchedule({
@@ -158,7 +146,7 @@ test("4) -event with no -start/-end is rejected as mandatory-token violation", (
 
     assert.equal(result.startDate, null);
     assert.equal(result.endDate, null);
-    assert.equal(result.error, "Event tasks require -startHHMM or -endHHMM.");
+    assert.equal(result.error, "Event tasks require both -startHHMM and -endHHMM.");
 });
 
 test("5) invalid -start token is rejected", () => {
@@ -173,7 +161,7 @@ test("5) invalid -start token is rejected", () => {
      * If accepted, parser would create impossible times and downstream logic (calendar sync/reminders) could break.
      */
     const result = resolveEventSchedule({
-        rawTitle: "focus -event -start9960",
+        rawTitle: "focus -event -start9960 -end1000",
         anchorDate: buildAnchorDate(),
         defaultDurationMinutes: 60,
         now: buildNowBeforeAnchorDay(),
@@ -350,14 +338,14 @@ test("11) non-event title with @930 remains outside event resolver scope", () =>
 
 test("12) -event with @930 but no -start/-end still fails mandatory-token rule", () => {
     /*
-     * WHAT + WHY:
+     * What and why this test checks:
      * This enforces the explicit product decision that @ is non-event-only.
      * Event timing must come from -start/-end, even when @ appears in title text.
      *
-     * PASSING SCENARIO:
-     * "-event @930" fails with missing -start/-end error.
+     * Passing scenario:
+     * "-event @930" fails with mixed-syntax error.
      *
-     * FAILING SCENARIO:
+     * Failing scenario:
      * If this passed, event parser would silently accept legacy @ syntax and violate migration intent.
      */
     const result = resolveEventSchedule({
@@ -367,12 +355,35 @@ test("12) -event with @930 but no -start/-end still fails mandatory-token rule",
         now: buildNowBeforeAnchorDay(),
     });
 
-    assert.equal(result.error, "Event tasks require -startHHMM or -endHHMM.");
+    assert.equal(result.error, "Event tasks cannot use @time. Use -start/-end only.");
     assert.equal(result.startDate, null);
     assert.equal(result.endDate, null);
 });
 
-test("13) past event windows are accepted when start/end are in the past", () => {
+test("13) -event with -start/-end plus @930 is rejected as mixed syntax", () => {
+    /*
+     * What and why this test checks:
+     * This ensures @time is always rejected for event titles, even when valid -start/-end tokens are present.
+     *
+     * Passing scenario:
+     * Resolver rejects mixed syntax with the explicit @time conflict error and does not resolve a schedule.
+     *
+     * Failing scenario:
+     * If resolver accepts this title, users can submit conflicting time syntaxes and create ambiguous events.
+     */
+    const result = resolveEventSchedule({
+        rawTitle: "planning -event -start930 -end1030 @930",
+        anchorDate: buildAnchorDate(),
+        defaultDurationMinutes: 60,
+        now: buildNowBeforeAnchorDay(),
+    });
+
+    assert.equal(result.error, "Event tasks cannot use @time. Use -start/-end only.");
+    assert.equal(result.startDate, null);
+    assert.equal(result.endDate, null);
+});
+
+test("14) past event windows are accepted when start/end are in the past", () => {
     /*
      * WHAT + WHY:
      * Product behavior now allows creating calendar-block events in the past.

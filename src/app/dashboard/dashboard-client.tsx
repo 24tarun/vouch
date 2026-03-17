@@ -130,6 +130,9 @@ function buildCreateTaskFormData(payload: TaskInputCreatePayload): FormData {
     formData.append("title", payload.title);
     formData.append("rawTitle", payload.rawTitle);
     formData.append("deadline", payload.deadlineIso);
+    if (payload.eventStartIso) {
+        formData.append("eventStartIso", payload.eventStartIso);
+    }
     if (payload.eventEndIso) {
         formData.append("eventEndIso", payload.eventEndIso);
     }
@@ -559,7 +562,8 @@ export default function DashboardClient({
         const nowIso = now.toISOString();
         const tempTaskId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         const optimisticIsEventTask = EVENT_TOKEN_REGEX.test(payload.title);
-        const optimisticEventStart = optimisticIsEventTask ? new Date(payload.deadlineIso) : null;
+        const optimisticEventStart =
+            optimisticIsEventTask && payload.eventStartIso ? new Date(payload.eventStartIso) : null;
         const optimisticEventEnd = optimisticIsEventTask && payload.eventEndIso ? new Date(payload.eventEndIso) : null;
         const shouldAutoCompletePastEvent = Boolean(
             optimisticIsEventTask &&
@@ -586,6 +590,7 @@ export default function DashboardClient({
             voucher_response_deadline: null,
             recurrence_rule_id: payload.recurrenceType ? "optimistic" : null,
             google_sync_for_task: optimisticIsEventTask,
+            google_event_start_at: optimisticIsEventTask ? payload.eventStartIso : null,
             google_event_end_at: optimisticIsEventTask ? payload.eventEndIso : null,
             created_at: nowIso,
             updated_at: nowIso,

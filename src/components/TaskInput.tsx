@@ -76,6 +76,9 @@ const TITLE_TEXT_METRICS_CLASS =
 
 function formatTimeUntilDeadline(deadline: Date, now: Date = new Date()): string {
     const diffMs = deadline.getTime() - now.getTime();
+    if (diffMs <= 0) {
+        return "Deadline passed";
+    }
     const totalMinutes = Math.max(1, Math.floor(diffMs / (1000 * 60)));
     const days = Math.floor(totalMinutes / (24 * 60));
     const remainingAfterDays = totalMinutes % (24 * 60);
@@ -113,6 +116,7 @@ export interface TaskInputCreatePayload {
     requiredPomoMinutes: number | null;
     requiresProof: boolean;
     deadlineIso: string;
+    eventStartIso: string | null;
     eventEndIso: string | null;
     reminderIsos: string[];
     voucherId: string;
@@ -536,15 +540,15 @@ export function TaskInput({
                 now,
             });
 
-            if (eventResolution.error || !eventResolution.startDate) {
+            if (eventResolution.error || !eventResolution.endDate) {
                 return {
                     deadline: defaultDeadline,
-                    error: eventResolution.error || "Event start time is invalid.",
+                    error: eventResolution.error || "Event end time is invalid.",
                 };
             }
 
             return {
-                deadline: eventResolution.startDate,
+                deadline: eventResolution.endDate,
                 error: null as string | null,
             };
         }
@@ -894,6 +898,7 @@ export function TaskInput({
         }
 
         let deadlineToSubmit = parserResolution?.deadline ?? effectiveSelectedDate ?? getDefaultDeadline();
+        let eventStartDate: Date | null = null;
         let eventEndDate: Date | null = null;
 
         if (isEventTask) {
@@ -920,8 +925,9 @@ export function TaskInput({
                 return;
             }
 
-            deadlineToSubmit = eventResolution.startDate;
+            eventStartDate = eventResolution.startDate;
             eventEndDate = eventResolution.endDate;
+            deadlineToSubmit = eventResolution.endDate;
         } else {
             if (deadlineToSubmit.getTime() <= Date.now()) {
                 setDeadlineError("Deadline must be in the future.");
@@ -963,6 +969,7 @@ export function TaskInput({
             requiredPomoMinutes,
             requiresProof,
             deadlineIso: deadlineToSubmit.toISOString(),
+            eventStartIso: eventStartDate ? eventStartDate.toISOString() : null,
             eventEndIso: eventEndDate ? eventEndDate.toISOString() : null,
             reminderIsos: remindersToSubmit.map((reminder) => reminder.toISOString()),
             voucherId: selectedVoucherId,
@@ -990,6 +997,9 @@ export function TaskInput({
             formData.append("title", payload.title);
             formData.append("rawTitle", payload.rawTitle);
             formData.append("deadline", payload.deadlineIso);
+            if (payload.eventStartIso) {
+                formData.append("eventStartIso", payload.eventStartIso);
+            }
             if (payload.eventEndIso) {
                 formData.append("eventEndIso", payload.eventEndIso);
             }

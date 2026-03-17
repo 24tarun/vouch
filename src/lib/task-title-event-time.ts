@@ -6,10 +6,12 @@ export type { ParsedClockToken };
 const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
 const EVENT_START_TOKEN_REGEX = /(^|\s)(?:-start|-s|\.s)\s*(\d{1,2}:\d{2}|\d{1,4})\b/gi;
 const EVENT_END_TOKEN_REGEX = /(^|\s)(?:-end|-e|\.e)\s*(\d{1,2}:\d{2}|\d{1,4})\b/gi;
+const EVENT_AT_TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/i;
 
 const EVENT_DUPLICATE_START_ERROR = "Use only one -start token.";
 const EVENT_DUPLICATE_END_ERROR = "Use only one -end token.";
-const EVENT_MISSING_TIME_ERROR = "Event tasks require -startHHMM or -endHHMM.";
+const EVENT_MISSING_TIME_ERROR = "Event tasks require both -startHHMM and -endHHMM.";
+const EVENT_MIXED_TIME_ERROR = "Event tasks cannot use @time. Use -start/-end only.";
 const EVENT_START_INVALID_ERROR = "Event start time is invalid. Use -start930 or -start09:30.";
 const EVENT_END_INVALID_ERROR = "Event end time is invalid. Use -end930 or -end15:00.";
 const EVENT_END_BEFORE_START_ERROR = "Event end time must be after start time.";
@@ -108,7 +110,16 @@ export function resolveEventSchedule(options: ResolveEventScheduleOptions): Reso
         };
     }
 
-    if (!extracted.startToken && !extracted.endToken) {
+    if (EVENT_AT_TIME_TOKEN_REGEX.test(rawTitle)) {
+        return {
+            hasEvent: true,
+            startDate: null,
+            endDate: null,
+            error: EVENT_MIXED_TIME_ERROR,
+        };
+    }
+
+    if (!extracted.startToken || !extracted.endToken) {
         return {
             hasEvent: true,
             startDate: null,
@@ -144,12 +155,6 @@ export function resolveEventSchedule(options: ResolveEventScheduleOptions): Reso
     if (parsedStart && parsedEnd) {
         startDate = applyClockToken(anchorDate, parsedStart);
         endDate = applyClockToken(anchorDate, parsedEnd);
-    } else if (parsedStart) {
-        startDate = applyClockToken(anchorDate, parsedStart);
-        endDate = new Date(startDate.getTime() + defaultDurationMinutes * 60 * 1000);
-    } else if (parsedEnd) {
-        endDate = applyClockToken(anchorDate, parsedEnd);
-        startDate = new Date(endDate.getTime() - defaultDurationMinutes * 60 * 1000);
     } else {
         return {
             hasEvent: true,

@@ -478,6 +478,14 @@ async function processRule(
         }
 
         const deadlineIso = new Date(guess).toISOString();
+        const eventDurationMinutes = Number((rule as any).google_event_duration_minutes);
+        const hasEventDuration =
+            Boolean(rule.google_sync_for_rule) &&
+            Number.isFinite(eventDurationMinutes) &&
+            eventDurationMinutes > 0;
+        const eventStartIso = hasEventDuration
+            ? new Date(new Date(deadlineIso).getTime() - eventDurationMinutes * 60 * 1000).toISOString()
+            : null;
 
         // Create Task
         // @ts-ignore
@@ -493,14 +501,8 @@ async function processRule(
                 deadline: deadlineIso,
                 status: "CREATED",
                 google_sync_for_task: Boolean(rule.google_sync_for_rule),
-                google_event_end_at:
-                    Boolean(rule.google_sync_for_rule) &&
-                        Number.isFinite((rule as any).google_event_duration_minutes)
-                        ? new Date(
-                            new Date(deadlineIso).getTime() +
-                            Number((rule as any).google_event_duration_minutes) * 60 * 1000
-                        ).toISOString()
-                        : null,
+                google_event_start_at: eventStartIso,
+                google_event_end_at: hasEventDuration ? deadlineIso : null,
                 google_event_color_id:
                     Boolean(rule.google_sync_for_rule) &&
                         isGoogleEventColorId((rule as any).google_event_color_id)
