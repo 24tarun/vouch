@@ -238,3 +238,308 @@ The app enforces a **60-second maximum** on proof videos before upload. Enforced
 - **No simultaneous task limit** — queue them, don't cap them
 - **0.5× weight applied silently** — not shown in UI, users infer it if they care to
 - **Free for all users** — revisit only if costs become significant at scale
+
+---
+---
+
+# Implementation Plan
+
+> What follows is the engineering plan for building the Orca Mother into the Vouch codebase. Every section maps to a phase of work.
+
+---
+
+## Phase 1 — Database & Identity
+
+**New migration: `supabase/migrations/043_orca_mother_ai_voucher.sql`**
+
+`tasks.voucher_id` is `UUID NOT NULL FK → profiles(id)`, and `profiles.id` is `FK → auth.users(id) ON DELETE CASCADE`. The AI voucher needs a real identity in the database — there's no way around the FK chain.
+
+1. **Insert a dedicated auth user** into `auth.users` with a pre-determined UUID and email `orca-mother@vouch.internal`. No password, no auth provider — this user cannot log in.
+2. The existing `handle_new_user` trigger auto-creates the `profiles` row. **Update the profile** to set `username = 'Orca Mother'`.
+3. **Add column**: `tasks.ai_escalated_from boolean NOT NULL DEFAULT false` — tracks tasks originally AI-vouched but later escalated to a human voucher. Needed for reputation (still 0.5×) and UI ("Originally reviewed by Orca Mother").
+
+```sql
+-- Insert system user for Orca Mother
+INSERT INTO auth.users (id, email, role, instance_id, aud, created_at, updated_at)
+VALUES (
+  'PREDEFINED-UUID-HERE',
+  'orca-mother@vouch.internal',
+  'authenticated',
+  '00000000-0000-0000-0000-000000000000',
+  'authenticated',
+  now(), now()
+) ON CONFLICT (id) DO NOTHING;
+
+-- handle_new_user trigger fires → profile row created
+-- Then update the profile:
+UPDATE public.profiles
+SET username = 'Orca Mother'
+WHERE id = 'PREDEFINED-UUID-HERE';
+
+-- Track escalation history
+ALTER TABLE public.tasks
+ADD COLUMN ai_escalated_from boolean NOT NULL DEFAULT false;
+```
+
+---
+
+## Phase 2 — Constants & Config
+
+**New file: `src/lib/ai-voucher/constants.ts`**
+
+```typescript
+// Hardcoded — must match the UUID in migration 043
+export const ORCA_MOTHER_PROFILE_ID = "PREDEFINED-UUID-HERE";
+
+export const AI_VOUCHER_REPUTATION_MULTIPLIER = 0.5;
+
+export const AI_VOUCHER_DISPLAY_NAME = "Orca Mother";
+
+export function isAiVouched(task: { voucher_id: string }): boolean {
+  return task.voucher_id === ORCA_MOTHER_PROFILE_ID;
+}
+
+export function isAiVouchedOrEscalated(task: {
+  voucher_id: string;
+  ai_escalated_from?: boolean;
+}): boolean {
+  return isAiVouched(task) || Boolean(task.ai_escalated_from);
+}
+```
+
+**New env var:** `GEMINI_API_KEY` — added to `.env.local`, **server-only** (no `NEXT_PUBLIC_` prefix). Never sent to the client. Never committed to git.
+
+**New npm dependency:** `@google/generative-ai` — Google's official Generative AI SDK.
+
+---
+
+## Phase 3 — Gemini Integration (Server-Only)
+
+**New file: `src/lib/ai-voucher/gemini.ts`**
+
+This module is **only imported from server actions and Trigger.dev jobs**. Never from client components.
+
+```typescript
+export async function evaluateProofWithGemini(params: {
+  taskTitle: string;
+  taskDeadline: string;
+  proofBuffer: Buffer;
+  mimeType: string;
+  mediaKind: "image" | "video";
+}): Promise<{ decision: "approved" | "denied"; reason?: string }>
+```
+
+- **Image path**: convert `proofBuffer` to base64, send inline via `model.generateContent()` with structured JSON output schema.
+- **Video path**: write buffer to temp file, upload via `GoogleAIFileManager`, poll until `ACTIVE`, then inference call with `fileData`.
+- **Structured output schema** forces `{ decision: "approved" | "denied", reason?: string }` — no free-form parsing.
+- **System prompt** as defined in the spec above (strict accountability judge persona).
+- **Temp files** cleaned up in `finally` block.
+- **Timeout**: 30s for images, 120s for video (including File API upload + processing).
+
+---
+
+## Phase 4 — Evaluation Orchestrator
+
+**New file: `src/lib/ai-voucher/evaluate.ts`**
+
+```typescript
+export async function processAiVoucherDecision(taskId: string): Promise<void>
+```
+
+1. Fetch task + proof row using `createAdminClient()` (bypasses RLS — no auth session for AI).
+2. Verify task is `AWAITING_VOUCHER` and voucher is Orca Mother.
+3. Download proof binary from Supabase storage via admin client.
+4. Call `evaluateProofWithGemini()`.
+5. **If approved**:
+   - Update task status → `COMPLETED`, set `has_proof = true`
+   - Delete proof from storage + DB (matches `voucherAccept` pattern)
+   - Write `task_events` row: type `AI_APPROVE`
+   - Invalidate caches (`tasks:active:{userId}`)
+6. **If denied**:
+   - Update task status → `FAILED`
+   - Delete proof from storage + DB (matches `voucherDeny` pattern)
+   - Write `task_events` row: type `AI_DENY`, metadata `{ reason: "..." }`
+   - Create `ledger_entries` row: `entry_type = 'failure'`, `amount_cents = task.failure_cost_cents`
+   - Invalidate caches
+7. Send push notification to user:
+   - Approve: *"The mother has reviewed your proof. You may proceed."*
+   - Deny: *"The mother has decided your fate. {reason}"*
+
+Pattern mirrors `voucherAccept`/`voucherDeny` in `src/actions/voucher.ts` but uses admin client.
+
+---
+
+## Phase 5 — Server Action Changes
+
+**File: `src/actions/tasks.ts`**
+
+### 5a. Task creation bypass
+
+In `createTask` and `createTaskSimple`: bypass the friendship validation check when `voucherId === ORCA_MOTHER_PROFILE_ID`. The AI voucher is always available — she's not a "friend".
+
+Also: force `requires_proof = true` when voucher is Orca Mother. The AI can't vouch without evidence.
+
+### 5b. Completion flow
+
+In `markTaskCompleteWithProofIntent`, after the non-self-vouch branch sets status to `AWAITING_VOUCHER`:
+
+- **No proof submitted** → auto-deny immediately. AI needs evidence. Return error with message.
+- **Image proof** → after `finalizeTaskProofUpload` is called, invoke `processAiVoucherDecision()` inline. Gemini is ~1–3s for images.
+- **Video proof** → task stays `AWAITING_VOUCHER`. The Trigger.dev job (Phase 6) handles it after upload finalizes.
+
+In `finalizeTaskProofUpload`, after marking proof `UPLOADED`:
+- If AI-vouched + image → call `processAiVoucherDecision()` inline
+- If AI-vouched + video → trigger the Trigger.dev `ai-voucher-evaluate` job
+
+### 5c. New action: `escalateToHumanVoucher`
+
+```typescript
+export async function escalateToHumanVoucher(
+  taskId: string,
+  newVoucherId: string
+): Promise<ActionResult>
+```
+
+- Validates: task is `FAILED`, original voucher was Orca Mother, new voucher is self or friend
+- Changes `voucher_id` → new human voucher
+- Sets `ai_escalated_from = true`
+- Resets status → `AWAITING_VOUCHER`
+- Sets new `voucher_response_deadline`
+- Creates negative ledger entry (cancels the AI denial's failure charge — like rectify)
+- Writes `AI_ESCALATE_TO_HUMAN` task event
+- Sends notification to the new human voucher
+
+---
+
+## Phase 6 — Async Video Processing (Trigger.dev)
+
+**New file: `src/trigger/ai-voucher-evaluate.ts`**
+
+Event-triggered Trigger.dev task (not cron). Fired from `finalizeTaskProofUpload` when an AI-vouched video proof finishes uploading.
+
+- Calls `processAiVoucherDecision(taskId)`
+- Retries on Gemini API failure: 3 attempts with exponential backoff
+- On permanent failure: notify user that evaluation failed, leave task in `AWAITING_VOUCHER` so they can escalate
+
+---
+
+## Phase 7 — Reputation Changes
+
+**`src/lib/reputation/algorithm.ts`**
+- In delivery score calculation: weight AI-vouched completed tasks at **0.5×**
+- Check both `isAiVouched(task)` and `task.ai_escalated_from` — escalated tasks stay 0.5× even after a human approves
+- AI-denied failures still count at full weight (accountability doesn't get a discount)
+
+**`src/lib/reputation/types.ts`**
+- Add `ai_escalated_from: boolean` to `ReputationTaskInput`
+
+**`src/lib/reputation/constants.ts`**
+- Add `AI_VOUCHER_REPUTATION_MULTIPLIER = 0.5`
+
+**`src/actions/reputation.ts`**
+- Include `ai_escalated_from` in task select queries and mapping to `ReputationTaskInput`
+
+---
+
+## Phase 8 — Background Job Exclusions
+
+**`src/trigger/voucher-timeout.ts`**
+- Skip tasks where `voucher_id === ORCA_MOTHER_PROFILE_ID`. The AI processes deterministically — if the job fails, it should retry, not auto-accept.
+
+**`src/trigger/voucher-deadline-warning.ts`**
+- Skip AI-vouched tasks. There's no human voucher to warn.
+
+---
+
+## Phase 9 — UI Changes
+
+### Voucher picker (`src/components/TaskInput.tsx`)
+- Add "Orca Mother" as an option in the voucher `<Select>`, positioned before the friends list (after "Myself")
+- Distinct styling: teal/AI indicator, not just another name in the list
+- Value = `ORCA_MOTHER_PROFILE_ID`
+
+### Title parser (`src/lib/task-title-parser.ts`)
+- Recognize `vouch orca` / `.v orca` as resolving to `ORCA_MOTHER_PROFILE_ID`
+- Add to ghost-text autocomplete suggestions
+
+### Task row (`src/components/TaskRow.tsx`)
+- Small **AI** badge on task cards when voucher is Orca Mother
+
+### Task detail (`src/app/dashboard/tasks/[id]/task-detail-client.tsx`)
+- **AWAITING_VOUCHER + AI voucher** → *"The Orca Mother is reviewing your proof..."*
+- **COMPLETED + AI voucher** → *"Approved by Orca Mother"* (no reason on approval)
+- **FAILED + AI voucher** → Show denial reason (from `AI_DENY` task event metadata) + **"Escalate to Friend"** button
+- Escalation button opens a friend picker, then calls `escalateToHumanVoucher`
+- Privacy notice on all AI-vouched tasks: *"This task is private. Only you and the Orca Mother can see it."*
+
+### Voucher dashboard (`src/app/dashboard/voucher/`)
+- AI-vouched tasks do NOT appear in the human voucher queue. The Orca Mother's tasks are processed by the system.
+
+---
+
+## Phase 10 — Type Updates
+
+**`src/lib/types.ts`**
+- Add `ai_escalated_from?: boolean` to the `Task` type interface
+
+---
+
+## Phase 11 — Proof Enforcement (Defense in Depth)
+
+AI-vouched tasks MUST require proof — the AI can't vouch without evidence.
+
+- **At creation**: Force `requires_proof = true` when voucher is Orca Mother (in `createTask` / `createTaskSimple`)
+- **At completion**: Reject `markTaskCompleteWithProofIntent` if AI-vouched and no `proofIntent` provided
+
+Both layers. Belt and suspenders.
+
+---
+
+## Security Checklist
+
+- [ ] `GEMINI_API_KEY` is never in any `NEXT_PUBLIC_` variable
+- [ ] `gemini.ts` is never imported from client components — only server actions + Trigger.dev
+- [ ] Orca Mother auth user has no password / no auth provider — cannot log in
+- [ ] All AI voucher DB operations use `createAdminClient()` (bypasses RLS safely)
+- [ ] `escalateToHumanVoucher` validates that original voucher was AI before allowing reassignment
+- [ ] Proof downloaded via admin client, never via `/api/task-proofs/` route (which requires `auth.uid()`)
+- [ ] Video uploads to Gemini File API are ephemeral — Google auto-deletes after 48h
+- [ ] Rate limit AI evaluations per user to prevent abuse
+
+---
+
+## Files Changed (Summary)
+
+| File | Change |
+|------|--------|
+| `supabase/migrations/043_*.sql` | **New**: auth user, profile, `ai_escalated_from` column |
+| `src/lib/ai-voucher/constants.ts` | **New**: `ORCA_MOTHER_PROFILE_ID`, helpers |
+| `src/lib/ai-voucher/gemini.ts` | **New**: Gemini API integration (server-only) |
+| `src/lib/ai-voucher/evaluate.ts` | **New**: AI decision orchestrator |
+| `src/trigger/ai-voucher-evaluate.ts` | **New**: async video evaluation job |
+| `src/actions/tasks.ts` | Bypass friendship check, inline AI eval, `escalateToHumanVoucher` |
+| `src/lib/reputation/algorithm.ts` | 0.5× delivery weight for AI-vouched tasks |
+| `src/lib/reputation/types.ts` | Add `ai_escalated_from` field |
+| `src/lib/reputation/constants.ts` | Add `AI_VOUCHER_REPUTATION_MULTIPLIER` |
+| `src/actions/reputation.ts` | Include `ai_escalated_from` in queries |
+| `src/components/TaskInput.tsx` | Orca Mother in voucher picker |
+| `src/lib/task-title-parser.ts` | `vouch orca` / `.v orca` support |
+| `src/components/TaskRow.tsx` | AI badge on task cards |
+| `src/app/dashboard/tasks/[id]/task-detail-client.tsx` | AI status, denial reason, escalation UI |
+| `src/trigger/voucher-timeout.ts` | Skip AI-vouched tasks |
+| `src/trigger/voucher-deadline-warning.ts` | Skip AI-vouched tasks |
+| `src/lib/types.ts` | `ai_escalated_from` field |
+| `context/context.md` | Document the new feature |
+
+---
+
+## Verification Checklist
+
+1. **Create an AI-vouched task**: Select Orca Mother as voucher → task created with correct `voucher_id`, `requires_proof` forced true
+2. **Mark complete with image proof**: Proof uploaded → Gemini evaluates inline → task transitions to COMPLETED or FAILED within ~3s
+3. **Mark complete with video proof**: Task stays AWAITING_VOUCHER → Trigger.dev job fires → evaluates → transitions
+4. **Denial + escalation**: AI denies → user sees reason → escalates to friend → friend can accept/deny normally → `ai_escalated_from = true`
+5. **Reputation**: AI-vouched completed task contributes 0.5× to delivery score (verify with `getUserReputationScore`)
+6. **No proof = no submission**: Attempting to mark complete without proof on AI-vouched task is rejected
+7. **Voucher timeout/warning jobs**: AI-vouched tasks not picked up — verify with job logs
+8. **Security**: Run `next build`, search client bundles for `GEMINI_API_KEY` — must find nothing

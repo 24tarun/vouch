@@ -403,6 +403,11 @@ export default function SettingsClient({
         setIsGoogleCalendarsLoading(true);
         listGoogleCalendarsForSettings()
             .then((result) => {
+                if (result.error) {
+                    setGoogleCalendars([]);
+                    setGoogleLastError(result.error);
+                    return;
+                }
                 setGoogleCalendars(result.calendars || []);
                 setGoogleLastError(null);
             })
@@ -488,6 +493,10 @@ export default function SettingsClient({
 
         try {
             const result = await listGoogleCalendarsForSettings();
+            if (result.error) {
+                setGoogleLastError(result.error);
+                return;
+            }
             setGoogleCalendars(result.calendars || []);
             setGoogleActionSuccess("Calendars refreshed.");
         } catch (error) {

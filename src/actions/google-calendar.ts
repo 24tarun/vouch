@@ -119,8 +119,16 @@ export async function getGoogleCalendarIntegrationState(): Promise<GoogleCalenda
 export async function listGoogleCalendarsForSettings() {
     const supabase = await createClient();
     const userId = await getAuthenticatedUserId();
-    const calendars = await listCalendarsForUserConnection(supabase, userId);
-    return { calendars };
+
+    try {
+        const calendars = await listCalendarsForUserConnection(supabase, userId);
+        return { calendars };
+    } catch (error) {
+        return {
+            error: error instanceof Error ? error.message : "Could not load Google calendars.",
+            calendars: [] as Array<{ id: string; summary: string; primary?: boolean }>,
+        };
+    }
 }
 
 export async function setGoogleCalendarCalendar(calendarId: string) {

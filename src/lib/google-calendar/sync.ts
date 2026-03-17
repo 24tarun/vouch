@@ -231,6 +231,56 @@ async function refreshGoogleAccessToken(refreshToken: string): Promise<GoogleTok
     );
 }
 
+function parseGoogleRevocationError(raw: string): { error: string | null; errorDescription: string | null } {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+        return { error: null, errorDescription: null };
+    }
+
+    try {
+        const parsed = JSON.parse(trimmed) as { error?: unknown; error_description?: unknown };
+        return {
+            error: typeof parsed.error === "string" ? parsed.error : null,
+            errorDescription: typeof parsed.error_description === "string" ? parsed.error_description : null,
+        };
+    } catch {
+        const params = new URLSearchParams(trimmed);
+        return {
+            error: params.get("error"),
+            errorDescription: params.get("error_description"),
+        };
+    }
+}
+
+export function shouldTreatGoogleRevocationFailureAsSuccess(status: number, raw: string): boolean {
+    if (status !== 400) return false;
+
+    const { error } = parseGoogleRevocationError(raw);
+    return error?.toLowerCase() === "invalid_token";
+}
+
+export function mapGoogleAuthFailureToReconnectMessage(error: unknown): string | null {
+    const status = typeof (error as { status?: unknown } | null)?.status === "number"
+        ? (error as { status?: number }).status
+        : null;
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+
+    if (status === 401) {
+        return "Google Calendar connection expired. Please disconnect and reconnect Google Calendar.";
+    }
+
+    if (
+        message.includes("invalid_grant") ||
+        message.includes("invalid credentials") ||
+        message.includes("expired or revoked") ||
+        message.includes("google refresh token is missing")
+    ) {
+        return "Google Calendar connection expired. Please disconnect and reconnect Google Calendar.";
+    }
+
+    return null;
+}
+
 async function revokeGoogleTokenStrict(token: string): Promise<void> {
     const body = new URLSearchParams({ token });
     const response = await fetch(GOOGLE_OAUTH_REVOKE_URL, {
@@ -243,6 +293,13 @@ async function revokeGoogleTokenStrict(token: string): Promise<void> {
 
     if (!response.ok) {
         const raw = await response.text();
+        if (shouldTreatGoogleRevocationFailureAsSuccess(response.status, raw)) {
+            console.warn(
+                "[google-sync] token revocation returned invalid_token; treating as already revoked",
+                { status: response.status }
+            );
+            return;
+        }
         const detail = raw?.trim();
         throw new Error(
             `Google token revocation failed (${response.status})${detail ? `: ${detail}` : "."}`
@@ -1623,6 +1680,15 @@ export async function listCalendarsForUserConnection(
         throw new Error("Google Calendar is not connected.");
     }
 
-    const fresh = await ensureFreshGoogleAccessToken(supabase, connection);
-    return listGoogleCalendars(fresh.accessToken);
+    try {
+        const fresh = await ensureFreshGoogleAccessToken(supabase, connection);
+        return listGoogleCalendars(fresh.accessToken);
+    } catch (error) {
+        const reconnectMessage = mapGoogleAuthFailureToReconnectMessage(error);
+        if (reconnectMessage) {
+            throw new Error(reconnectMessage);
+        }
+
+        throw error;
+    }
 }
