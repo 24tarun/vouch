@@ -16,7 +16,6 @@ export function ReputationBar({ data, className }: ReputationBarProps) {
         setFill(fillPercent);
     }, [fillPercent]);
 
-    const velocitySign = data.velocityDelta !== null && data.velocityDelta >= 0 ? "+" : "";
     const velocityColor =
         data.velocityDelta !== null && data.velocityDelta >= 0
             ? "text-emerald-400"
@@ -35,7 +34,7 @@ export function ReputationBar({ data, className }: ReputationBarProps) {
                 </span>
                 {data.velocityDelta !== null && (
                     <span className={`font-mono text-[10px] ${velocityColor}`}>
-                        {velocityArrow} {velocitySign}{data.velocityDelta} this week
+                        {velocityArrow} {Math.abs(data.velocityDelta)} this week
                     </span>
                 )}
             </div>
