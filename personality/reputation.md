@@ -29,15 +29,38 @@ A credit-score-style metric (0–1000) that reflects how reliable a user is acro
 
 ## Scoring Categories
 
-### 1. Delivery Rate — 35%
-- % of tasks completed on time (no postpone, no fail)
-- The baseline: are you delivering what you commit to?
+### Core Score (weighted average of active categories only)
 
-### 2. Discipline (Recurring Tasks) — 25%
-- Tracks adherence to **recurring tasks** specifically — these are the strongest signal of real-world dependability
-- Completing a one-off task shows motivation. Completing the same recurring task 20 days in a row shows **character**
-- Scored by the longest active streaks and overall recurring task completion rate
-- **Streak weighting:** step-based milestones — longer streaks unlock higher multipliers, and crossing a milestone feels like an event:
+#### 1. Delivery Rate — 35% of core
+- `completed / finalized * 1000`
+- Completed = COMPLETED / RECTIFIED / SETTLED with `marked_completed_at` present
+- Finalized = those + FAILED
+- Returns base 400 if no finalized tasks yet
+
+#### 2. Accountability — 20% of core
+- Starts at 1000, penalties deducted
+- **Failure penalty:** `−80 × decayFactor × consecutiveMultiplier`
+  - decayFactor = `0.5 ^ (ageInDays / 90)` — old failures hurt less
+  - consecutiveMultiplier escalates for failures within a 30-day window (see table below)
+- **Postpone penalty:** `−25 × decayFactor`
+- Clamped to [0, 1000]
+- Returns base 400 if no finalized/postponed tasks
+
+#### 3. Community — 10% of core
+- Tasks where you vouched for someone else
+- Starts at 1000, `+15` per finalized vouch, `−30` per auto-accepted timeout
+- Returns base 400 if no vouching history
+
+> Categories with no data are **excluded from the weighted average** — their weight redistributes to active categories. A user with no community history is not penalized for it.
+
+---
+
+### Additive Bonuses (on top of core — never penalise for non-use)
+
+#### Discipline Bonus — up to +75 pts
+- Only applies if you have recurring tasks
+- Walk each recurring group sorted by deadline; increment streak on success, apply step multiplier, penalise + reset on FAILED
+- `bonus = (disciplineScore / 1000) × 75`
 
   | Streak | Multiplier |
   |---|---|
@@ -45,23 +68,17 @@ A credit-score-style metric (0–1000) that reflects how reliable a user is acro
   | 7–13 days | 1.3× |
   | 14–29 days | 1.6× |
   | 30+ days | 2.0× |
-- Breaking a long-established recurring streak (15+ days) is penalized more than breaking a 2-day one — because you've proven the habit and then abandoned it
-- This is the category that answers: "can I actually rely on this person to show up consistently?"
 
-### 3. Accountability — 20%
-- Penalizes failures (heavy) and postponements (moderate)
-- Penalties **decay slowly over time** — a failure 6 months ago matters less than one last week
-- **Postpone rate** is the metric, not raw count — % of tasks that got postponed (e.g. 1/20 is fine, 1/3 is a pattern)
-- Since the app enforces a **one postpone per task limit**, the score just tracks the rate across all tasks
+#### Proof Bonus — up to +50 pts
+- Only applies if you have non-self-vouched completed tasks
+- `bonus = (proofRate / 1000) × 50`
+- `has_proof` is stamped on the task at voucher acceptance — not at upload, not at self-mark
+- Rewards transparency; uploading proof that gets accepted is the signal, not just attaching a file
 
-### 4. Proof Quality — 10%
-- % of tasks where proof was submitted vs. just self-marking as done
-- Rewards transparency — a person who always submits receipts is more trustworthy than one who just clicks done
-
-### 5. Community — 10%
-- Tasks vouched for others
-- Response time as a voucher (slow vouchers who leave people hanging lose points)
-- Quality of vouching (did you actually review the proof or rubber-stamp it?)
+#### Pomo Bonus — up to +50 pts
+- 1 point per 10 minutes of pomodoro time logged on completed tasks
+- `bonus = min(50, totalPomoMinutes × 0.1)`
+- Reaching the cap requires ~8.3 hours of total focused pomo time across all tasks
 
 ---
 
@@ -159,7 +176,26 @@ Show a delta next to the score: `↑ +12 this week` or `↓ -8 this week`.
 
 ---
 
-## Open Questions
+## Implementation Status
 
-- What should the base penalty **−X** be in score points?
-- What is the exact decay rate after 30 days of inactivity?
+### Shipped (reputation branch)
+- `src/lib/reputation/constants.ts` — all tunable numbers in one place
+- `src/lib/reputation/types.ts` — `ReputationTaskInput`, `CategoryScores`, `ReputationScoreData`
+- `src/lib/reputation/algorithm.ts` — pure functions, fully testable, no DB calls
+- `src/actions/reputation.ts` — server action, 3 parallel Supabase queries, calls algorithm
+- `src/components/ReputationBar.tsx` — thin animated bar (9px), inline in dashboard header next to username
+- `supabase/migrations/058_task_has_proof_flag.sql` — `has_proof boolean` column on tasks
+- Score refreshes live via existing realtime subscription when a task finalises (no page reload needed)
+
+### Key decisions made
+- **No stored scores** — computed fresh on every page load, runs in parallel with existing fetches
+- **Discipline and proof are bonuses only** — users are not penalised for not using recurring tasks or proofs
+- **`has_proof` stamped at voucher acceptance** — not at upload, because proofs are hard-deleted after finalization. `cleanup.deleted` from `deleteTaskProof` is used as the signal
+- **Tier labels removed from bar** — bar shows score number above-left and velocity above-right only
+
+### Open / not yet built
+- Score decay for inactive users (drifts toward 500 after 30 days idle)
+- Recovery arc UI ("You've recovered 94 points in the last 30 days")
+- Tier crossing events / notifications
+- Group ranking visibility
+- Score card / shareable artifact (see score-card.md)
