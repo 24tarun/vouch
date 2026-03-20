@@ -196,7 +196,7 @@ export function CommitmentDetailClient({ detail, currency }: CommitmentDetailCli
         }
 
         toast.success(status === "DRAFT" ? "Commitment deleted." : "Commitment abandoned.");
-        router.push("/dashboard/commitments");
+        router.replace("/dashboard/commitments/");
         router.refresh();
     };
 

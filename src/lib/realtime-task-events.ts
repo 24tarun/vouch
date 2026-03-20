@@ -21,6 +21,7 @@ export type RealtimeTaskRow = Pick<
     | "marked_completed_at"
     | "voucher_response_deadline"
     | "recurrence_rule_id"
+    | "iteration_number"
     | "created_at"
     | "updated_at"
     | "proof_request_open"

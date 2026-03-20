@@ -73,7 +73,6 @@ interface TaskDetailClientProps {
     viewerId: string;
     viewerCurrency: SupportedCurrency;
     potentialRp: number | null;
-    iterationNumber: number | null;
 }
 
 interface TaskProofDraft {
@@ -114,7 +113,6 @@ export default function TaskDetailClient({
     viewerId,
     viewerCurrency,
     potentialRp,
-    iterationNumber,
 }: TaskDetailClientProps) {
     const router = useRouter();
     const { session } = usePomodoro();
@@ -207,6 +205,7 @@ export default function TaskDetailClient({
         if (!taskState.recurrence_rule) return null;
         return formatRecurrenceSummary(taskState.recurrence_rule, taskState.deadline);
     }, [taskState.recurrence_rule, taskState.deadline]);
+    const iterationNumber = taskState.iteration_number ?? null;
     const canViewStoredProof =
         taskState.status === "AWAITING_VOUCHER" || taskState.status === "MARKED_COMPLETED";
     const hasOpenProofRequest =

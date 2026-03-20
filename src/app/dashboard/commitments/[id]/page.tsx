@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCommitmentDetail } from "@/actions/commitments";
 import { normalizeCurrency } from "@/lib/currency";
@@ -30,7 +30,7 @@ export default async function CommitmentDetailPage({ params }: CommitmentDetailP
     ]);
 
     if (!detail) {
-        notFound();
+        redirect("/dashboard/commitments/");
     }
 
     const currency = normalizeCurrency((profileResult.data as { currency?: unknown } | null)?.currency);

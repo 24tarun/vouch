@@ -37,6 +37,7 @@ export function patchTaskScalars<T extends Task>(localTask: T, incomingRow: Real
         marked_completed_at: incomingRow.marked_completed_at,
         voucher_response_deadline: incomingRow.voucher_response_deadline,
         recurrence_rule_id: incomingRow.recurrence_rule_id,
+        iteration_number: incomingRow.iteration_number,
         created_at: incomingRow.created_at,
         updated_at: incomingRow.updated_at,
         proof_request_open: incomingRow.proof_request_open,
