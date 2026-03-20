@@ -1,6 +1,7 @@
 import {
     SCORE_BASE,
     BAYESIAN_BASE_WEIGHT,
+    BAYESIAN_TASK_THRESHOLD,
     WEIGHT_DELIVERY,
     WEIGHT_ACCOUNTABILITY,
     WEIGHT_COMMUNITY,
@@ -32,7 +33,10 @@ function getTier(score: number): string {
 }
 
 function bayesian(rawScore: number, taskCount: number): number {
-    return (BAYESIAN_BASE_WEIGHT * SCORE_BASE + taskCount * rawScore) / (BAYESIAN_BASE_WEIGHT + taskCount);
+    if (taskCount >= BAYESIAN_TASK_THRESHOLD) return rawScore;
+    const t = taskCount / BAYESIAN_TASK_THRESHOLD; // 0→1 as tasks accumulate
+    const effectiveWeight = BAYESIAN_BASE_WEIGHT * (1 - t);
+    return (effectiveWeight * SCORE_BASE + taskCount * rawScore) / (effectiveWeight + taskCount);
 }
 
 function getStreakMultiplier(streakDays: number): number {
@@ -244,7 +248,7 @@ export function computeFullReputationScore(
     const finalizedCount = ownedTasks.filter((t) => FINALIZED_STATUSES.has(t.status)).length;
 
     const raw = computeRawCategoryScores(tasks, userId);
-    const rawScore = Math.min(1000, coreScore(raw) + bonusPoints(raw, tasks, userId));
+    const rawScore = coreScore(raw) + bonusPoints(raw, tasks, userId); // cap applied after Bayesian so bonuses have real effect
     const score = Math.round(Math.min(1000, Math.max(0, bayesian(rawScore, finalizedCount))));
 
     // Velocity: re-run with tasks older than 7 days
@@ -256,7 +260,7 @@ export function computeFullReputationScore(
 
     if (historicalFinalizedCount >= 2) {
         const historicalRaw = computeRawCategoryScores(historicalTasks, userId);
-        const historicalRawScore = Math.min(1000, coreScore(historicalRaw) + bonusPoints(historicalRaw, historicalTasks, userId));
+        const historicalRawScore = coreScore(historicalRaw) + bonusPoints(historicalRaw, historicalTasks, userId);
         const historicalScore = Math.round(
             Math.min(1000, Math.max(0, bayesian(historicalRawScore, historicalFinalizedCount)))
         );

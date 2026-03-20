@@ -1,5 +1,6 @@
 export const SCORE_BASE = 400;
 export const BAYESIAN_BASE_WEIGHT = 8;
+export const BAYESIAN_TASK_THRESHOLD = 50; // Prior fades to zero by this many finalized tasks
 
 export const WEIGHT_DELIVERY = 0.35;
 export const WEIGHT_ACCOUNTABILITY = 0.20;
