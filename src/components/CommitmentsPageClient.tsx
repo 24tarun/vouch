@@ -66,6 +66,7 @@ export function CommitmentsPageClient({ commitments, currency }: CommitmentsPage
                 return {
                     ...commitment,
                     name: incoming.name,
+                    description: incoming.description,
                     status: nextStatus,
                     derived_status: nextStatus,
                     start_date: incoming.start_date,
@@ -73,6 +74,17 @@ export function CommitmentsPageClient({ commitments, currency }: CommitmentsPage
                     updated_at: incoming.updated_at,
                 };
             });
+        });
+    }, []);
+
+    const handleOptimisticAbandon = useCallback((commitmentId: string) => {
+        setOptimisticCommitments((previous) => previous.filter((commitment) => commitment.id !== commitmentId));
+    }, []);
+
+    const handleAbandonRollback = useCallback((commitment: CommitmentListItem) => {
+        setOptimisticCommitments((previous) => {
+            if (previous.some((item) => item.id === commitment.id)) return previous;
+            return [...previous, commitment];
         });
     }, []);
 
@@ -104,7 +116,9 @@ export function CommitmentsPageClient({ commitments, currency }: CommitmentsPage
             });
         };
 
-        const unsubTask = subscribeRealtimeTaskChanges(() => refresh());
+        // Task changes affect commitment derived status; refresh server data.
+        const unsubTask = subscribeRealtimeTaskChanges(refresh);
+        // Commitment row changes: apply patch immediately, then confirm with server
         const unsubCommitment = subscribeRealtimeCommitmentChanges((change) => {
             applyOptimisticCommitmentPatch(change);
             refresh();
@@ -121,7 +135,7 @@ export function CommitmentsPageClient({ commitments, currency }: CommitmentsPage
             <div className="flex items-center justify-between gap-3">
                 <div>
                     <h1 className="text-3xl font-bold text-white">Commitments</h1>
-                    <p className="mt-1 text-sm text-slate-400">Turn consistency into earned spending power.</p>
+                    <p className="mt-1 text-sm text-slate-400">Create a commitment for days, whatever amount you Keep is justified because you earnt it by diligently doing your tasks</p>
                 </div>
                 <Button asChild className="bg-blue-600/30 border border-blue-500/40 text-blue-200 hover:bg-blue-600/40">
                     <Link href="/dashboard/commitments/new">New Commitment</Link>
@@ -136,10 +150,17 @@ export function CommitmentsPageClient({ commitments, currency }: CommitmentsPage
             ) : (
                 <div className="flex flex-col">
                     {sortedCommitments.map((commitment) => (
-                        <CommitmentCard key={commitment.id} commitment={commitment} currency={currency} />
+                        <CommitmentCard
+                            key={commitment.id}
+                            commitment={commitment}
+                            currency={currency}
+                            onOptimisticAbandon={handleOptimisticAbandon}
+                            onAbandonRollback={handleAbandonRollback}
+                        />
                     ))}
                 </div>
             )}
         </div>
     );
 }
+

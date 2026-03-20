@@ -10,6 +10,86 @@ interface TomatoPixelIconProps {
     className?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Shared WebGL renderer — ONE context for every TomatoPixelIcon on the page.
+// Browsers cap WebGL contexts at ~8–16. Creating one per icon causes silent
+// context eviction (older canvases go white/blank). Instead, we render every
+// instance scene into the single shared renderer then blit to per-instance
+// 2-D canvases via drawImage.
+// ---------------------------------------------------------------------------
+
+const INTERNAL_RES = 16; // getInternalRes(24) — all current usages are size=24
+const ROT_SPEED = 0.022 * 60; // ≈ 1.32 rad/s
+const BOB_SPEED = 0.022 * 60;
+
+interface TomatoInstance {
+    scene: THREE.Scene;
+    cam: THREE.PerspectiveCamera;
+    outer: THREE.Group;
+    rotGroup: THREE.Group;
+    canvas2d: HTMLCanvasElement;
+    container: HTMLDivElement;
+    live: { speed: number; glow: number; hovered: boolean };
+    visible: boolean;
+}
+
+let sharedRenderer: THREE.WebGLRenderer | null = null;
+const instances = new Set<TomatoInstance>();
+let animFrameId: number | null = null;
+
+function getSharedRenderer(): THREE.WebGLRenderer {
+    if (!sharedRenderer) {
+        sharedRenderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+        sharedRenderer.setSize(INTERNAL_RES, INTERNAL_RES);
+        sharedRenderer.setPixelRatio(1);
+        sharedRenderer.setClearColor(0x000000, 0);
+        // Keep the shared canvas off-DOM — we only blit from it.
+        sharedRenderer.domElement.style.display = "none";
+    }
+    return sharedRenderer;
+}
+
+function sharedLoop() {
+    animFrameId = requestAnimationFrame(sharedLoop);
+    if (instances.size === 0) return;
+
+    const renderer = getSharedRenderer();
+    const t = performance.now() / 1000;
+
+    for (const inst of instances) {
+        if (!inst.visible) continue;
+
+        const spd = inst.live.speed * (inst.live.hovered ? 2.2 : 1.0);
+        inst.rotGroup.rotation.y = t * ROT_SPEED * spd;
+        inst.outer.position.y = Math.sin(t * BOB_SPEED) * 0.038;
+
+        renderer.render(inst.scene, inst.cam);
+
+        const ctx = inst.canvas2d.getContext("2d");
+        if (ctx) {
+            ctx.clearRect(0, 0, INTERNAL_RES, INTERNAL_RES);
+            ctx.drawImage(renderer.domElement, 0, 0);
+        }
+    }
+}
+
+function ensureLoop() {
+    if (animFrameId === null) {
+        animFrameId = requestAnimationFrame(sharedLoop);
+    }
+}
+
+function maybeStopLoop() {
+    if (instances.size === 0 && animFrameId !== null) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Scene / geometry builders — same logic as before
+// ---------------------------------------------------------------------------
+
 function makeToonGradient(): THREE.DataTexture {
     const data = new Uint8Array([45, 148, 238]);
     const tex = new THREE.DataTexture(data, 3, 1, THREE.RedFormat);
@@ -17,16 +97,6 @@ function makeToonGradient(): THREE.DataTexture {
     tex.minFilter = THREE.NearestFilter;
     tex.needsUpdate = true;
     return tex;
-}
-
-function getInternalRes(size: number): number {
-    if (size <= 14) return size;
-    if (size <= 24) return 16;
-    if (size <= 36) return 20;
-    if (size <= 56) return 22;
-    if (size <= 80) return 26;
-    if (size <= 100) return 32;
-    return 40;
 }
 
 function buildPixelTomato(gradMap: THREE.DataTexture): { rotGroup: THREE.Group; hlMesh: THREE.Mesh } {
@@ -64,8 +134,6 @@ function buildPixelTomato(gradMap: THREE.DataTexture): { rotGroup: THREE.Group; 
         gradientMap: gradMap,
     })));
 
-    // hlMesh is returned separately so it lives outside the rotating group,
-    // keeping the highlight fixed at the front of the tomato at all times.
     const hlMesh = new THREE.Mesh(
         new THREE.SphereGeometry(1, 6, 5),
         new THREE.MeshBasicMaterial({ color: 0xffcfc0, transparent: true, opacity: 0.72 })
@@ -73,7 +141,6 @@ function buildPixelTomato(gradMap: THREE.DataTexture): { rotGroup: THREE.Group; 
     hlMesh.scale.set(0.155, 0.115, 0.055);
     hlMesh.position.set(-0.36, 0.28, 0.54);
 
-    // Stalk — taller, thicker, brighter green, more sides for roundness
     const stemMesh = new THREE.Mesh(
         new THREE.CylinderGeometry(0.07, 0.12, 0.58, 8, 1),
         new THREE.MeshToonMaterial({ color: 0x2e8b1a, gradientMap: gradMap })
@@ -82,7 +149,6 @@ function buildPixelTomato(gradMap: THREE.DataTexture): { rotGroup: THREE.Group; 
     stemMesh.rotation.z = 0.16;
     rotGroup.add(stemMesh);
 
-    // Calyx collar — a flat disc where the stalk meets the body
     const collarMesh = new THREE.Mesh(
         new THREE.CylinderGeometry(0.32, 0.28, 0.06, 10, 1),
         new THREE.MeshToonMaterial({ color: 0x3aad20, gradientMap: gradMap })
@@ -90,7 +156,6 @@ function buildPixelTomato(gradMap: THREE.DataTexture): { rotGroup: THREE.Group; 
     collarMesh.position.set(0.04, 0.68, 0);
     rotGroup.add(collarMesh);
 
-    // Sepals — wider, longer, more spread out
     const sepalMat = new THREE.MeshToonMaterial({
         color: 0x3aad20,
         gradientMap: gradMap,
@@ -109,20 +174,22 @@ function buildPixelTomato(gradMap: THREE.DataTexture): { rotGroup: THREE.Group; 
     return { rotGroup, hlMesh };
 }
 
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+function applyGlow(container: HTMLDivElement, glowVal: number, hovered: boolean) {
+    const b = Math.round(glowVal * (hovered ? 10 : 4));
+    container.style.filter = b > 0
+        ? `drop-shadow(0 0 ${b}px rgba(255,58,26,.9)) drop-shadow(0 0 ${Math.round(b * 1.8)}px rgba(255,80,40,.4))`
+        : "";
+}
+
 export function TomatoPixelIcon({ size = 16, speed = 1.0, glow = 1.0, className }: TomatoPixelIconProps) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const live = useRef({ speed, glow, hovered: false, frame: 0 });
+    const live = useRef({ speed, glow, hovered: false });
 
-    function applyGlow(container: HTMLDivElement, glowVal: number, hovered: boolean) {
-        const b = Math.round(glowVal * (hovered ? 10 : 4));
-        container.style.filter = b > 0
-            ? `drop-shadow(0 0 ${b}px rgba(255,58,26,.9)) drop-shadow(0 0 ${Math.round(b * 1.8)}px rgba(255,80,40,.4))`
-            : "";
-    }
-
-    useEffect(() => {
-        live.current.speed = speed;
-    }, [speed]);
+    useEffect(() => { live.current.speed = speed; }, [speed]);
 
     useEffect(() => {
         live.current.glow = glow;
@@ -133,17 +200,14 @@ export function TomatoPixelIcon({ size = 16, speed = 1.0, glow = 1.0, className 
         const container = containerRef.current;
         if (!container) return;
 
-        const res = getInternalRes(size);
+        // Per-instance 2-D canvas — this is what goes in the DOM.
+        const canvas2d = document.createElement("canvas");
+        canvas2d.width = INTERNAL_RES;
+        canvas2d.height = INTERNAL_RES;
+        canvas2d.style.cssText = `width:${size}px;height:${size}px;display:block;image-rendering:pixelated;pointer-events:none;`;
+        container.appendChild(canvas2d);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
-        renderer.setSize(res, res);
-        renderer.setPixelRatio(1);
-        renderer.setClearColor(0x000000, 0);
-
-        const cv = renderer.domElement;
-        cv.style.cssText = `width:${size}px;height:${size}px;display:block;image-rendering:pixelated;pointer-events:none;`;
-        container.appendChild(cv);
-
+        // Per-instance Three.js scene (no renderer — shared one handles rendering).
         const scene = new THREE.Scene();
         const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
         cam.position.set(0, 0.45, 3.0);
@@ -160,36 +224,28 @@ export function TomatoPixelIcon({ size = 16, speed = 1.0, glow = 1.0, className 
         const gradMap = makeToonGradient();
         const { rotGroup, hlMesh } = buildPixelTomato(gradMap);
 
-        // outer group handles bobbing; rotGroup inside handles Y rotation.
-        // hlMesh lives on outer so it stays fixed at the front — no more
-        // "disappears for 8 seconds" orbiting effect.
         const outer = new THREE.Group();
         outer.add(rotGroup);
         outer.add(hlMesh);
         scene.add(outer);
 
-        // ROT_SPEED in rad/s — matches the old 0.022/frame @ ~60 fps
-        const ROT_SPEED = 0.022 * 60; // ≈ 1.32 rad/s
-        const BOB_SPEED = 0.022 * 60; // same frequency for bobbing
+        const inst: TomatoInstance = {
+            scene,
+            cam,
+            outer,
+            rotGroup,
+            canvas2d,
+            container,
+            live: live.current,
+            visible: true,
+        };
 
-        let animId: number;
-        let visible = true;
+        instances.add(inst);
+        ensureLoop();
 
-        function loop() {
-            animId = requestAnimationFrame(loop);
-            if (!visible) return;
-            // Use wall-clock time so every instance rotates in lock-step
-            const t = performance.now() / 1000;
-            const spd = live.current.speed * (live.current.hovered ? 2.2 : 1.0);
-            rotGroup.rotation.y = t * ROT_SPEED * spd;
-            outer.position.y = Math.sin(t * BOB_SPEED) * 0.038;
-            renderer.render(scene, cam);
-        }
-
-        loop();
-
+        // Pause when scrolled off-screen.
         const observer = new IntersectionObserver(
-            ([entry]) => { visible = entry.isIntersecting; },
+            ([entry]) => { inst.visible = entry.isIntersecting; },
             { threshold: 0 }
         );
         observer.observe(container);
@@ -202,13 +258,14 @@ export function TomatoPixelIcon({ size = 16, speed = 1.0, glow = 1.0, className 
         container.addEventListener("mouseleave", onLeave);
 
         return () => {
-            cancelAnimationFrame(animId);
+            instances.delete(inst);
+            maybeStopLoop();
             observer.disconnect();
             container.removeEventListener("mouseenter", onEnter);
             container.removeEventListener("mouseleave", onLeave);
-            if (cv.parentNode) cv.parentNode.removeChild(cv);
+            if (canvas2d.parentNode) canvas2d.parentNode.removeChild(canvas2d);
             gradMap.dispose();
-            renderer.dispose();
+            // Do NOT dispose sharedRenderer — other instances still use it.
         };
     }, [size]);
 

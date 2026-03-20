@@ -220,6 +220,13 @@ export function TaskInput({
     const syncTitleCaretFromInput = useCallback(() => {
         syncTitleCaretFromElement(titleInputRef.current);
     }, [syncTitleCaretFromElement]);
+    const keepTitleTypingInView = useCallback((input: HTMLInputElement | null) => {
+        if (!input) return;
+        window.requestAnimationFrame(() => {
+            syncTitleHighlightScroll();
+            input.scrollIntoView({ block: "nearest", inline: "nearest" });
+        });
+    }, [syncTitleHighlightScroll]);
 
     const commitTitleAndCaret = useCallback((nextTitle: string, nextCaretIndex: number) => {
         setTitle(nextTitle);
@@ -1067,14 +1074,22 @@ export function TaskInput({
                         onChange={(e) => {
                             setTitle(e.currentTarget.value);
                             syncTitleCaretFromElement(e.currentTarget);
+                            keepTitleTypingInView(e.currentTarget);
                         }}
                         onKeyDown={handleTitleKeyDown}
-                        onSelect={syncTitleCaretFromInput}
-                        onClick={syncTitleCaretFromInput}
+                        onSelect={() => {
+                            syncTitleCaretFromInput();
+                            keepTitleTypingInView(titleInputRef.current);
+                        }}
+                        onClick={() => {
+                            syncTitleCaretFromInput();
+                            keepTitleTypingInView(titleInputRef.current);
+                        }}
                         onFocus={() => {
                             completionTapInProgressRef.current = false;
                             setIsTitleFocused(true);
                             syncTitleCaretFromInput();
+                            keepTitleTypingInView(titleInputRef.current);
                         }}
                         onBlur={() => {
                             if (completionTapInProgressRef.current) return;
@@ -1086,6 +1101,7 @@ export function TaskInput({
                         onCompositionEnd={(e) => {
                             isComposingRef.current = false;
                             syncTitleCaretFromElement(e.currentTarget);
+                            keepTitleTypingInView(e.currentTarget);
                         }}
                         onScroll={syncTitleHighlightScroll}
                         enterKeyHint="done"

@@ -695,7 +695,7 @@ export default function DashboardClient({
         if (completingTaskIds.has(task.id)) return;
         const isSelfVouched = task.voucher_id === userId;
         const requiresProofForCompletion =
-            Boolean(task.requires_proof || task.commitment_proof_required) &&
+            Boolean(task.requires_proof) &&
             !isSelfVouched;
         const proofDraft = proofByTaskId[task.id] || null;
         if (requiresProofForCompletion && !proofDraft) {

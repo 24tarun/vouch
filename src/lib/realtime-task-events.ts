@@ -73,6 +73,7 @@ export interface RealtimeCommitmentRow {
     id: string;
     user_id: string;
     name: string;
+    description: string;
     status: string;
     start_date: string;
     end_date: string;

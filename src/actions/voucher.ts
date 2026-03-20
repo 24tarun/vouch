@@ -42,7 +42,6 @@ async function enqueueGoogleCalendarUpsert(userId: string, taskId: string) {
     }
 }
 
-const RECTIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const ACTIVE_PENDING_STATUSES: TaskStatus[] = ["CREATED", "POSTPONED"];
 const AWAITING_PENDING_STATUSES: TaskStatus[] = ["AWAITING_VOUCHER", "MARKED_COMPLETED"];
 const PENDING_VOUCH_REQUEST_STATUSES: TaskStatus[] = [
@@ -477,18 +476,12 @@ export async function authorizeRectify(taskId: string) {
         return { error: `Cannot rectify task in ${(task as any).status} status` };
     }
 
-    const failedAtTs = new Date((task as any).updated_at).getTime();
-    if (Number.isNaN(failedAtTs)) {
-        return { error: "Rectify window could not be evaluated." };
-    }
-
-    const rectifyExpiresAtTs = failedAtTs + RECTIFY_WINDOW_MS;
-    if (Date.now() > rectifyExpiresAtTs) {
-        return { error: "Rectify window expired (7 days)." };
-    }
-
-    // Check rectify pass usage
+    // Check rectify window: task must have failed in the current calendar month
     const currentPeriod = new Date().toISOString().slice(0, 7);
+    const failedPeriod = new Date((task as any).updated_at).toISOString().slice(0, 7);
+    if (failedPeriod !== currentPeriod) {
+        return { error: "Rectify window expired (task failed in a previous month)." };
+    }
     const { count } = await supabase
         .from("rectify_passes" as any)
         .select("*", { count: "exact", head: true })

@@ -45,12 +45,15 @@ export function CommitmentCreatorClient({
     tasks,
     recurrenceRules,
 }: CommitmentCreatorClientProps) {
+    const COMMITMENT_DESCRIPTION_MIN_LENGTH = 10;
+    const COMMITMENT_DESCRIPTION_MAX_LENGTH = 500;
     const router = useRouter();
     const today = useMemo(() => toDateOnlyString(new Date()), []);
 
     const availableTasks = tasks;
     const availableRecurrenceRules = recurrenceRules;
     const [name, setName] = useState("");
+    const [description, setDescription] = useState("");
     const [startDate, setStartDate] = useState(today);
     const [durationInput, setDurationInput] = useState("7");
     const durationDays = Math.max(3, parseInt(durationInput, 10) || 3);
@@ -59,7 +62,6 @@ export function CommitmentCreatorClient({
     const [linkedRecurrenceRuleIds, setLinkedRecurrenceRuleIds] = useState<string[]>([]);
     const [pickerOpen, setPickerOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
     const [showIssues, setShowIssues] = useState(false);
     const [shaking, setShaking] = useState(false);
 
@@ -110,49 +112,52 @@ export function CommitmentCreatorClient({
         setLinkedRecurrenceRuleIds((prev) => prev.filter((id) => id !== ruleId));
     };
 
-    const persistCommitment = async (activateNow: boolean) => {
+    const persistCommitment = (activateNow: boolean) => {
         if (isSaving) return;
         setIsSaving(true);
-        setError(null);
 
-        const commitmentResult = await createCommitment({
-            name,
-            start_date: startDate,
-            end_date: endDate,
-        });
+        // Navigate immediately — server calls run in the background
+        router.push("/dashboard/commitments");
 
-        if (!commitmentResult.success) {
-            setError(commitmentResult.error);
-            setIsSaving(false);
-            return;
-        }
+        void (async () => {
+            const commitmentResult = await createCommitment({
+                name,
+                description,
+                start_date: startDate,
+                end_date: endDate,
+            });
 
-        const commitmentId = commitmentResult.commitmentId;
-        const linksToCreate = [
-            ...linkedTaskIds.map((taskId) => ({ task_id: taskId })),
-            ...linkedRecurrenceRuleIds.map((ruleId) => ({ recurrence_rule_id: ruleId })),
-        ];
-
-        const linkResults = await Promise.all(linksToCreate.map((link) => addTaskLink(commitmentId, link)));
-        const firstLinkError = linkResults.find((result) => !result.success);
-        if (firstLinkError && !firstLinkError.success) {
-            setError(firstLinkError.error);
-            setIsSaving(false);
-            return;
-        }
-
-        if (activateNow) {
-            const activateResult = await activateCommitment(commitmentId);
-            if (!activateResult.success) {
-                setError(activateResult.error);
-                setIsSaving(false);
+            if (!commitmentResult.success) {
+                toast.error(commitmentResult.error ?? "Failed to save commitment.");
                 return;
             }
-        }
 
-        toast.success(activateNow ? "Commitment activated." : "Commitment saved as draft.");
-        router.push("/dashboard/commitments");
-        router.refresh();
+            const commitmentId = commitmentResult.commitmentId;
+            const linksToCreate = [
+                ...linkedTaskIds.map((taskId) => ({ task_id: taskId })),
+                ...linkedRecurrenceRuleIds.map((ruleId) => ({ recurrence_rule_id: ruleId })),
+            ];
+
+            if (linksToCreate.length > 0) {
+                const linkResults = await Promise.all(linksToCreate.map((link) => addTaskLink(commitmentId, link)));
+                const firstLinkError = linkResults.find((result) => !result.success);
+                if (firstLinkError && !firstLinkError.success) {
+                    toast.error(firstLinkError.error ?? "Failed to link tasks.");
+                    return;
+                }
+            }
+
+            if (activateNow) {
+                const activateResult = await activateCommitment(commitmentId);
+                if (!activateResult.success) {
+                    toast.error(activateResult.error ?? "Failed to activate commitment.");
+                    return;
+                }
+            }
+
+            toast.success(activateNow ? "Commitment activated." : "Commitment saved as draft.");
+            router.refresh();
+        })();
     };
 
     const linkedCount = linkedTaskIds.length + linkedRecurrenceRuleIds.length;
@@ -160,11 +165,14 @@ export function CommitmentCreatorClient({
     const activateIssues = useMemo(() => {
         const issues: string[] = [];
         if (!name.trim()) issues.push("Name is required.");
+        if (description.trim().length < COMMITMENT_DESCRIPTION_MIN_LENGTH) {
+            issues.push(`Description must be at least ${COMMITMENT_DESCRIPTION_MIN_LENGTH} characters.`);
+        }
         if (startDate < today) issues.push("Start date cannot be in the past.");
         if (durationDays < 3) issues.push("Duration must be at least 3 days.");
         if (linkedCount === 0) issues.push("Link at least one task or recurring series.");
         return issues;
-    }, [name, startDate, endDate, today, linkedCount]);
+    }, [name, description, startDate, endDate, today, linkedCount]);
 
     const canActivate = activateIssues.length === 0 && !isSaving;
 
@@ -176,7 +184,12 @@ export function CommitmentCreatorClient({
     const handleAction = (activateNow: boolean) => {
         const draftIssues = activateNow
             ? activateIssues
-            : !name.trim() ? ["Name is required."] : [];
+            : [
+                ...(!name.trim() ? ["Name is required."] : []),
+                ...(description.trim().length < COMMITMENT_DESCRIPTION_MIN_LENGTH
+                    ? [`Description must be at least ${COMMITMENT_DESCRIPTION_MIN_LENGTH} characters.`]
+                    : []),
+            ];
         if (draftIssues.length > 0) {
             setShowIssues(true);
             triggerShake();
@@ -229,6 +242,29 @@ export function CommitmentCreatorClient({
                         placeholder="Earn my headphones"
                         className="bg-slate-900/50 border-slate-800 text-slate-100 text-lg placeholder:text-slate-600"
                     />
+                </div>
+
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                        <Label htmlFor="commitment-description" className="text-[10px] uppercase tracking-wider font-bold text-slate-500">
+                            Description
+                        </Label>
+                        <span className="text-[10px] font-mono text-slate-500">{description.length}/{COMMITMENT_DESCRIPTION_MAX_LENGTH}</span>
+                    </div>
+                    <textarea
+                        id="commitment-description"
+                        value={description}
+                        onChange={(event) => setDescription(event.target.value)}
+                        minLength={COMMITMENT_DESCRIPTION_MIN_LENGTH}
+                        maxLength={COMMITMENT_DESCRIPTION_MAX_LENGTH}
+                        required
+                        rows={3}
+                        placeholder="Add context for what this commitment is for..."
+                        className="w-full rounded-md bg-slate-900/50 border border-slate-800 text-slate-100 placeholder:text-slate-600 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-slate-600"
+                    />
+                    <p className="text-[10px] text-slate-500">
+                        Minimum {COMMITMENT_DESCRIPTION_MIN_LENGTH} characters.
+                    </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -328,7 +364,6 @@ export function CommitmentCreatorClient({
                             ))}
                         </div>
                     )}
-                    {error && <p className="text-sm text-red-400">{error}</p>}
                 </div>
                 <div className={`flex shrink-0 items-center gap-3 ${shaking ? "animate-shake" : ""}`}>
                     <Button asChild className="border border-red-500/40 bg-red-900/20 text-red-200 hover:bg-red-900/30">

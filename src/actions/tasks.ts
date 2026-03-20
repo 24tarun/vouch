@@ -49,6 +49,7 @@ const INVALID_DEADLINE_ERROR = "Deadline is invalid.";
 const PAST_DEADLINE_ERROR = "Deadline must be in the future.";
 const ACTIVE_PARENT_TASK_STATUSES: TaskStatus[] = ["CREATED", "POSTPONED"];
 const SUBTASK_LIMIT_ERROR = `A task can have at most ${MAX_SUBTASKS_PER_TASK} subtasks.`;
+const SUBTASK_TITLE_MAX_LENGTH = 500;
 const INCOMPLETE_SUBTASKS_ERROR = "Complete all subtasks before marking this task complete.";
 const INCOMPLETE_POMO_REQUIREMENT_ERROR = "Log enough pomodoro time before marking this task complete.";
 const ACTIVE_POMO_RUNNING_ERROR = "Stop the running pomodoro for this task before marking it complete.";
@@ -67,6 +68,7 @@ const TASK_PROOF_VIDEO_TOO_LONG_ERROR = "Video proof must be 15 seconds or less.
 const REQUIRED_PROOF_FOR_COMPLETION_ERROR = "Attach proof before marking this task complete.";
 const INVALID_REQUIRES_PROOF_ERROR = "Invalid requires-proof payload.";
 const TITLE_REQUIRED_ERROR = "Title cannot be empty.";
+const SUBTASK_TITLE_TOO_LONG_ERROR = `Subtask title cannot exceed ${SUBTASK_TITLE_MAX_LENGTH} characters.`;
 
 const createTaskSchema = z.object({
     title: z.string().trim().min(1, "Title is required").max(500, "Title too long"),
@@ -201,71 +203,6 @@ function parseAndValidateFutureDeadline(rawDeadline: string): { deadline?: Date;
     return { deadline: parsedDeadline };
 }
 
-function toDateOnlyFromTimestamp(timestamp: string): string | null {
-    const parsed = new Date(timestamp);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toISOString().slice(0, 10);
-}
-
-type CommitmentProofRequirementResult = {
-    required: boolean;
-    error?: string;
-};
-
-async function getCommitmentProofRequirementForTask(
-    supabase: SupabaseClient<Database>,
-    userId: string,
-    task: { id: string; deadline: string; recurrence_rule_id?: string | null }
-): Promise<CommitmentProofRequirementResult> {
-    const deadlineDateOnly = toDateOnlyFromTimestamp(task.deadline);
-    if (!deadlineDateOnly) {
-        return { required: false };
-    }
-
-    const directLinkResult = await (supabase.from("commitment_task_links") as any)
-        .select("id, commitments!inner(user_id, status)")
-        .eq("task_id", task.id as any)
-        .eq("commitments.user_id", userId as any)
-        .eq("commitments.status", "ACTIVE" as any)
-        .limit(1);
-
-    if (directLinkResult.error) {
-        return { required: false, error: directLinkResult.error.message };
-    }
-
-    if (((directLinkResult.data as any[]) || []).length > 0) {
-        return { required: true };
-    }
-
-    if (!task.recurrence_rule_id) {
-        return { required: false };
-    }
-
-    const recurringLinkResult = await (supabase.from("commitment_task_links") as any)
-        .select("id, commitments!inner(user_id, status, start_date, end_date)")
-        .eq("recurrence_rule_id", task.recurrence_rule_id as any)
-        .eq("commitments.user_id", userId as any)
-        .eq("commitments.status", "ACTIVE" as any);
-
-    if (recurringLinkResult.error) {
-        return { required: false, error: recurringLinkResult.error.message };
-    }
-
-    const recurringLinks = (recurringLinkResult.data as Array<{ commitments?: unknown }> | null) || [];
-    const required = recurringLinks.some((link) => {
-        const commitmentRaw = (link as { commitments?: unknown }).commitments;
-        const commitment = Array.isArray(commitmentRaw)
-            ? (commitmentRaw[0] as { start_date?: string; end_date?: string } | undefined)
-            : (commitmentRaw as { start_date?: string; end_date?: string } | undefined);
-        const startDate = commitment?.start_date;
-        const endDate = commitment?.end_date;
-        if (!startDate || !endDate) return false;
-        return deadlineDateOnly >= startDate && deadlineDateOnly <= endDate;
-    });
-
-    return { required };
-}
-
 function getDefaultTaskDeadline(): Date {
     const now = new Date();
     const defaultDeadline = new Date(now);
@@ -295,6 +232,9 @@ function normalizeSubtaskTitles(rawTitles: unknown): { titles: string[]; error?:
 
         const normalized = item.trim();
         if (!normalized) continue;
+        if (normalized.length > SUBTASK_TITLE_MAX_LENGTH) {
+            return { titles: [], error: SUBTASK_TITLE_TOO_LONG_ERROR };
+        }
         titles.push(normalized);
     }
 
@@ -1304,22 +1244,9 @@ export async function markTaskCompleteWithProofIntent(
         }
     }
 
-    const commitmentProofRequirement = await getCommitmentProofRequirementForTask(
-        supabase,
-        user.id,
-        {
-            id: taskId,
-            deadline: String((task as any).deadline || ""),
-            recurrence_rule_id: ((task as any).recurrence_rule_id as string | null | undefined) ?? null,
-        }
-    );
-    if (commitmentProofRequirement.error) {
-        return { error: commitmentProofRequirement.error };
-    }
-
     const isSelfVouched = (task as any).voucher_id === (user as any).id;
     const requiresProofForCompletion =
-        (Boolean((task as any).requires_proof) || commitmentProofRequirement.required) &&
+        Boolean((task as any).requires_proof) &&
         !isSelfVouched;
     const nowIso = new Date().toISOString();
 
@@ -1940,6 +1867,9 @@ export async function addTaskSubtask(parentTaskId: string, title: string) {
     if (!normalizedTitle) {
         return { error: "Subtask title cannot be empty." };
     }
+    if (normalizedTitle.length > SUBTASK_TITLE_MAX_LENGTH) {
+        return { error: SUBTASK_TITLE_TOO_LONG_ERROR };
+    }
 
     const parentTask = await getOwnedParentTask(supabase, parentTaskId, user.id);
     if (!parentTask) {
@@ -2161,6 +2091,9 @@ export async function renameTaskSubtask(parentTaskId: string, subtaskId: string,
     const normalizedTitle = newTitle.trim();
     if (!normalizedTitle) {
         return { error: "Subtask title cannot be empty." };
+    }
+    if (normalizedTitle.length > SUBTASK_TITLE_MAX_LENGTH) {
+        return { error: SUBTASK_TITLE_TOO_LONG_ERROR };
     }
 
     const parentTask = await getOwnedParentTask(supabase, parentTaskId, user.id);
@@ -2590,6 +2523,12 @@ export async function forceMajeureTask(taskId: string) {
     const now = new Date();
     const currentPeriod = now.toISOString().slice(0, 7);
 
+    // Block cross-month: task must have failed in the current calendar month
+    const failedPeriod = new Date((task as any).updated_at).toISOString().slice(0, 7);
+    if (failedPeriod !== currentPeriod) {
+        return { error: "Force Majeure can only be used on tasks that failed this month." };
+    }
+
     const { count } = await supabase
         .from("force_majeure" as any)
         .select("*", { count: 'exact', head: true })
@@ -2717,19 +2656,7 @@ export async function getTask(taskId: string) {
         }
 
         if (isOwner || isVoucher) {
-            const commitmentProofRequirement = await getCommitmentProofRequirementForTask(
-                supabase,
-                String((task as any).user_id || ""),
-                {
-                    id: String((task as any).id || taskId),
-                    deadline: String((task as any).deadline || ""),
-                    recurrence_rule_id: ((task as any).recurrence_rule_id as string | null | undefined) ?? null,
-                }
-            );
-            if (commitmentProofRequirement.error) {
-                console.error("Failed to compute commitment proof requirement:", commitmentProofRequirement.error);
-            }
-            (task as any).commitment_proof_required = commitmentProofRequirement.required;
+            (task as any).commitment_proof_required = false;
         }
 
         if (isOwner) {

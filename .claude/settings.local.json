@@ -20,7 +20,10 @@
       "Bash(cat:*)",
       "Bash(rm /c/LocalFiles/coding/vouch/src/app/pomo-demo/page.tsx)",
       "Bash(rmdir /c/LocalFiles/coding/vouch/src/app/pomo-demo)",
-      "Bash(xargs wc:*)"
+      "Bash(xargs wc:*)",
+      "Bash(rm /c/LocalFiles/coding/vouch/src/components/CommitmentDetailClient.tsx)",
+      "Bash(rm /c/LocalFiles/coding/vouch/src/app/dashboard/commitments/[id]/page.tsx)",
+      "Bash(xargs grep:*)"
     ]
   }
 }

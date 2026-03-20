@@ -43,7 +43,7 @@ export function StatsHistoryTaskList({ tasks }: StatsHistoryTaskListProps) {
                     ) : (
                         <>
                             {visibleTasks.map((task) => (
-                                <CompactStatsItem key={task.id} task={task} />
+                                <CompactStatsItem key={task.id} task={task} onRowClick={() => {}} />
                             ))}
 
                             {hasMore && (

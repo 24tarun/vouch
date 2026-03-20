@@ -71,6 +71,7 @@ function toRealtimeCommitmentRow(value: unknown): RealtimeCommitmentRow | null {
         typeof row.id !== "string" ||
         typeof row.user_id !== "string" ||
         typeof row.name !== "string" ||
+        typeof row.description !== "string" ||
         typeof row.status !== "string" ||
         typeof row.start_date !== "string" ||
         typeof row.end_date !== "string" ||
@@ -79,7 +80,16 @@ function toRealtimeCommitmentRow(value: unknown): RealtimeCommitmentRow | null {
         return null;
     }
 
-    return row as RealtimeCommitmentRow;
+    return {
+        id: row.id,
+        user_id: row.user_id,
+        name: row.name,
+        description: row.description,
+        status: row.status,
+        start_date: row.start_date,
+        end_date: row.end_date,
+        updated_at: row.updated_at,
+    };
 }
 
 interface GoogleCalendarOutboxRow {

@@ -19,7 +19,7 @@ import type {
     Task,
 } from "@/lib/types";
 
-type CommitmentTaskLite = Pick<Task, "id" | "title" | "status" | "deadline" | "failure_cost_cents" | "recurrence_rule_id">;
+export type CommitmentTaskLite = Pick<Task, "id" | "title" | "status" | "deadline" | "failure_cost_cents" | "recurrence_rule_id">;
 type RecurrenceRuleLite = Pick<
     RecurrenceRule,
     "id" | "title" | "failure_cost_cents" | "rule_config" | "created_at" | "last_generated_date"
@@ -32,6 +32,7 @@ interface CommitmentDayStatus {
 
 export interface CommitmentListItem extends Commitment {
     links: CommitmentTaskLink[];
+    task_instances: CommitmentTaskLite[];
     derived_status: CommitmentStatus;
     earned_so_far_cents: number;
     total_target_cents: number;
@@ -67,12 +68,14 @@ interface CommitmentDateWindow {
 
 interface CommitmentInput {
     name: string;
+    description: string;
     start_date: string;
     end_date: string;
 }
 
 interface CommitmentUpdateInput {
     name?: string;
+    description?: string;
     start_date?: string;
     end_date?: string;
 }
@@ -134,6 +137,14 @@ function validateDateWindow(startDateOnly: string, endDateOnly: string): { ok: t
 
 function normalizeName(raw: string): string {
     return (raw || "").trim();
+}
+
+const COMMITMENT_DESCRIPTION_MIN_LENGTH = 10;
+const COMMITMENT_DESCRIPTION_MAX_LENGTH = 500;
+
+function normalizeDescription(raw?: string): string {
+    if (typeof raw !== "string") return "";
+    return raw.trim();
 }
 
 function serializeDayStatuses(dayStatusMap: Map<string, DayStatus>): CommitmentDayStatus[] {
@@ -316,10 +327,20 @@ export async function createCommitment(input: CommitmentInput) {
     if (!userId) return { success: false as const, error: "Not authenticated" };
 
     const name = normalizeName(input.name);
+    const description = normalizeDescription(input.description);
     const startDate = normalizeDateOnly(input.start_date || "");
     const endDate = normalizeDateOnly(input.end_date || "");
 
     if (!name) return { success: false as const, error: "Commitment name is required." };
+    if (description.length < COMMITMENT_DESCRIPTION_MIN_LENGTH) {
+        return {
+            success: false as const,
+            error: `Description must be at least ${COMMITMENT_DESCRIPTION_MIN_LENGTH} characters.`,
+        };
+    }
+    if (description.length > COMMITMENT_DESCRIPTION_MAX_LENGTH) {
+        return { success: false as const, error: `Description must be ${COMMITMENT_DESCRIPTION_MAX_LENGTH} characters or fewer.` };
+    }
     if (!startDate || !endDate) {
         return { success: false as const, error: "Start and end dates are required." };
     }
@@ -333,6 +354,7 @@ export async function createCommitment(input: CommitmentInput) {
         .insert({
             user_id: userId,
             name,
+            description,
             status: "DRAFT",
             start_date: startDate,
             end_date: endDate,
@@ -365,6 +387,19 @@ export async function updateCommitment(commitmentId: string, input: CommitmentUp
             return { success: false as const, error: "Commitment name cannot be empty." };
         }
         update.name = name;
+    }
+    if (typeof input.description === "string") {
+        const description = normalizeDescription(input.description);
+        if (description.length < COMMITMENT_DESCRIPTION_MIN_LENGTH) {
+            return {
+                success: false as const,
+                error: `Description must be at least ${COMMITMENT_DESCRIPTION_MIN_LENGTH} characters.`,
+            };
+        }
+        if (description.length > COMMITMENT_DESCRIPTION_MAX_LENGTH) {
+            return { success: false as const, error: `Description must be ${COMMITMENT_DESCRIPTION_MAX_LENGTH} characters or fewer.` };
+        }
+        update.description = description;
     }
 
     const startDate = input.start_date ? normalizeDateOnly(input.start_date) : commitment.start_date;
@@ -623,6 +658,7 @@ export async function getCommitments(): Promise<CommitmentListItem[]> {
         results.push({
             ...commitment,
             links: commitmentLinks,
+            task_instances: linkedTasks,
             derived_status: metrics.derivedStatus,
             earned_so_far_cents: metrics.earnedSoFarCents,
             total_target_cents: metrics.totalTargetCents,

@@ -26,11 +26,13 @@ const PREFETCH_STATUSES = new Set(["CREATED", "POSTPONED", "AWAITING_VOUCHER", "
 interface CompactStatsItemProps {
     task: CompactStatsTask;
     forceActiveBadge?: boolean;
+    onRowClick?: () => void;
 }
 
 export function CompactStatsItem({
     task,
     forceActiveBadge = false,
+    onRowClick,
 }: CompactStatsItemProps) {
     const router = useRouter();
     const detailPath = `/dashboard/tasks/${task.id}`;
@@ -89,6 +91,7 @@ export function CompactStatsItem({
             onClick={(event) => {
                 const target = event.target as HTMLElement;
                 if (target.closest("button,a,input,select,textarea")) return;
+                if (onRowClick) { event.stopPropagation(); onRowClick(); return; }
                 router.push(detailPath);
             }}
             onMouseEnter={() => {

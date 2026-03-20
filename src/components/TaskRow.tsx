@@ -75,7 +75,7 @@ export function TaskRow({
         requiredPomoSeconds > 0 && pomoTotalSeconds < requiredPomoSeconds;
     const isSelfVouched = task.voucher_id === task.user_id;
     const requiresProofForCompletion =
-        Boolean(task.requires_proof || task.commitment_proof_required) &&
+        Boolean(task.requires_proof) &&
         !isSelfVouched;
     const hasRunningPomoForTask = session?.status === "ACTIVE" && session.task_id === task.id;
     const disabledCompleteTitle = hasIncompleteSubtasks
@@ -815,6 +815,7 @@ export function TaskRow({
                         <div className="flex items-center gap-2 pr-2">
                             <button
                                 type="button"
+                                onPointerDown={(e) => e.preventDefault()}
                                 onClick={handleAddSubtask}
                                 disabled={!newSubtaskTitle.trim()}
                                 className={cn(

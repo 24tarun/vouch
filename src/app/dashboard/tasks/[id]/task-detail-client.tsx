@@ -150,7 +150,7 @@ export default function TaskDetailClient({
     const isOwner = taskState.user_id === viewerId;
     const isSelfVouched = taskState.voucher_id === taskState.user_id;
     const requiresProofForCompletion =
-        Boolean(taskState.requires_proof || taskState.commitment_proof_required) &&
+        Boolean(taskState.requires_proof) &&
         !isSelfVouched;
     const isActiveParentTask = taskState.status === "CREATED" || taskState.status === "POSTPONED";
     const completedSubtasksCount = subtasks.filter((subtask) => subtask.is_completed).length;
@@ -1675,7 +1675,7 @@ export default function TaskDetailClient({
                                                     value={newSubtaskTitle}
                                                     onChange={(e) => setNewSubtaskTitle(e.target.value)}
                                                     placeholder="e.g., draft intro paragraph"
-                                                    maxLength={120}
+                                                    maxLength={500}
                                                     className={cn(
                                                         "bg-slate-900/60 border-slate-700 text-slate-200",
                                                         !canManageActionChildren && "border-slate-800 text-slate-500 bg-slate-900/50 cursor-not-allowed"
@@ -1688,6 +1688,7 @@ export default function TaskDetailClient({
                                                 <Button
                                                     type="submit"
                                                     size="sm"
+                                                    onPointerDown={(e) => e.preventDefault()}
                                                     disabled={
                                                         !canManageActionChildren ||
                                                         isAddingSubtask

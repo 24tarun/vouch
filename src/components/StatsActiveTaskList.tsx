@@ -28,6 +28,7 @@ export function StatsActiveTaskList({
                     key={task.id}
                     task={task}
                     forceActiveBadge
+                    onRowClick={() => {}}
                 />
             ))}
         </>
