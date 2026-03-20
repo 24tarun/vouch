@@ -547,7 +547,7 @@ export function TaskRow({
                             {task.title}
                         </p>
                         {task.recurrence_rule_id && (
-                            <Repeat className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                            <Repeat className="h-3.5 w-3.5 text-purple-400 shrink-0" />
                         )}
                         {hasSubtasks && (
                             <span className="text-[10px] text-slate-500 font-mono shrink-0">
@@ -660,7 +660,7 @@ export function TaskRow({
                                 {task.title}
                             </p>
                             {task.recurrence_rule_id && (
-                                <Repeat className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                <Repeat className="h-3.5 w-3.5 text-purple-400 shrink-0" />
                             )}
                             {hasSubtasks && (
                                 <span className="text-[10px] text-slate-500 font-mono shrink-0">
@@ -691,7 +691,7 @@ export function TaskRow({
                                     {task.title}
                                 </p>
                                 {task.recurrence_rule_id && (
-                                    <Repeat className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                                    <Repeat className="h-3.5 w-3.5 text-purple-400 shrink-0" />
                                 )}
                                 {hasSubtasks && (
                                     <span className="text-[10px] text-slate-500 font-mono shrink-0">

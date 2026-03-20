@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, Timer } from "lucide-react";
+import { ExternalLink, Repeat, Timer } from "lucide-react";
 import { formatPomoBadge } from "@/lib/format-pomo";
 
 export interface CompactStatsTask {
@@ -14,6 +14,7 @@ export interface CompactStatsTask {
     marked_completed_at?: string | null;
     voucher_timeout_auto_accepted?: boolean | null;
     proof_request_open?: boolean | null;
+    recurrence_rule_id?: string | null;
     voucher?: {
         username?: string | null;
     } | null;
@@ -112,6 +113,16 @@ export function CompactStatsItem({
                                 : task.status === "COMPLETED"
                                     ? (task.voucher_timeout_auto_accepted ? "VOUCHER DID NOT RESPOND" : "ACCEPTED")
                                 : (statusLabels[task.status] || task.status)}
+                        </Badge>
+                    )}
+                    {task.recurrence_rule_id && (
+                        <Badge
+                            variant="outline"
+                            className="h-4 py-0 px-1 border-purple-500/40 bg-purple-500/10 text-purple-300"
+                            aria-label="Repeating task"
+                            title="Repeating task"
+                        >
+                            <Repeat className="h-3 w-3 text-purple-400" />
                         </Badge>
                     )}
                     {!isActiveTask && pomoTotalSeconds > 0 && (
