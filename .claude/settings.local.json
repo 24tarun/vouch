@@ -30,7 +30,9 @@
       "mcp__supabase__list_tables",
       "mcp__supabase__list_migrations",
       "mcp__supabase__execute_sql",
-      "mcp__supabase__apply_migration"
+      "mcp__supabase__apply_migration",
+      "WebFetch(domain:github.com)",
+      "Bash(python3 \"C:\\\\Users\\\\tarun\\\\.claude\\\\skills\\\\ui-ux-pro-max\\\\scripts\\\\search.py\" \"task accountability productivity dark saas landing page professional\" --design-system -p \"TAS\")"
     ]
   }
 }
