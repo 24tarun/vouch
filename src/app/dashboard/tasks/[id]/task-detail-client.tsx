@@ -2058,16 +2058,15 @@ export default function TaskDetailClient({
 
                                 <div className="flex flex-wrap gap-2">
                                     {canResubmit && isOwner && (
-                                        <Button
+                                        <button
                                             type="button"
-                                            variant="outline"
                                             onClick={() => openProofPicker("awaiting-upload")}
                                             disabled={isActionPending("awaitingProofUpload")}
-                                            className="bg-orange-800/40 border-orange-600 text-orange-300 hover:bg-orange-700/40 hover:text-orange-100"
+                                            className="flex items-center gap-2 rounded-md border border-orange-600 bg-orange-800/40 px-4 py-2 text-sm font-medium text-orange-300 transition-colors hover:bg-orange-700/40 hover:text-orange-100 disabled:pointer-events-none disabled:opacity-50 select-none"
                                         >
-                                            <Camera className="mr-2 h-4 w-4" />
-                                            Upload New Proof
-                                        </Button>
+                                            <Camera className="h-4 w-4 pointer-events-none" />
+                                            <span className="pointer-events-none">Upload New Proof</span>
+                                        </button>
                                     )}
                                     {isOwner && (
                                         <Button
