@@ -61,7 +61,7 @@ export interface Task {
     ai_escalated_from?: boolean;
     resubmit_count?: number;
     ai_vouch_calls_count?: number;
-    ai_vouch_denials?: AiVouchDenial[];
+    ai_vouches?: AiVouch[];
 }
 
 export interface TaskSubtask {
@@ -103,12 +103,14 @@ export interface TaskCompletionProof {
     updated_at: string;
 }
 
-export interface AiVouchDenial {
+export interface AiVouch {
     id: string;
     task_id: string;
     attempt_number: number;
     reason: string;
-    denied_at: string;
+    decision: "approved" | "denied";
+    vouched_at: string;
+    approved_at: string | null;
 }
 
 export interface TaskEvent {

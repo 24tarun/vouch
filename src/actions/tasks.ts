@@ -2489,7 +2489,7 @@ export async function ownerTempDeleteTask(taskId: string) {
     }
 
     if (getOwnerDeleteRemainingMs((task as any).created_at) <= 0) {
-        return { error: "Delete window expired. Tasks can only be deleted within 5 minutes." };
+        return { error: "Delete window expired. Tasks can only be deleted within 10 minutes." };
     }
 
     const supabaseAdmin = createAdminClient();
@@ -2735,7 +2735,7 @@ export async function getTask(taskId: string) {
                     .eq("task_id", taskId as any)
                     .eq("user_id", (task as any).user_id as any)
                     .maybeSingle(),
-                (supabaseAdmin.from("ai_vouch_denials") as any)
+                (supabaseAdmin.from("ai_vouches") as any)
                     .select("*")
                     .eq("task_id", taskId as any)
                     .order("attempt_number", { ascending: true }),
@@ -2754,7 +2754,7 @@ export async function getTask(taskId: string) {
             (task as any).completion_proof = proof || null;
             (task as any).google_sync_linked = Boolean(googleLink);
             (task as any).google_sync_last_origin = lastOrigin;
-            (task as any).ai_vouch_denials = (denials as any[]) || [];
+            (task as any).ai_vouches = (denials as any[]) || [];
         }
 
         if (isOwner || isVoucher) {

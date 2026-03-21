@@ -183,7 +183,8 @@ export default function TaskDetailClient({
     const resubmitCount = taskState.resubmit_count ?? 0;
     const MAX_RESUBMITS = 3;
     const canResubmit = taskState.status === "AWAITING_USER" && resubmitCount < MAX_RESUBMITS;
-    const denials = taskState.ai_vouch_denials ?? [];
+    const aiVouches = taskState.ai_vouches ?? [];
+    const denials = aiVouches.filter((v) => v.decision === "denied");
     const latestDenial = denials.at(-1) ?? null;
 
     const formatDateDdMmYy = (value: Date | string) =>
@@ -1361,6 +1362,12 @@ export default function TaskDetailClient({
         if (event.event_type === "PROOF_REMOVED") {
             return "Proof removed";
         }
+        if (event.event_type === "AI_APPROVE") {
+            return "Orca approved";
+        }
+        if (event.event_type === "AI_DENY") {
+            return "Orca denied";
+        }
         return event.event_type.replace(/_/g, " ");
     };
 
@@ -2133,6 +2140,15 @@ export default function TaskDetailClient({
                                         <p className="text-white text-sm">
                                             {formatEventLabel(event)}
                                         </p>
+                                        {(event.event_type === "AI_APPROVE" || event.event_type === "AI_DENY") && (() => {
+                                            const aiEventIndex = visibleEvents.filter((e, i) => i <= visibleEvents.indexOf(event) && (e.event_type === "AI_APPROVE" || e.event_type === "AI_DENY")).length - 1;
+                                            const vouch = aiVouches[aiEventIndex];
+                                            return vouch?.reason ? (
+                                                <p className={`text-xs mt-0.5 ${event.event_type === "AI_APPROVE" ? "text-green-400" : "text-red-400"}`}>
+                                                    {vouch.reason}
+                                                </p>
+                                            ) : null;
+                                        })()}
                                         <p className="text-xs text-slate-500">
                                             {formatEventTimestamp(event)}
                                         </p>

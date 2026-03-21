@@ -120,7 +120,7 @@ export async function processAiVoucherDecision(
     console.log(`Decision for task ${taskId}: ${decision.decision}`);
 
     if (decision.decision === "approved") {
-      await approveTask(taskId, task);
+      await approveTask(taskId, task, decision.reason);
     } else {
       await denyTask(taskId, task, decision.reason || "Proof does not match task");
     }
@@ -165,7 +165,7 @@ export async function notifyAiVoucherEvaluationErrorByTaskId(
 /**
  * Mark task as COMPLETED, delete proof, write AI_APPROVE event
  */
-async function approveTask(taskId: string, task: any): Promise<void> {
+async function approveTask(taskId: string, task: any, reason?: string): Promise<void> {
   const adminClient = createAdminClient();
 
   // Delete proof from storage + DB
@@ -192,6 +192,15 @@ async function approveTask(taskId: string, task: any): Promise<void> {
     console.error(`Failed to update task ${taskId}: ${updateError.message}`);
     return;
   }
+
+  // Record in ai_vouches
+  await (adminClient.from("ai_vouches") as any).insert({
+    task_id: taskId,
+    attempt_number: (task.resubmit_count ?? 0) + 1,
+    decision: "approved",
+    reason: reason ?? "",
+    approved_at: new Date().toISOString(),
+  });
 
   // Write task event
   await (adminClient.from("task_events") as any).insert({
@@ -256,10 +265,11 @@ async function denyTask(
   const nextStatus = isFinal ? "FAILED" : "AWAITING_USER";
   const attemptNumber = currentCount + 1;
 
-  // Always: Insert denial record
-  await (adminClient.from("ai_vouch_denials") as any).insert({
+  // Record in ai_vouches
+  await (adminClient.from("ai_vouches") as any).insert({
     task_id: taskId,
     attempt_number: attemptNumber,
+    decision: "denied",
     reason,
   });
 
