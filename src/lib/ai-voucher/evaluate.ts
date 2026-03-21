@@ -64,7 +64,10 @@ export async function processAiVoucherDecision(
       return;
     }
 
-    const proof = (task.task_completion_proofs ?? []).find((p: any) => p?.object_path);
+    const proofRaw = task.task_completion_proofs;
+    const proof = Array.isArray(proofRaw)
+      ? proofRaw.find((p: any) => p?.object_path)
+      : proofRaw?.object_path ? proofRaw : null;
 
     if (!proof) {
       console.error(`No proof found for task ${taskId}`);
