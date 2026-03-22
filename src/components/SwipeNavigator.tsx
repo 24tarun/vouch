@@ -50,17 +50,16 @@ export function SwipeNavigator() {
             const nextHref = PAGES[nextIdx];
             haptics.light();
 
-            // Tag the html element so CSS knows slide direction
+            // Tag direction so CSS knows which way to slide
             document.documentElement.dataset.swipeDir = dir;
+            // Trigger exit animation on current content
+            document.documentElement.dataset.swipeExiting = '1';
 
-            const doc = document as DocumentWithViewTransition;
-            if (doc.startViewTransition) {
-                doc.startViewTransition(() => {
-                    router.push(nextHref);
-                });
-            } else {
+            // Wait for exit animation, then navigate
+            setTimeout(() => {
+                delete document.documentElement.dataset.swipeExiting;
                 router.push(nextHref);
-            }
+            }, 210);
         },
         [router]
     );

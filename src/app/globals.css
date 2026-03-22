@@ -427,50 +427,44 @@
   height: 0.34rem;
 }
 
-/* ─── Swipe page transitions (View Transitions API) ─────────────────────── */
+/* ─── Swipe page transitions ─────────────────────────────────────────────── */
 
-/* Kill the default cross-fade so only our slide runs */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
+/* Enter animations — play when new page mounts after a swipe */
+@keyframes swipe-in-from-right {
+  from { transform: translateX(100%); opacity: 0.6; }
+  to   { transform: translateX(0);    opacity: 1;   }
 }
-
-/* Swipe LEFT  →  current page slides out-left, next page slides in-right */
-html[data-swipe-dir="left"] ::view-transition-old(root) {
-  animation: vt-slide-out-left 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-html[data-swipe-dir="left"] ::view-transition-new(root) {
-  animation: vt-slide-in-right 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+@keyframes swipe-in-from-left {
+  from { transform: translateX(-100%); opacity: 0.6; }
+  to   { transform: translateX(0);     opacity: 1;   }
 }
 
-/* Swipe RIGHT →  current page slides out-right, next page slides in-left */
-html[data-swipe-dir="right"] ::view-transition-old(root) {
-  animation: vt-slide-out-right 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+/* Exit animations — play on current content before navigation fires */
+@keyframes swipe-out-to-left {
+  from { transform: translateX(0);    opacity: 1;   }
+  to   { transform: translateX(-30%); opacity: 0;   }
 }
-html[data-swipe-dir="right"] ::view-transition-new(root) {
-  animation: vt-slide-in-left 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
-}
-
-@keyframes vt-slide-out-left {
-  to { transform: translateX(-100%); }
-}
-@keyframes vt-slide-in-right {
-  from { transform: translateX(100%); }
-}
-@keyframes vt-slide-out-right {
-  to { transform: translateX(100%); }
-}
-@keyframes vt-slide-in-left {
-  from { transform: translateX(-100%); }
+@keyframes swipe-out-to-right {
+  from { transform: translateX(0);   opacity: 1;   }
+  to   { transform: translateX(30%); opacity: 0;   }
 }
 
-/* Dark background behind the transition so no white flash ever shows */
-::view-transition-image-pair(root) {
-  isolation: isolate;
+/* Exit: animate main content out */
+html[data-swipe-exiting][data-swipe-dir="left"] main {
+  animation: swipe-out-to-left 210ms cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
 }
-::view-transition-group(root) {
-  background: #020617; /* slate-950 — matches the app shell */
+html[data-swipe-exiting][data-swipe-dir="right"] main {
+  animation: swipe-out-to-right 210ms cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
+}
+
+/* Enter: new page slides in — keyed div remounts on pathname change */
+html[data-swipe-dir="left"] .page-swipe-enter {
+  animation: swipe-in-from-right 280ms cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+html[data-swipe-dir="right"] .page-swipe-enter {
+  animation: swipe-in-from-left 280ms cubic-bezier(0.25, 1, 0.5, 1) both;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────── */

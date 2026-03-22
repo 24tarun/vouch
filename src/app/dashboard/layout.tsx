@@ -5,6 +5,7 @@ import { NavLinks } from "@/components/NavLinks";
 import { RealtimeListener } from "@/components/RealtimeListener";
 import { PomodoroProvider } from "@/components/PomodoroProvider";
 import { SwipeNavigator } from "@/components/SwipeNavigator";
+import { PageTransitionWrapper } from "@/components/PageTransitionWrapper";
 
 export default async function DashboardLayout({
     children,
@@ -46,8 +47,8 @@ export default async function DashboardLayout({
                 </nav>
 
                 {/* Main Content */}
-                <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pl-safe pr-safe pb-safe">
-                    {children}
+                <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pl-safe pr-safe pb-safe overflow-x-hidden">
+                    <PageTransitionWrapper>{children}</PageTransitionWrapper>
                 </main>
             </div>
         </PomodoroProvider>
