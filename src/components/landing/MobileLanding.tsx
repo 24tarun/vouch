@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BuildStamp } from "@/components/BuildStamp";
 import { Linkedin, Mail, Globe } from "lucide-react";
+import { MobileOnboarding } from "./MobileOnboarding";
 
 export function MobileLanding() {
   return (
@@ -110,6 +111,8 @@ export function MobileLanding() {
           background-size: 200px 200px;
         }
       `}</style>
+
+      <MobileOnboarding />
 
       <div style={{ background: "var(--bg)", color: "var(--fg)", minHeight: "100dvh" }}>
 
