@@ -48,12 +48,23 @@ export function SwipeCarousel({ children }: { children: React.ReactNode }) {
     // Motion value driving all three slots
     const x = useMotionValue(0);
 
-    // Cache current page content and reset on navigation
+    // Reset position on navigation
     useEffect(() => {
-        cache.current.set(pathname, children);
         x.set(0);
         isAnimating.current = false;
-    }, [pathname, children, x]);
+    }, [pathname, x]);
+
+    // Cache children only when they belong to the current path.
+    // When Next.js navigates with startTransition, pathname changes immediately
+    // but children stays as the old page during loading — we must skip that render
+    // to avoid poisoning the cache with stale content.
+    const prevCachePathRef = useRef(pathname);
+    useEffect(() => {
+        if (prevCachePathRef.current === pathname) {
+            cache.current.set(pathname, children);
+        }
+        prevCachePathRef.current = pathname;
+    }, [pathname, children]);
 
     // Track container width
     useEffect(() => {

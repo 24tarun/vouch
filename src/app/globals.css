@@ -128,10 +128,15 @@
 
   html {
     scroll-behavior: smooth;
+    background-color: #020617;
+    overscroll-behavior-y: none;
   }
 
   body {
     @apply bg-background text-foreground;
+    background-color: #020617;
+    min-height: 100dvh;
+    overscroll-behavior-y: none;
 
     /* Better mobile scrolling */
     -webkit-overflow-scrolling: touch;
