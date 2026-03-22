@@ -427,6 +427,54 @@
   height: 0.34rem;
 }
 
+/* ─── Swipe page transitions (View Transitions API) ─────────────────────── */
+
+/* Kill the default cross-fade so only our slide runs */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* Swipe LEFT  →  current page slides out-left, next page slides in-right */
+html[data-swipe-dir="left"] ::view-transition-old(root) {
+  animation: vt-slide-out-left 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+html[data-swipe-dir="left"] ::view-transition-new(root) {
+  animation: vt-slide-in-right 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Swipe RIGHT →  current page slides out-right, next page slides in-left */
+html[data-swipe-dir="right"] ::view-transition-old(root) {
+  animation: vt-slide-out-right 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+html[data-swipe-dir="right"] ::view-transition-new(root) {
+  animation: vt-slide-in-left 280ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes vt-slide-out-left {
+  to { transform: translateX(-100%); }
+}
+@keyframes vt-slide-in-right {
+  from { transform: translateX(100%); }
+}
+@keyframes vt-slide-out-right {
+  to { transform: translateX(100%); }
+}
+@keyframes vt-slide-in-left {
+  from { transform: translateX(-100%); }
+}
+
+/* Dark background behind the transition so no white flash ever shows */
+::view-transition-image-pair(root) {
+  isolation: isolate;
+}
+::view-transition-group(root) {
+  background: #020617; /* slate-950 — matches the app shell */
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+
 @media (max-width: 640px) {
   .seven-seg-display {
     gap: 0.55rem;

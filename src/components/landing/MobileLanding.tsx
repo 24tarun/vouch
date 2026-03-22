@@ -142,7 +142,7 @@ export function MobileLanding() {
             Commit to tasks. Put money on the line. Let a friend verify. Miss it — pay up.
           </p>
 
-          <Link href="/login" className="m-btn">
+          <Link href="/onboarding" className="m-btn">
             Begin Now
           </Link>
         </section>
@@ -244,7 +244,7 @@ export function MobileLanding() {
           <p className="m-fm" style={{ fontSize: "11px", color: "var(--fg-dim)", lineHeight: 1.7, marginBottom: "28px", fontWeight: 300 }}>
             No credit card required to start. Put real stakes on your first task in under a minute.
           </p>
-          <Link href="/login" className="m-btn">
+          <Link href="/onboarding" className="m-btn">
             Begin Now
           </Link>
         </section>

@@ -4,6 +4,7 @@ import { getCachedPendingVouchCountForVoucher } from "@/actions/voucher";
 import { NavLinks } from "@/components/NavLinks";
 import { RealtimeListener } from "@/components/RealtimeListener";
 import { PomodoroProvider } from "@/components/PomodoroProvider";
+import { SwipeNavigator } from "@/components/SwipeNavigator";
 
 export default async function DashboardLayout({
     children,
@@ -32,6 +33,7 @@ export default async function DashboardLayout({
 
     return (
         <PomodoroProvider>
+            <SwipeNavigator />
             <div className="min-h-screen bg-slate-950 text-slate-200">
                 <RealtimeListener userId={user.id} />
                 {/* Navigation */}

@@ -447,7 +447,7 @@ export default function VoucherDashboardClient({
     }
 
     return (
-        <div className="max-w-3xl mx-auto space-y-12 pb-20 mt-12 px-4 md:px-0">
+        <div className="max-w-3xl mx-auto space-y-12 pb-20 px-4 md:px-0">
             <TaskDetailPrefetcher tasks={pendingState} />
             <div className="flex items-start justify-between gap-3">
                 <div>
