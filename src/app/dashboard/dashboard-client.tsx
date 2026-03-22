@@ -983,7 +983,7 @@ export default function DashboardClient({
                     <p>Event colors: type -color, then pick an alias (e.g., -pink, -blue)</p>
                     <p>Color tags work only with -event and sync as Google event colors</p>
                     <p>Timer: use timer 25 (minutes from now)</p>
-                    <p>Reminder: use remind 10:00 or remind 1000</p>
+                    <p>Reminder: use remind@20, remind@2200, or remind@08:30</p>
                     <p>Pomodoro: use pomo 75 (max 120)</p>
                     <p>Proof required: use -proof (blocks completion until proof is attached)</p>
                     <p>Voucher: use vouch bob or .v bob</p>

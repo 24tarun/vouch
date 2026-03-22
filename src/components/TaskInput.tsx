@@ -30,7 +30,6 @@ import type { Profile } from "@/lib/types";
 import { getCurrencySymbol, getFailureCostBounds, type SupportedCurrency } from "@/lib/currency";
 import {
     DEFAULT_EVENT_DURATION_MINUTES,
-    MAX_POMO_DURATION_MINUTES,
 } from "@/lib/constants";
 import { resolveEventSchedule } from "@/lib/task-title-event-time";
 import {
@@ -71,9 +70,9 @@ import {
 } from "@/lib/task-title-parser";
 import type { ParserKeywordCompletion } from "@/lib/task-title-parser";
 
-const TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/i;
+const TIME_TOKEN_REGEX = /(?:^|\s)@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/i;
 const TITLE_TEXT_METRICS_CLASS =
-    "text-lg font-medium leading-normal [font-kerning:none] [font-variant-ligatures:none] [font-feature-settings:'liga'_0,'clig'_0]";
+    "text-base sm:text-lg font-medium leading-normal [font-kerning:none] [font-variant-ligatures:none] [font-feature-settings:'liga'_0,'clig'_0]";
 
 
 function formatTimeUntilDeadline(deadline: Date, now: Date = new Date()): string {
@@ -191,6 +190,8 @@ export function TaskInput({
             : DEFAULT_EVENT_DURATION_MINUTES;
     const nearestColorHelperToken =
         isTitleFocused ? findNearestColorHelperToken(title, titleCaretIndex) : null;
+    const nearestColorHelperStart = nearestColorHelperToken?.start ?? null;
+    const nearestColorHelperEnd = nearestColorHelperToken?.end ?? null;
     const isCaretNearColorHelper = Boolean(
         nearestColorHelperToken &&
         titleCaretIndex >= nearestColorHelperToken.start - 1 &&
@@ -222,11 +223,13 @@ export function TaskInput({
     const syncTitleCaretFromInput = useCallback(() => {
         syncTitleCaretFromElement(titleInputRef.current);
     }, [syncTitleCaretFromElement]);
-    const keepTitleTypingInView = useCallback((input: HTMLInputElement | null) => {
+    const keepTitleTypingInView = useCallback((input: HTMLInputElement | null, ensureVisible: boolean = false) => {
         if (!input) return;
         window.requestAnimationFrame(() => {
             syncTitleHighlightScroll();
-            input.scrollIntoView({ block: "nearest", inline: "nearest" });
+            if (ensureVisible) {
+                input.scrollIntoView({ block: "nearest", inline: "nearest" });
+            }
         });
     }, [syncTitleHighlightScroll]);
 
@@ -300,13 +303,7 @@ export function TaskInput({
         let cursorInserted = false;
 
         const insertCursor = () => {
-            runs.push(
-                <span
-                    key={`title-caret-${titleCaretIndex}`}
-                    className="title-caret"
-                    aria-hidden="true"
-                />
-            );
+            // Keep native input caret active to avoid overlay-caret layout jitter while typing.
             cursorInserted = true;
         };
 
@@ -350,13 +347,8 @@ export function TaskInput({
                     <span
                         key={`${index}-${partStart}`}
                         data-testid={isCompletionFragmentPart ? "task-input-completion-fragment" : undefined}
-                        className={cn(
-                            overlayClassName,
-                            isCompletionFragmentPart && "pointer-events-auto cursor-pointer"
-                        )}
+                        className={overlayClassName}
                         style={segment.style}
-                        onPointerDown={isCompletionFragmentPart ? handleInlineCompletionPointerDown : undefined}
-                        onClick={isCompletionFragmentPart ? handleInlineCompletionTap : undefined}
                     >
                         {partText}
                     </span>
@@ -397,9 +389,9 @@ export function TaskInput({
     ]);
 
     useEffect(() => {
-        if (!nearestColorHelperToken) return;
+        if (nearestColorHelperStart === null || nearestColorHelperEnd === null) return;
         setColorPickerIndex(0);
-    }, [nearestColorHelperToken?.start, nearestColorHelperToken?.end]);
+    }, [nearestColorHelperEnd, nearestColorHelperStart]);
 
     useEffect(() => {
         if (!isColorPickerVisible) return;
@@ -820,12 +812,12 @@ export function TaskInput({
 
     const stripMetadata = (text: string) => {
         const withoutStandardTokens = text
-            .replace(/@(?:\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g, "")
+            .replace(/(^|\s)@(?:\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g, "$1")
             .replace(/(?:^|\s)-start\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
             .replace(/(?:^|\s)-end\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
             .replace(/\b([12]?\d|3[01])(?:st|nd|rd|th)\b/gi, "")
             .replace(/\b(?:0?[1-9]|[12]\d|3[01])\/(?:0?[1-9]|1[0-2])(?:\/\d{4})?\b/g, "")
-            .replace(/\bremind\s+(?:\d{1,2}:\d{2}|\d{4})\b/gi, "")
+            .replace(/(^|\s)remind@(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, "$1")
             .replace(/\b(?:tmrw|tomorrow)\b/gi, "")
             .replace(new RegExp(WEEKDAY_TOKEN_REGEX.source, "gi"), "")
             .replace(/(?:\bvouch|\.v)\s+[^\s/]+/gi, "")
@@ -1074,6 +1066,10 @@ export function TaskInput({
                     <input
                         ref={titleInputRef}
                         type="text"
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
                         value={title}
                         onChange={(e) => {
                             setTitle(e.currentTarget.value);
@@ -1087,13 +1083,13 @@ export function TaskInput({
                         }}
                         onClick={() => {
                             syncTitleCaretFromInput();
-                            keepTitleTypingInView(titleInputRef.current);
+                            keepTitleTypingInView(titleInputRef.current, true);
                         }}
                         onFocus={() => {
                             completionTapInProgressRef.current = false;
                             setIsTitleFocused(true);
                             syncTitleCaretFromInput();
-                            keepTitleTypingInView(titleInputRef.current);
+                            keepTitleTypingInView(titleInputRef.current, true);
                         }}
                         onBlur={() => {
                             if (completionTapInProgressRef.current) return;
@@ -1111,8 +1107,8 @@ export function TaskInput({
                         enterKeyHint="done"
                         placeholder="click the bulb button on the right"
                         className={cn(
-                            "w-full bg-transparent border-none px-5 py-4 placeholder:text-slate-500/70 focus:outline-none transition-all",
-                            showTitleOverlay ? "text-transparent [caret-color:transparent]" : "text-white caret-white",
+                            "w-full bg-transparent border-none px-5 py-4 placeholder:text-slate-500/70 focus:outline-none transition-colors",
+                            showTitleOverlay ? "text-transparent caret-white" : "text-white caret-white",
                             TITLE_TEXT_METRICS_CLASS
                         )}
                         disabled={isLoading}
@@ -1172,14 +1168,29 @@ export function TaskInput({
 
                             <div className={`flex-1 min-w-[92px] shrink ${showShake ? "animate-shake" : ""}`}>
                                 <Select value={selectedVoucherId} onValueChange={setSelectedVoucherId}>
-                                    <SelectTrigger className="h-9 w-full bg-slate-800/30 border-slate-700/30 text-slate-300 text-[10px] font-mono focus:ring-0 rounded-lg justify-start px-2">
-                                        <User className="h-3 w-3 mr-1.5 shrink-0 opacity-70" />
-                                        <SelectValue placeholder="Voucher" />
+                                    <SelectTrigger className="h-9 w-full bg-slate-800/30 border-slate-700/30 text-slate-300 text-[10px] font-mono focus:ring-0 rounded-lg px-2.5">
+                                        <span className="flex min-w-0 items-center">
+                                            <User className="h-3 w-3 mr-1.5 shrink-0 opacity-70" />
+                                            <SelectValue placeholder="Voucher" />
+                                        </span>
                                     </SelectTrigger>
-                                    <SelectContent className="bg-slate-900 border-slate-800 text-slate-300">
-                                        {selfUserId && <SelectItem value={selfUserId}>Myself</SelectItem>}
+                                    <SelectContent
+                                        position="popper"
+                                        align="start"
+                                        sideOffset={6}
+                                        className="w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] rounded-xl border-slate-700/80 bg-slate-900/95 text-slate-200 shadow-[0_14px_36px_rgba(2,6,23,0.6)] backdrop-blur-sm"
+                                    >
+                                        {selfUserId && (
+                                            <SelectItem value={selfUserId} className="text-[11px] font-mono focus:bg-slate-800 focus:text-white">
+                                                Myself
+                                            </SelectItem>
+                                        )}
                                         {friends.map((friend) => (
-                                            <SelectItem key={friend.id} value={friend.id}>
+                                            <SelectItem
+                                                key={friend.id}
+                                                value={friend.id}
+                                                className="text-[11px] font-mono focus:bg-slate-800 focus:text-white"
+                                            >
                                                 {friend.username || friend.email}
                                             </SelectItem>
                                         ))}

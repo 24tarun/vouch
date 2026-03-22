@@ -198,7 +198,7 @@ test("tapping ghost suffix accepts completion and places caret at inserted token
     assert.equal(view.queryByTestId("task-input-completion-suffix"), null);
 });
 
-test("tapping completion fragment accepts completion and places caret at inserted token end", async () => {
+test("tapping completion fragment does not auto-accept completion", async () => {
     const selfId = "self-1";
     const friends = [buildProfile("friend-1", "madhu", "madhu@example.com")];
 
@@ -226,20 +226,20 @@ test("tapping completion fragment accepts completion and places caret at inserte
 
     /*
      * What and why this test checks:
-     * This validates tap-accept behavior when users tap the existing keyword fragment rather than the suffix.
-     * It confirms the fragment region is intentionally interactive for mobile editing instead of requiring exact suffix taps.
+     * This validates the anti-accidental-accept behavior for inline completion fragments.
+     * Only the ghost suffix should commit autocomplete; tapping already-typed fragment text should preserve normal editing intent.
      *
      * Passing scenario:
-     * Tapping the fragment applies `tmrw` atomically and moves caret to the inserted token end.
+     * Tapping the fragment keeps value/caret unchanged (`... tmr`) and leaves suffix visible for explicit acceptance.
      *
      * Failing scenario:
-     * If fragment taps are inert or mis-apply replacement, touch completion becomes inconsistent and easy to miss.
+     * If fragment taps apply completion, users can trigger unwanted replacements while trying to position caret near highlighted text.
      */
     await waitFor(() => {
-        assert.equal(input.value, "check dustbin emptiness tmrw");
+        assert.equal(input.value, "check dustbin emptiness tmr");
         assert.equal(input.selectionStart, input.value.length);
     });
-    assert.equal(view.queryByTestId("task-input-completion-suffix"), null);
+    assert.equal(view.getByTestId("task-input-completion-suffix").textContent, "w");
 });
 
 test("weekday completion suffix is contiguous with typed fragment in overlay stream", async () => {

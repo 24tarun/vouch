@@ -19,6 +19,13 @@ interface CommitmentsPageClientProps {
     currency: SupportedCurrency;
 }
 
+const NEW_COMMITMENT_HREF = "/dashboard/commitments/new";
+
+type IdleWindow = Window & {
+    requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+    cancelIdleCallback?: (id: number) => void;
+};
+
 function normalizeCommitmentStatus(
     value: string,
     fallback: CommitmentListItem["status"]
@@ -42,10 +49,42 @@ export function CommitmentsPageClient({ commitments, currency }: CommitmentsPage
     const [, startTransition] = useTransition();
     const [optimisticCommitments, setOptimisticCommitments] = useState(commitments);
     const previousStatusByIdRef = useRef<Map<string, string>>(new Map());
+    const prefetchedCreateRouteRef = useRef(false);
+
+    const prefetchCreateRoute = useCallback(() => {
+        if (prefetchedCreateRouteRef.current) return;
+        prefetchedCreateRouteRef.current = true;
+        void router.prefetch(NEW_COMMITMENT_HREF);
+    }, [router]);
 
     useEffect(() => {
         setOptimisticCommitments(commitments);
     }, [commitments]);
+
+    useEffect(() => {
+        const idleWindow = window as IdleWindow;
+        let timeoutId: number | null = null;
+        let idleId: number | null = null;
+
+        const warmup = () => {
+            prefetchCreateRoute();
+        };
+
+        if (idleWindow.requestIdleCallback) {
+            idleId = idleWindow.requestIdleCallback(warmup, { timeout: 1200 });
+        } else {
+            timeoutId = window.setTimeout(warmup, 220);
+        }
+
+        return () => {
+            if (timeoutId !== null) {
+                window.clearTimeout(timeoutId);
+            }
+            if (idleId !== null && idleWindow.cancelIdleCallback) {
+                idleWindow.cancelIdleCallback(idleId);
+            }
+        };
+    }, [prefetchCreateRoute]);
 
     const applyOptimisticCommitmentPatch = useCallback((change: RealtimeCommitmentChange) => {
         setOptimisticCommitments((previous) => {
@@ -138,7 +177,15 @@ export function CommitmentsPageClient({ commitments, currency }: CommitmentsPage
                     <p className="mt-1 text-sm text-slate-400">Create a commitment for days, whatever amount you Keep is justified because you earnt it by diligently doing your tasks</p>
                 </div>
                 <Button asChild className="bg-blue-600/30 border border-blue-500/40 text-blue-200 hover:bg-blue-600/40">
-                    <Link href="/dashboard/commitments/new">New Commitment</Link>
+                    <Link
+                        href={NEW_COMMITMENT_HREF}
+                        prefetch
+                        onMouseEnter={prefetchCreateRoute}
+                        onFocus={prefetchCreateRoute}
+                        onTouchStart={prefetchCreateRoute}
+                    >
+                        New Commitment
+                    </Link>
                 </Button>
             </div>
 

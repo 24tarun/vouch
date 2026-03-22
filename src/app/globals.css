@@ -198,9 +198,10 @@
 
   .title-caret {
     display: inline-block;
-    width: 2px;
+    width: 0;
     height: 1.1em;
-    background-color: white;
+    border-left: 2px solid white;
+    margin-right: -2px;
     vertical-align: text-bottom;
     border-radius: 1px;
     animation: title-caret-blink 1.2s step-end infinite;

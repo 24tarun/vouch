@@ -144,7 +144,7 @@ export default async function OverviewPage() {
                         <p className="text-slate-600 text-sm italic">No active tasks at the moment.</p>
                     </div>
                 ) : (
-                    <div className="flex flex-col border-t border-slate-900/50">
+                    <div className="flex flex-col">
                         <StatsActiveTaskList
                             initialTasks={activeTasksWithPomo}
                         />

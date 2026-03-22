@@ -133,20 +133,20 @@ export function parseClockToken(raw: string): ParsedClockToken | null {
 
 export const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
 const HIGHLIGHT_EVENT_TOKEN_REGEX = /(^|\s)(-event)(?=\s|$)/gi;
-const HIGHLIGHT_TIME_TOKEN_REGEX = /@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g;
+const HIGHLIGHT_TIME_TOKEN_REGEX = /(^|\s)(@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2}))\b/g;
 const HIGHLIGHT_EVENT_START_TOKEN_REGEX = /(^|\s)(-start\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
 const HIGHLIGHT_EVENT_END_TOKEN_REGEX = /(^|\s)(-end\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
 const HIGHLIGHT_EVENT_COLOR_HELPER_TOKEN_REGEX = /(^|\s)(-color)(?=\s|$)/gi;
 const HIGHLIGHT_PROOF_TOKEN_REGEX = /(^|\s)(-proof)(?=\s|$)/gi;
 const HIGHLIGHT_TIMER_TOKEN_REGEX = /\b(timer)\s+(\d+)\b/gi;
 const HIGHLIGHT_POMO_TOKEN_REGEX = /\b(pomo)\s+(\d+)\b/gi;
-const HIGHLIGHT_REMIND_TOKEN_REGEX = /\b(remind)\s+(\d{1,2}:\d{2}|\d{4})\b/gi;
+const HIGHLIGHT_REMIND_TOKEN_REGEX = /(^|\s)(remind@(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
 const HIGHLIGHT_REPEAT_TOKEN_REGEX = /\b(repeat)\s+(daily|weekly|monthly|yearly)\b/gi;
 const HIGHLIGHT_TOMORROW_TOKEN_REGEX = /\b(tmrw|tomorrow)\b/gi;
 const HIGHLIGHT_VOUCH_TOKEN_REGEX = /(^|\s)(vouch|\.v)\s+(me|self|myself|[^\s/]+)(?=\s|$|\/)/gi;
 const HIGHLIGHT_ORDINAL_DATE_TOKEN_REGEX = /\b([12]?\d|3[01])(st|nd|rd|th)\b/gi;
 const HIGHLIGHT_SLASH_DATE_TOKEN_REGEX = /\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}))?\b/g;
-const VALUE_EXPECTING_KEYWORDS = new Set(["-start", "-end", "-color", "remind", "timer", "pomo", "vouch", ".v", "repeat"]);
+const VALUE_EXPECTING_KEYWORDS = new Set(["-start", "-end", "-color", "timer", "pomo", "vouch", ".v", "repeat"]);
 const COLOR_COMPLETION_TOKENS = [
     ...GOOGLE_EVENT_COLOR_OPTIONS.map((option) => option.aliasToken),
     ...GOOGLE_EVENT_COLOR_OPTIONS.map((option) => option.nativeToken),
@@ -155,13 +155,19 @@ const COLOR_COMPLETION_TOKENS = [
     "-lightblue",
     "-light-blue",
 ];
+const EVENT_ONLY_COMPLETION_TOKENS = new Set<string>([
+    "-start",
+    "-end",
+    "-color",
+    ...COLOR_COMPLETION_TOKENS,
+]);
 const PARSER_KEYWORD_COMPLETION_TOKENS = Array.from(new Set([
     "-event",
     "-start",
     "-end",
     "-color",
     "-proof",
-    "remind",
+    "remind@",
     "timer",
     "pomo",
     "vouch",
@@ -238,34 +244,37 @@ export function buildTaskTitleHighlightSegments(text: string): TaskTitleHighligh
 
     if (!isEventTask) {
         for (const match of text.matchAll(HIGHLIGHT_TIME_TOKEN_REGEX)) {
-            const rawToken = match[0];
-            const parsed = parseTaskInputTimeToken(rawToken.slice(1), true);
+            if (!match[2] || !match[3]) continue;
+            const rawToken = match[2];
+            const parsed = parseTaskInputTimeToken(match[3], true);
             if (!parsed) continue;
-            const start = match.index ?? 0;
+            const start = (match.index ?? 0) + (match[1]?.length ?? 0);
             applyKeywordRange(start, start + rawToken.length);
         }
     }
 
-    for (const match of text.matchAll(HIGHLIGHT_EVENT_START_TOKEN_REGEX)) {
-        if (!match[2] || !match[3]) continue;
-        const parsed = parseTaskInputTimeToken(match[3], true);
-        if (!parsed) continue;
-        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        applyKeywordRange(start, start + match[2].length);
-    }
+    if (isEventTask) {
+        for (const match of text.matchAll(HIGHLIGHT_EVENT_START_TOKEN_REGEX)) {
+            if (!match[2] || !match[3]) continue;
+            const parsed = parseTaskInputTimeToken(match[3], true);
+            if (!parsed) continue;
+            const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+            applyKeywordRange(start, start + match[2].length);
+        }
 
-    for (const match of text.matchAll(HIGHLIGHT_EVENT_END_TOKEN_REGEX)) {
-        if (!match[2] || !match[3]) continue;
-        const parsed = parseTaskInputTimeToken(match[3], true);
-        if (!parsed) continue;
-        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        applyKeywordRange(start, start + match[2].length);
-    }
+        for (const match of text.matchAll(HIGHLIGHT_EVENT_END_TOKEN_REGEX)) {
+            if (!match[2] || !match[3]) continue;
+            const parsed = parseTaskInputTimeToken(match[3], true);
+            if (!parsed) continue;
+            const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+            applyKeywordRange(start, start + match[2].length);
+        }
 
-    for (const match of text.matchAll(HIGHLIGHT_EVENT_COLOR_HELPER_TOKEN_REGEX)) {
-        if (!match[2]) continue;
-        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
-        applyKeywordRange(start, start + match[2].length);
+        for (const match of text.matchAll(HIGHLIGHT_EVENT_COLOR_HELPER_TOKEN_REGEX)) {
+            if (!match[2]) continue;
+            const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+            applyKeywordRange(start, start + match[2].length);
+        }
     }
 
     for (const match of text.matchAll(HIGHLIGHT_PROOF_TOKEN_REGEX)) {
@@ -291,11 +300,11 @@ export function buildTaskTitleHighlightSegments(text: string): TaskTitleHighligh
     }
 
     for (const match of text.matchAll(HIGHLIGHT_REMIND_TOKEN_REGEX)) {
-        if (!match[0] || !match[2]) continue;
-        const parsed = parseTaskInputTimeToken(match[2], false);
+        if (!match[2] || !match[3]) continue;
+        const parsed = parseTaskInputTimeToken(match[3], true);
         if (!parsed) continue;
-        const start = match.index ?? 0;
-        applyKeywordRange(start, start + match[0].length);
+        const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+        applyKeywordRange(start, start + match[2].length);
     }
 
     for (const match of text.matchAll(new RegExp(HIGHLIGHT_REPEAT_TOKEN_REGEX.source, "gi"))) {
@@ -336,10 +345,12 @@ export function buildTaskTitleHighlightSegments(text: string): TaskTitleHighligh
         applyKeywordRange(start, start + match[0].length);
     }
 
-    for (const colorMatch of extractEventColorMatches(text)) {
-        const colorOption = GOOGLE_EVENT_COLOR_OPTIONS.find((option) => option.colorId === colorMatch.colorId);
-        if (!colorOption) continue;
-        applyColorRange(colorMatch.start, colorMatch.end, colorOption.swatchHex);
+    if (isEventTask) {
+        for (const colorMatch of extractEventColorMatches(text)) {
+            const colorOption = GOOGLE_EVENT_COLOR_OPTIONS.find((option) => option.colorId === colorMatch.colorId);
+            if (!colorOption) continue;
+            applyColorRange(colorMatch.start, colorMatch.end, colorOption.swatchHex);
+        }
     }
 
     const segments: TaskTitleHighlightSegment[] = [];
@@ -372,6 +383,10 @@ export function getParserKeywordCompletion(
     if (caretIndex !== text.length) return null;
 
     const leading = text.slice(0, caretIndex);
+    const isEventTask = EVENT_TOKEN_REGEX.test(text);
+    const allowedCompletionTokens = isEventTask
+        ? PARSER_KEYWORD_COMPLETION_TOKENS
+        : PARSER_KEYWORD_COMPLETION_TOKENS.filter((token) => !EVENT_ONLY_COMPLETION_TOKENS.has(token));
 
     const repeatMatch = leading.match(/(?:^|\s)repeat\s+([^\s]*)$/i);
     if (repeatMatch) {
@@ -425,9 +440,9 @@ export function getParserKeywordCompletion(
     if (/[0-9:\/]/.test(fragment)) return null;
 
     const normalized = fragment.toLowerCase();
-    if (PARSER_KEYWORD_COMPLETION_TOKENS.includes(normalized)) return null;
+    if (allowedCompletionTokens.includes(normalized)) return null;
 
-    const suggestion = PARSER_KEYWORD_COMPLETION_TOKENS.find((keyword) => keyword.startsWith(normalized));
+    const suggestion = allowedCompletionTokens.find((keyword) => keyword.startsWith(normalized));
     if (!suggestion) return null;
 
     const insertText = VALUE_EXPECTING_KEYWORDS.has(suggestion)
@@ -471,7 +486,7 @@ export function buildTaskTitleOverlayModel(
         !isTitleFocused || isColorPickerVisible
             ? null
             : getParserKeywordCompletion(title, titleCaretIndex, friends);
-    const showTitleOverlay = shouldRenderTaskTitleOverlay(
+    const showTitleOverlay = isTitleFocused || shouldRenderTaskTitleOverlay(
         title,
         titleHighlightSegments,
         inlineKeywordCompletion?.suffix
@@ -592,12 +607,12 @@ export function stripProofRequiredTokens(text: string): string {
 }
 
 export function parseReminderTimesFromTitle(text: string): Array<{ hours: number; minutes: number }> {
-    const regex = /\bremind\s+(\d{1,2}:\d{2}|\d{4})\b/gi;
+    const regex = /(?:^|\s)remind@(\d{1,2}:\d{2}|\d{1,4})\b/gi;
     const results: Array<{ hours: number; minutes: number }> = [];
     let match: RegExpExecArray | null;
 
     while ((match = regex.exec(text)) !== null) {
-        const parsed = parseTaskInputTimeToken(match[1], false);
+        const parsed = parseTaskInputTimeToken(match[1], true);
         if (!parsed) continue;
         results.push(parsed);
     }

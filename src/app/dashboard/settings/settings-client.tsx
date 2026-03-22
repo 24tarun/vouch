@@ -879,12 +879,12 @@ export default function SettingsClient({
                                 className="flex items-center justify-between gap-3 border-b border-slate-900 py-3 last:border-b-0"
                             >
                                 <div className="flex items-center gap-3 min-w-0">
-                                    <Avatar className="relative h-8 w-8 border border-slate-800 overflow-visible">
-                                        <AvatarFallback className="bg-slate-900 text-slate-400 text-[10px] font-mono">
+                                    <Avatar className="relative h-12 w-12 border border-slate-700 bg-slate-900 overflow-visible">
+                                        <AvatarFallback className="bg-slate-900 text-slate-300 text-[11px] font-mono">
                                             {friend.username?.slice(0, 2).toUpperCase() || "??"}
                                         </AvatarFallback>
                                         <span
-                                            className="absolute -bottom-1 -right-2 rounded-full min-w-[30px] h-4 px-1 flex items-center justify-center text-[9px] font-mono font-semibold text-white leading-none border border-orange-300/40"
+                                            className="absolute -top-1 -right-1 rounded-full min-w-[36px] h-5 px-1.5 flex items-center justify-center text-[9px] font-mono font-semibold text-white leading-none border border-orange-300/50"
                                             style={{
                                                 background: "linear-gradient(90deg, rgb(234,88,12) 0%, rgb(251,146,60) 100%)",
                                                 boxShadow: "0 0 8px 1px rgba(251,146,60,0.5)",
@@ -896,8 +896,8 @@ export default function SettingsClient({
                                         </span>
                                     </Avatar>
                                     <div className="min-w-0">
-                                        <p className="text-sm font-semibold text-white truncate">{friend.username}</p>
-                                        <p className="text-xs text-slate-500 truncate">{friend.email}</p>
+                                        <p className="text-sm font-semibold text-white truncate">{friend.username ?? "Unnamed friend"}</p>
+                                        <p className="text-xs text-slate-400 truncate">{friend.email}</p>
                                     </div>
                                 </div>
                                 {friend.id === ORCA_PROFILE_ID ? (
