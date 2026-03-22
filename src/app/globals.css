@@ -143,7 +143,7 @@
   /* Improve touch targets for buttons and links on mobile */
   @media (pointer: coarse) {
 
-    button,
+    button:not([role="switch"]),
     a {
       min-height: 44px;
       min-width: 44px;
@@ -427,47 +427,6 @@
   height: 0.34rem;
 }
 
-/* ─── Swipe page transitions ─────────────────────────────────────────────── */
-
-/* Enter animations — play when new page mounts after a swipe */
-@keyframes swipe-in-from-right {
-  from { transform: translateX(100%); opacity: 0.6; }
-  to   { transform: translateX(0);    opacity: 1;   }
-}
-@keyframes swipe-in-from-left {
-  from { transform: translateX(-100%); opacity: 0.6; }
-  to   { transform: translateX(0);     opacity: 1;   }
-}
-
-/* Exit animations — play on current content before navigation fires */
-@keyframes swipe-out-to-left {
-  from { transform: translateX(0);    opacity: 1;   }
-  to   { transform: translateX(-30%); opacity: 0;   }
-}
-@keyframes swipe-out-to-right {
-  from { transform: translateX(0);   opacity: 1;   }
-  to   { transform: translateX(30%); opacity: 0;   }
-}
-
-/* Exit: animate main content out */
-html[data-swipe-exiting][data-swipe-dir="left"] main {
-  animation: swipe-out-to-left 210ms cubic-bezier(0.4, 0, 1, 1) both;
-  pointer-events: none;
-}
-html[data-swipe-exiting][data-swipe-dir="right"] main {
-  animation: swipe-out-to-right 210ms cubic-bezier(0.4, 0, 1, 1) both;
-  pointer-events: none;
-}
-
-/* Enter: new page slides in — keyed div remounts on pathname change */
-html[data-swipe-dir="left"] .page-swipe-enter {
-  animation: swipe-in-from-right 280ms cubic-bezier(0.25, 1, 0.5, 1) both;
-}
-html[data-swipe-dir="right"] .page-swipe-enter {
-  animation: swipe-in-from-left 280ms cubic-bezier(0.25, 1, 0.5, 1) both;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
   .seven-seg-display {

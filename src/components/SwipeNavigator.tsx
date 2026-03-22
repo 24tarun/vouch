@@ -55,9 +55,11 @@ export function SwipeNavigator() {
             // Trigger exit animation on current content
             document.documentElement.dataset.swipeExiting = '1';
 
-            // Wait for exit animation, then navigate
+            // Wait for exit animation, then navigate.
+            // data-swipe-exiting is NOT cleared here — PageTransitionWrapper
+            // clears it when the new page mounts, so old content stays hidden
+            // across the entire gap between exit-end and new-content-render.
             setTimeout(() => {
-                delete document.documentElement.dataset.swipeExiting;
                 router.push(nextHref);
             }, 210);
         },

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { GlassToggle } from "@/components/GlassToggle";
 import { deleteAccount, getActiveVoucherTasks, updateUserDefaults, updateUsername } from "@/actions/auth";
 import { addFriend, getFriends, removeFriend, setOrcaAsFriendEnabled } from "@/actions/friends";
 import {
@@ -1065,13 +1066,15 @@ export default function SettingsClient({
                         </Select>
                     </div>
 
-                    {isDefaultsLoading && (
-                        <p className="text-sm text-slate-300">Saving...</p>
-                    )}
+                    <div aria-live="polite" className="min-h-5">
+                        {isDefaultsLoading ? (
+                            <p className="text-sm text-slate-300 leading-5">Saving...</p>
+                        ) : null}
+                    </div>
 
                     <div className="border-b border-slate-900 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="space-y-1">
+                        <div className="flex items-start gap-4">
+                            <div className="flex-1 min-w-0 space-y-1">
                                 <Label htmlFor="strictPomoEnabled" className="text-slate-200">
                                     Strict Pomodoro
                                 </Label>
@@ -1079,19 +1082,17 @@ export default function SettingsClient({
                                     When enabled, newly started pomodoros cannot be paused and only timer-completed sessions count.
                                 </p>
                             </div>
-                            <input
+                            <GlassToggle
                                 id="strictPomoEnabled"
-                                type="checkbox"
                                 checked={strictPomoEnabled}
-                                onChange={(e) => setStrictPomoEnabled(e.target.checked)}
-                                className="h-4 w-4 accent-cyan-400"
+                                onChange={setStrictPomoEnabled}
                             />
                         </div>
                     </div>
 
                     <div className="border-b border-slate-900 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="space-y-1">
+                        <div className="flex items-start gap-4">
+                            <div className="flex-1 min-w-0 space-y-1">
                                 <Label htmlFor="deadlineOneHourWarningEnabled" className="text-slate-200">
                                     Deadline warning (1 hour before deadline)
                                 </Label>
@@ -1099,19 +1100,17 @@ export default function SettingsClient({
                                     Auto-adds a 1-hour reminder to each task. You can remove it per task in task details.
                                 </p>
                             </div>
-                            <input
+                            <GlassToggle
                                 id="deadlineOneHourWarningEnabled"
-                                type="checkbox"
                                 checked={deadlineOneHourWarningEnabled}
-                                onChange={(e) => setDeadlineOneHourWarningEnabled(e.target.checked)}
-                                className="h-4 w-4 accent-cyan-400"
+                                onChange={setDeadlineOneHourWarningEnabled}
                             />
                         </div>
                     </div>
 
                     <div className="border-b border-slate-900 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="space-y-1">
+                        <div className="flex items-start gap-4">
+                            <div className="flex-1 min-w-0 space-y-1">
                                 <Label htmlFor="deadlineFinalWarningEnabled" className="text-slate-200">
                                     Final deadline warning (5 minutes before deadline)
                                 </Label>
@@ -1119,19 +1118,17 @@ export default function SettingsClient({
                                     Auto-adds a 5-minute reminder to each task. You can remove it per task in task details.
                                 </p>
                             </div>
-                            <input
+                            <GlassToggle
                                 id="deadlineFinalWarningEnabled"
-                                type="checkbox"
                                 checked={deadlineFinalWarningEnabled}
-                                onChange={(e) => setDeadlineFinalWarningEnabled(e.target.checked)}
-                                className="h-4 w-4 accent-cyan-400"
+                                onChange={setDeadlineFinalWarningEnabled}
                             />
                         </div>
                     </div>
 
                     <div className="border-b border-slate-900 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="space-y-1">
+                        <div className="flex items-start gap-4">
+                            <div className="flex-1 min-w-0 space-y-1">
                                 <Label htmlFor="voucherCanViewActiveTasksEnabled" className="text-slate-200">
                                     Allow vouchers to view my active tasks
                                 </Label>
@@ -1139,19 +1136,17 @@ export default function SettingsClient({
                                     Controls whether selected vouchers can see your tasks in CREATED or POSTPONED status.
                                 </p>
                             </div>
-                            <input
+                            <GlassToggle
                                 id="voucherCanViewActiveTasksEnabled"
-                                type="checkbox"
                                 checked={voucherCanViewActiveTasksEnabled}
-                                onChange={(e) => setVoucherCanViewActiveTasksEnabled(e.target.checked)}
-                                className="h-4 w-4 accent-cyan-400"
+                                onChange={setVoucherCanViewActiveTasksEnabled}
                             />
                         </div>
                     </div>
 
                     <div className="border-b border-slate-900 py-3">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="space-y-1">
+                        <div className="flex items-start gap-4">
+                            <div className="flex-1 min-w-0 space-y-1">
                                 <Label htmlFor="mobileNotificationsEnabled" className="text-slate-200">
                                     Enable mobile notifications
                                 </Label>
@@ -1172,24 +1167,25 @@ export default function SettingsClient({
                                     <p className="text-xs text-red-400">{mobileNotificationsError}</p>
                                 )}
                             </div>
-                            <input
+                            <GlassToggle
                                 id="mobileNotificationsEnabled"
-                                type="checkbox"
                                 checked={mobileNotificationsEnabled}
                                 disabled={
                                     isMobileNotificationsLoading ||
                                     (!mobileNotificationsEnabled && !canEnableMobileNotifications)
                                 }
-                                onChange={(e) => handleMobileNotificationsToggle(e.target.checked)}
-                                className="h-4 w-4 accent-cyan-400"
+                                onChange={handleMobileNotificationsToggle}
                             />
                         </div>
                     </div>
 
-                    {defaultsError && <p className="text-sm text-red-400">{defaultsError}</p>}
-                    {defaultsSuccess && (
-                        <p className="text-sm text-green-400">Defaults updated!</p>
-                    )}
+                    <div aria-live="polite" className="min-h-5">
+                        {defaultsError ? (
+                            <p className="text-sm text-red-400 leading-5">{defaultsError}</p>
+                        ) : defaultsSuccess ? (
+                            <p className="text-sm text-green-400 leading-5">Defaults updated!</p>
+                        ) : null}
+                    </div>
                 </div>
             </section>
 
@@ -1201,8 +1197,8 @@ export default function SettingsClient({
                     </p>
                 </div>
                 <div className="border-b border-slate-900 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                        <div className="space-y-1">
+                    <div className="flex items-start gap-4">
+                        <div className="flex-1 min-w-0 space-y-1">
                             <Label htmlFor="orcaFriendEnabled" className="text-slate-200">
                                 Add Orca as a friend
                             </Label>
@@ -1210,13 +1206,11 @@ export default function SettingsClient({
                                 When enabled, {AI_VOUCHER_DISPLAY_NAME} is added to your friends list and appears in voucher pickers.
                             </p>
                         </div>
-                        <input
+                        <GlassToggle
                             id="orcaFriendEnabled"
-                            type="checkbox"
                             checked={orcaFriendEnabled}
                             disabled={isOrcaFriendLoading}
-                            onChange={(e) => handleOrcaFriendToggle(e.target.checked)}
-                            className="h-4 w-4 accent-cyan-400"
+                            onChange={handleOrcaFriendToggle}
                         />
                     </div>
                 </div>
@@ -1309,8 +1303,8 @@ export default function SettingsClient({
                             </div>
 
                             <div className="border-b border-slate-900 py-3">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div className="space-y-1">
+                                <div className="flex items-start gap-4">
+                                    <div className="flex-1 min-w-0 space-y-1">
                                         <Label htmlFor="googleSyncAppToGoogleEnabled" className="text-slate-200">
                                             Sync Vouch -&gt; Google Calendar
                                         </Label>
@@ -1318,20 +1312,18 @@ export default function SettingsClient({
                                             Task changes in Vouch are pushed to your selected Google calendar.
                                         </p>
                                     </div>
-                                    <input
+                                    <GlassToggle
                                         id="googleSyncAppToGoogleEnabled"
-                                        type="checkbox"
                                         checked={googleSyncAppToGoogleEnabled}
                                         disabled={!googleSelectedCalendarId || isGoogleActionLoading}
-                                        onChange={(e) => handleGoogleAppToGoogleToggle(e.target.checked)}
-                                        className="h-4 w-4 accent-cyan-400"
+                                        onChange={handleGoogleAppToGoogleToggle}
                                     />
                                 </div>
                             </div>
 
                             <div className="border-b border-slate-900 py-3">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div className="space-y-1">
+                                <div className="flex items-start gap-4">
+                                    <div className="flex-1 min-w-0 space-y-1">
                                         <Label htmlFor="googleSyncGoogleToAppEnabled" className="text-slate-200">
                                             Sync Google Calendar -&gt; Vouch
                                         </Label>
@@ -1339,20 +1331,18 @@ export default function SettingsClient({
                                             Uses your default voucher and default failure cost for Google-created tasks.
                                         </p>
                                     </div>
-                                    <input
+                                    <GlassToggle
                                         id="googleSyncGoogleToAppEnabled"
-                                        type="checkbox"
                                         checked={googleSyncGoogleToAppEnabled}
                                         disabled={!googleSelectedCalendarId || isGoogleActionLoading}
-                                        onChange={(e) => handleGoogleGoogleToAppToggle(e.target.checked)}
-                                        className="h-4 w-4 accent-cyan-400"
+                                        onChange={handleGoogleGoogleToAppToggle}
                                     />
                                 </div>
                             </div>
 
                             <div className="border-b border-slate-900 py-3">
-                                <div className="flex items-center justify-between gap-3">
-                                    <div className="space-y-1">
+                                <div className="flex items-start gap-4">
+                                    <div className="flex-1 min-w-0 space-y-1">
                                         <Label htmlFor="googleImportOnlyTaggedEvents" className="text-slate-200">
                                             Import only tagged Google events
                                         </Label>
@@ -1360,13 +1350,11 @@ export default function SettingsClient({
                                             When enabled, only Google events containing <span className="font-mono">-event</span> in the title or description are imported into Vouch.
                                         </p>
                                     </div>
-                                    <input
+                                    <GlassToggle
                                         id="googleImportOnlyTaggedEvents"
-                                        type="checkbox"
                                         checked={googleImportOnlyTaggedEvents}
                                         disabled={!googleSyncGoogleToAppEnabled || isGoogleActionLoading}
-                                        onChange={(e) => handleGoogleImportFilterToggle(e.target.checked)}
-                                        className="h-4 w-4 accent-cyan-400"
+                                        onChange={handleGoogleImportFilterToggle}
                                     />
                                 </div>
                                 {!googleSyncGoogleToAppEnabled && (
@@ -1523,4 +1511,3 @@ function urlBase64ToUint8Array(base64String: string) {
     }
     return outputArray;
 }
-

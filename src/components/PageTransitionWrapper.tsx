@@ -7,7 +7,10 @@ export function PageTransitionWrapper({ children }: { children: React.ReactNode 
     const pathname = usePathname();
 
     useEffect(() => {
-        // Clear swipe direction after enter animation finishes
+        // New page has mounted — clear exit state so main is no longer hidden.
+        // Then clear direction after enter animation finishes.
+        delete document.documentElement.dataset.swipeExiting;
+
         const t = setTimeout(() => {
             delete document.documentElement.dataset.swipeDir;
         }, 350);
