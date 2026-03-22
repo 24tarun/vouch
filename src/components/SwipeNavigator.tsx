@@ -22,11 +22,9 @@ const VERTICAL_CANCEL_PX = 12;
 
 type SwipeDir = 'left' | 'right';
 
-declare global {
-    interface Document {
-        startViewTransition?: (callback: () => void) => { finished: Promise<void> };
-    }
-}
+type DocumentWithViewTransition = Document & {
+    startViewTransition?: (callback: () => void) => { finished: Promise<void> };
+};
 
 export function SwipeNavigator() {
     const router = useRouter();
@@ -55,8 +53,9 @@ export function SwipeNavigator() {
             // Tag the html element so CSS knows slide direction
             document.documentElement.dataset.swipeDir = dir;
 
-            if (document.startViewTransition) {
-                document.startViewTransition(() => {
+            const doc = document as DocumentWithViewTransition;
+            if (doc.startViewTransition) {
+                doc.startViewTransition(() => {
                     router.push(nextHref);
                 });
             } else {
