@@ -274,7 +274,7 @@ function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", d
         }
     }, [focusTitleInput, isOpen, selfUserId]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!isOpen) return;
 
         const body = document.body;
@@ -286,7 +286,9 @@ function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", d
         const previousBodyRight = body.style.right;
         const previousBodyWidth = body.style.width;
         const previousBodyOverflow = body.style.overflow;
+        const previousBodyOverscrollBehavior = body.style.overscrollBehavior;
         const previousHtmlOverflow = html.style.overflow;
+        const previousHtmlOverscrollBehavior = html.style.overscrollBehavior;
 
         body.style.position = "fixed";
         body.style.top = `-${scrollY}px`;
@@ -294,7 +296,9 @@ function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", d
         body.style.right = "0";
         body.style.width = "100%";
         body.style.overflow = "hidden";
+        body.style.overscrollBehavior = "none";
         html.style.overflow = "hidden";
+        html.style.overscrollBehavior = "none";
 
         return () => {
             body.style.position = previousBodyPosition;
@@ -303,7 +307,9 @@ function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", d
             body.style.right = previousBodyRight;
             body.style.width = previousBodyWidth;
             body.style.overflow = previousBodyOverflow;
+            body.style.overscrollBehavior = previousBodyOverscrollBehavior;
             html.style.overflow = previousHtmlOverflow;
+            html.style.overscrollBehavior = previousHtmlOverscrollBehavior;
             window.scrollTo(0, scrollY);
         };
     }, [isOpen]);
@@ -485,16 +491,19 @@ function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", d
             {/* Backdrop */}
             <div
                 className={cn(
-                    "fixed inset-0 z-40 transition-opacity duration-300 bg-black/70",
+                    "fixed inset-0 z-40 transition-opacity duration-300 bg-black/70 touch-none",
                     isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
                 )}
                 onClick={handleClose}
+                onTouchMove={(event) => {
+                    event.preventDefault();
+                }}
             />
 
             {/* Sheet */}
             <div
                 className={cn(
-                    "fixed bottom-0 left-0 right-0 z-50 flex flex-col",
+                    "fixed bottom-0 left-0 right-0 z-50 flex flex-col overscroll-contain",
                     "rounded-t-2xl max-h-[56dvh] sm:max-h-[72dvh] backdrop-blur-xl",
                     "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
                     isOpen ? "translate-y-0" : "translate-y-[calc(100%+8px)]",
@@ -507,7 +516,7 @@ function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", d
                     if (delta > 60) handleClose();
                 }}
                 style={{
-                    background: "rgba(2, 6, 23, 0.50)",
+                    background: "rgba(2, 6, 23, 0.56)",
                     borderTop: "1px solid rgba(255,255,255,0.06)",
                     boxShadow: "0 -8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)",
                 }}
@@ -518,7 +527,7 @@ function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", d
                 </div>
 
                 {/* Scrollable body */}
-                <div ref={scrollBodyRef} className="overflow-y-auto flex-1 px-5 pb-6">
+                <div ref={scrollBodyRef} className="overflow-y-auto overscroll-contain flex-1 px-5 pb-6">
 
                     {/* ── Title + Subtasks ── */}
                     <div
