@@ -10,7 +10,7 @@ export default async function TaskCreatorPreviewPage() {
     const [friends, profileData] = await Promise.all([
         user ? getFriends() : Promise.resolve([]),
         user
-            ? supabase.from("profiles").select("default_failure_cost_cents").eq("id", user.id).maybeSingle().then((r) => r.data)
+            ? supabase.from("profiles").select("default_failure_cost_cents").eq("id", user.id).maybeSingle().then((r) => r.data as { default_failure_cost_cents: number } | null)
             : Promise.resolve(null),
     ]);
 
