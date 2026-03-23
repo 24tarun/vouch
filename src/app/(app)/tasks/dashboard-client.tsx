@@ -15,7 +15,7 @@ import { setDashboardTipsHidden } from "@/actions/auth";
 import { getUserReputationScore } from "@/actions/reputation";
 import { DashboardHeaderActions, type DashboardSortMode } from "@/components/DashboardHeaderActions";
 import { TaskInput, type TaskInputCreatePayload } from "@/components/TaskInput";
-import { FloatingTaskCreator } from "@/components/task-creator-variants/FloatingTaskCreator";
+import { FloatingTaskCreator, type FloatingTaskCreatorHandle } from "@/components/task-creator-variants/FloatingTaskCreator";
 import { PostponeDeadlineDialog } from "@/components/PostponeDeadlineDialog";
 import { TaskRow } from "@/components/TaskRow";
 import { CollapsibleCompletedList } from "@/components/CollapsibleCompletedList";
@@ -185,6 +185,7 @@ export default function DashboardClient({
     const [isTogglingTips, setIsTogglingTips] = useState(false);
     const [sortMode, setSortMode] = useState<DashboardSortMode>("deadline_asc");
     const [floatingCreatorOpen, setFloatingCreatorOpen] = useState(false);
+    const floatingCreatorRef = useRef<FloatingTaskCreatorHandle>(null);
     const [liveReputationScore, setLiveReputationScore] = useState<ReputationScoreData | null>(reputationScore);
     const proofInputRef = useRef<HTMLInputElement>(null);
     const proofByTaskIdRef = useRef<Record<string, TaskProofDraft>>({});
@@ -971,7 +972,7 @@ export default function DashboardClient({
 
             {/* Mobile FAB */}
             <button
-                onClick={() => setFloatingCreatorOpen(true)}
+                onClick={() => { setFloatingCreatorOpen(true); floatingCreatorRef.current?.focusTitle(); }}
                 aria-label="Create task"
                 className="md:hidden fixed bottom-20 right-8 h-14 w-14 rounded-full flex items-center justify-center transition-all active:scale-95 z-30 backdrop-blur-sm"
                 style={{
@@ -986,6 +987,7 @@ export default function DashboardClient({
 
             {/* Mobile floating task creator */}
             <FloatingTaskCreator
+                ref={floatingCreatorRef}
                 isOpen={floatingCreatorOpen}
                 onClose={() => setFloatingCreatorOpen(false)}
                 friends={friends}

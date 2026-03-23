@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Bell, Camera, Calendar, Check, ChevronDown, Loader2, Plus, Repeat, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/lib/types";
@@ -36,7 +36,12 @@ interface Props {
     defaultFailureCost?: number;
 }
 
-export function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", defaultFailureCost = 1 }: Props) {
+export interface FloatingTaskCreatorHandle {
+    focusTitle: () => void;
+}
+
+export const FloatingTaskCreator = forwardRef<FloatingTaskCreatorHandle, Props>(
+function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", defaultFailureCost = 1 }: Props, ref) {
     const [title, setTitle] = useState("");
     const [titleCaretIndex, setTitleCaretIndex] = useState(0);
     const [isTitleFocused, setIsTitleFocused] = useState(false);
@@ -81,6 +86,11 @@ export function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId 
     const completionTapInProgressRef = useRef(false);
     const pendingCaretPositionRef = useRef<number | null>(null);
     const pendingTapCompletionRef = useRef<ParserKeywordCompletion | null>(null);
+    const swipeTouchStartY = useRef<number | null>(null);
+
+    useImperativeHandle(ref, () => ({
+        focusTitle: () => titleRef.current?.focus(),
+    }));
 
     // ── Overlay model ──────────────────────────────────────────────────────────
     const { titleHighlightSegments, inlineKeywordCompletion, showTitleOverlay } = useMemo(
@@ -394,6 +404,13 @@ export function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId 
                     "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
                     isOpen ? "translate-y-0" : "translate-y-[calc(100%+8px)]",
                 )}
+                onTouchStart={(e) => { swipeTouchStartY.current = e.touches[0].clientY; }}
+                onTouchEnd={(e) => {
+                    if (swipeTouchStartY.current === null) return;
+                    const delta = e.changedTouches[0].clientY - swipeTouchStartY.current;
+                    swipeTouchStartY.current = null;
+                    if (delta > 60) handleClose();
+                }}
                 style={{
                     background: "rgba(2, 6, 23, 0.50)",
                     borderTop: "1px solid rgba(255,255,255,0.06)",
@@ -862,7 +879,7 @@ export function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId 
             </div>
         </>
     );
-}
+});
 
 /* ── Section divider (no label) ── */
 function Divider({ children }: { children: React.ReactNode }) {
