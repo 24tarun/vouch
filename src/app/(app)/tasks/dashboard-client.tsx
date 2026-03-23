@@ -16,6 +16,7 @@ import { getUserReputationScore } from "@/actions/reputation";
 import { DashboardHeaderActions, type DashboardSortMode } from "@/components/DashboardHeaderActions";
 import { TaskInput, type TaskInputCreatePayload } from "@/components/TaskInput";
 import { FloatingTaskCreator, type FloatingTaskCreatorHandle } from "@/components/task-creator-variants/FloatingTaskCreator";
+import { FloatingBoxTaskCreator, type FloatingBoxTaskCreatorHandle } from "@/components/task-creator-variants/FloatingBoxTaskCreator";
 import { PostponeDeadlineDialog } from "@/components/PostponeDeadlineDialog";
 import { TaskRow } from "@/components/TaskRow";
 import { CollapsibleCompletedList } from "@/components/CollapsibleCompletedList";
@@ -186,6 +187,8 @@ export default function DashboardClient({
     const [sortMode, setSortMode] = useState<DashboardSortMode>("deadline_asc");
     const [floatingCreatorOpen, setFloatingCreatorOpen] = useState(false);
     const floatingCreatorRef = useRef<FloatingTaskCreatorHandle>(null);
+    const [floatingBoxCreatorOpen, setFloatingBoxCreatorOpen] = useState(false);
+    const floatingBoxCreatorRef = useRef<FloatingBoxTaskCreatorHandle>(null);
     const [liveReputationScore, setLiveReputationScore] = useState<ReputationScoreData | null>(reputationScore);
     const proofInputRef = useRef<HTMLInputElement>(null);
     const proofByTaskIdRef = useRef<Record<string, TaskProofDraft>>({});
@@ -970,10 +973,14 @@ export default function DashboardClient({
                 onCreateTaskOptimistic={handleCreateTaskOptimistic}
             />
 
-            {/* Mobile FAB */}
+            {/* Mobile FAB (FTC) */}
             <button
-                onClick={() => { setFloatingCreatorOpen(true); floatingCreatorRef.current?.focusTitle(); }}
-                aria-label="Create task"
+                onClick={() => {
+                    setFloatingBoxCreatorOpen(false);
+                    setFloatingCreatorOpen(true);
+                    floatingCreatorRef.current?.focusTitle();
+                }}
+                aria-label="Create task (floating)"
                 className="md:hidden fixed bottom-20 right-8 h-14 w-14 rounded-full flex items-center justify-center transition-all active:scale-95 z-30 backdrop-blur-sm"
                 style={{
                     border: "1px solid rgba(52, 211, 153, 0.25)",
@@ -985,11 +992,40 @@ export default function DashboardClient({
                 </svg>
             </button>
 
-            {/* Mobile floating task creator */}
+            {/* Mobile FAB (FBTC) */}
+            <button
+                onClick={() => {
+                    setFloatingCreatorOpen(false);
+                    setFloatingBoxCreatorOpen(true);
+                    floatingBoxCreatorRef.current?.focusTitle();
+                }}
+                aria-label="Create task (box)"
+                className="md:hidden fixed bottom-20 right-24 h-14 w-14 rounded-full flex items-center justify-center transition-all active:scale-95 z-30 backdrop-blur-sm"
+                style={{
+                    border: "1px solid rgba(0, 217, 255, 0.25)",
+                    background: "rgba(0, 217, 255, 0.06)",
+                }}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" style={{ color: "#00d9ff", filter: "drop-shadow(0 0 8px rgba(0, 217, 255, 0.9)) drop-shadow(0 0 16px rgba(0, 217, 255, 0.5))" }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+            </button>
+
+            {/* Mobile floating task creator (FTC) */}
             <FloatingTaskCreator
                 ref={floatingCreatorRef}
                 isOpen={floatingCreatorOpen}
                 onClose={() => setFloatingCreatorOpen(false)}
+                friends={friends}
+                selfUserId={userId}
+                defaultFailureCost={parseFloat(defaultFailureCostEuros) || 1}
+            />
+
+            {/* Mobile floating box task creator (FBTC) */}
+            <FloatingBoxTaskCreator
+                ref={floatingBoxCreatorRef}
+                isOpen={floatingBoxCreatorOpen}
+                onClose={() => setFloatingBoxCreatorOpen(false)}
                 friends={friends}
                 selfUserId={userId}
                 defaultFailureCost={parseFloat(defaultFailureCostEuros) || 1}
