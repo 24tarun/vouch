@@ -416,6 +416,15 @@ export function TaskInput({
     }, [defaultFailureCostEuros]);
 
     useEffect(() => {
+        // Profile default takes precedence over localStorage — if the user has a
+        // default voucher set and it's still a valid friend, always use it.
+        if (defaultVoucherId && friends.some((f) => f.id === defaultVoucherId)) {
+            setSelectedVoucherId(defaultVoucherId);
+            return;
+        }
+
+        // No profile default (or default is no longer a friend) — fall back to
+        // the last voucher the user picked, then to self.
         try {
             const savedVoucherId = window.localStorage.getItem(LAST_VOUCHER_STORAGE_KEY);
             if (savedVoucherId) {
@@ -427,7 +436,7 @@ export function TaskInput({
         }
 
         setSelectedVoucherId(resolveVoucherSelection(defaultVoucherId));
-    }, [defaultVoucherId, resolveVoucherSelection]);
+    }, [defaultVoucherId, friends, resolveVoucherSelection]);
 
     useEffect(() => {
         if (!selectedVoucherId) return;

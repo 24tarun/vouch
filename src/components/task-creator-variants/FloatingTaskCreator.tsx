@@ -504,7 +504,7 @@ function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", d
             <div
                 className={cn(
                     "fixed bottom-0 left-0 right-0 z-50 flex flex-col overscroll-contain",
-                    "rounded-t-2xl max-h-[56dvh] sm:max-h-[72dvh] backdrop-blur-xl",
+                    "rounded-t-2xl max-h-[65dvh] sm:max-h-[72dvh] backdrop-blur-xl",
                     "transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
                     isOpen ? "translate-y-0" : "translate-y-[calc(100%+8px)]",
                 )}
