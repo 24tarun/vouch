@@ -1065,7 +1065,8 @@ export function TaskInput({
                             ref={titleHighlightRef}
                             aria-hidden="true"
                             className={cn(
-                                "pointer-events-none absolute inset-0 overflow-hidden px-5 py-4 text-white",
+                                // Overlay must be horizontally scrollable; otherwise long titles clip on the right.
+                                "pointer-events-none absolute inset-0 overflow-x-auto overflow-y-hidden no-scrollbar px-5 py-4 text-white",
                                 TITLE_TEXT_METRICS_CLASS
                             )}
                         >

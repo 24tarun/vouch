@@ -544,7 +544,8 @@ function FloatingTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", d
                                     ref={titleHighlightRef}
                                     aria-hidden="true"
                                     className={cn(
-                                        "pointer-events-none absolute inset-0 overflow-hidden text-white flex items-center",
+                                        // Overlay must be horizontally scrollable; otherwise long titles clip on the right.
+                                        "pointer-events-none absolute inset-0 overflow-x-auto overflow-y-hidden no-scrollbar text-white flex items-center",
                                         TITLE_METRICS
                                     )}
                                 >

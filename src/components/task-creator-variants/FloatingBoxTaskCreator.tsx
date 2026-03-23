@@ -87,8 +87,9 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
     const pendingCaretPositionRef = useRef<number | null>(null);
     const pendingTapCompletionRef = useRef<ParserKeywordCompletion | null>(null);
     const isComposingRef = useRef(false);
-    const swipeTouchStartY = useRef<number | null>(null);
     const scrollBodyRef = useRef<HTMLDivElement>(null);
+    const eventStartInputRef = useRef<HTMLInputElement>(null);
+    const inputMeasureSpanRef = useRef<HTMLSpanElement | null>(null);
 
     const focusTitleInput = useCallback(() => {
         const input = titleRef.current;
@@ -119,6 +120,19 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
         setActiveView(0);
     }, []);
 
+    const openEventStartPicker = useCallback(() => {
+        const input = eventStartInputRef.current;
+        if (!input) return;
+        try {
+            // Chromium supports showPicker for reliable direct icon taps.
+            (input as HTMLInputElement & { showPicker?: () => void }).showPicker?.();
+        } catch {
+            // Fallback for browsers without showPicker support.
+            input.focus();
+            input.click();
+        }
+    }, []);
+
     useImperativeHandle(ref, () => ({
         focusTitle: focusTitleInput,
     }), [focusTitleInput]);
@@ -143,12 +157,64 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
         syncTitleCaretFromElement(titleRef.current);
     }, [syncTitleCaretFromElement]);
 
-    const keepTitleTypingInView = useCallback((input: HTMLInputElement | null) => {
+    const keepSingleLineInputCaretInView = useCallback(
+        (input: HTMLInputElement | null, onAfterScroll?: () => void) => {
         if (!input) return;
-        window.requestAnimationFrame(() => {
-            syncTitleHighlightScroll();
-        });
-    }, [syncTitleHighlightScroll]);
+        // Synchronous — no rAF. Called both from event handlers (where DOM is already
+        // post-browser-processing) and from useLayoutEffect (post-React-commit, before paint).
+        // Never use rAF here: React's re-render resets input.scrollLeft, and rAF fires
+        // unpredictably relative to that reset, leaving the caret off-screen.
+        const caretPosition = input.selectionStart ?? input.value.length;
+        const textBeforeCaret = input.value.slice(0, caretPosition);
+
+        // Measure using a persistent hidden DOM span so the browser's own text renderer
+        // (including custom web fonts like Geist Sans) gives pixel-accurate width.
+        // Canvas cannot load @font-face fonts and would under-measure, causing under-scroll.
+        if (!inputMeasureSpanRef.current) {
+            const span = document.createElement("span");
+            span.style.cssText = "position:fixed;visibility:hidden;white-space:pre;pointer-events:none;top:-9999px;left:-9999px;";
+            document.body.appendChild(span);
+            inputMeasureSpanRef.current = span;
+        }
+        const measureSpan = inputMeasureSpanRef.current;
+        const styles = window.getComputedStyle(input);
+        measureSpan.style.fontSize = styles.fontSize;
+        measureSpan.style.fontFamily = styles.fontFamily;
+        measureSpan.style.fontWeight = styles.fontWeight;
+        measureSpan.style.fontStyle = styles.fontStyle;
+        measureSpan.style.letterSpacing = styles.letterSpacing;
+        measureSpan.textContent = textBeforeCaret;
+        const caretX = measureSpan.getBoundingClientRect().width;
+
+        const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+        const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
+        const viewportWidth = Math.max(0, input.clientWidth - paddingLeft - paddingRight);
+        const gutter = 12;
+        const visibleLeft = input.scrollLeft;
+        const visibleRight = visibleLeft + viewportWidth;
+
+        if (caretX > visibleRight - gutter) {
+            input.scrollLeft = Math.max(0, caretX - Math.max(0, viewportWidth - gutter));
+        } else if (caretX < visibleLeft + gutter) {
+            input.scrollLeft = Math.max(0, caretX - gutter);
+        }
+
+        onAfterScroll?.();
+    }, []);
+
+    const keepTitleTypingInView = useCallback(
+        (input: HTMLInputElement | null) => {
+            keepSingleLineInputCaretInView(input, syncTitleHighlightScroll);
+        },
+        [keepSingleLineInputCaretInView, syncTitleHighlightScroll]
+    );
+
+    const keepSubtaskTypingInView = useCallback(
+        (input: HTMLInputElement | null) => {
+            keepSingleLineInputCaretInView(input);
+        },
+        [keepSingleLineInputCaretInView]
+    );
 
     const commitTitleAndCaret = useCallback((nextTitle: string, nextCaretIndex: number) => {
         setTitle(nextTitle);
@@ -172,6 +238,17 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
     useLayoutEffect(() => {
         syncTitleHighlightScroll();
     }, [showTitleOverlay, syncTitleHighlightScroll, title, titleCaretIndex]);
+
+    // Re-apply scroll after React's DOM commit. React resets input.scrollLeft when it writes
+    // input.value during reconciliation. useLayoutEffect fires after that write but before paint,
+    // so this is the authoritative place to restore the correct horizontal scroll position.
+    useLayoutEffect(() => {
+        keepSingleLineInputCaretInView(titleRef.current, syncTitleHighlightScroll);
+    }, [title, titleCaretIndex, keepSingleLineInputCaretInView, syncTitleHighlightScroll]);
+
+    useLayoutEffect(() => {
+        keepSingleLineInputCaretInView(subtaskInputRef.current);
+    }, [subtaskDraft, keepSingleLineInputCaretInView]);
 
     const applyInlineKeywordCompletion = useCallback(() => {
         if (!inlineKeywordCompletion) return;
@@ -205,8 +282,19 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                 : -1;
         let absoluteIndex = 0;
         let cursorInserted = false;
+        let cursorKey = 0;
 
-        const insertCursor = () => { cursorInserted = true; };
+        const insertCursor = () => {
+            if (cursorInserted || !isTitleFocused) return;
+            cursorInserted = true;
+            runs.push(
+                <span
+                    key={`title-caret-${cursorKey++}`}
+                    className="title-caret align-[-0.08em]"
+                    aria-hidden="true"
+                />
+            );
+        };
 
         for (const [index, segment] of titleHighlightSegments.entries()) {
             const segmentStart = absoluteIndex;
@@ -276,6 +364,13 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
     ]);
 
     // ── Effects ───────────────────────────────────────────────────────────────
+    useEffect(() => {
+        return () => {
+            inputMeasureSpanRef.current?.remove();
+            inputMeasureSpanRef.current = null;
+        };
+    }, []);
+
     useEffect(() => {
         if (isOpen) {
             setActiveView(0);
@@ -533,13 +628,6 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                     "transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]",
                     isOpen ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4 pointer-events-none",
                 )}
-                onTouchStart={(e) => { swipeTouchStartY.current = e.touches[0].clientY; }}
-                onTouchEnd={(e) => {
-                    if (swipeTouchStartY.current === null) return;
-                    const delta = e.changedTouches[0].clientY - swipeTouchStartY.current;
-                    swipeTouchStartY.current = null;
-                    if (delta > 60) handleClose();
-                }}
                 style={{
                     background: "rgba(2, 6, 23, 0.56)",
                     border: "1px solid rgba(255,255,255,0.06)",
@@ -547,7 +635,10 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                 }}
             >
                 {/* Drag handle — tap to close */}
-                <div className="flex justify-center pt-3 pb-1 shrink-0 cursor-pointer" onClick={handleClose}>
+                <div
+                    className="flex justify-center pt-3 pb-1 shrink-0 cursor-pointer"
+                    onClick={handleClose}
+                >
                     <div className="w-10 h-[3px] rounded-full bg-slate-700" />
                 </div>
 
@@ -603,7 +694,8 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                                     ref={titleHighlightRef}
                                     aria-hidden="true"
                                     className={cn(
-                                        "pointer-events-none absolute inset-0 overflow-hidden text-white flex items-center",
+                                        // Overlay must be horizontally scrollable; otherwise long titles clip on the right.
+                                        "pointer-events-none select-none absolute inset-0 overflow-x-auto overflow-y-hidden no-scrollbar text-white flex items-center",
                                         TITLE_METRICS
                                     )}
                                 >
@@ -624,6 +716,9 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                                     keepTitleTypingInView(e.currentTarget);
                                 }}
                                 onKeyDown={handleTitleKeyDown}
+                                onKeyUp={() => {
+                                    keepTitleTypingInView(titleRef.current);
+                                }}
                                 onSelect={() => {
                                     syncTitleCaretFromInput();
                                     keepTitleTypingInView(titleRef.current);
@@ -654,9 +749,9 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                                 placeholder="What needs to get done?"
                                 enterKeyHint="done"
                                 className={cn(
-                                    "w-full bg-transparent placeholder:text-slate-700 focus:outline-none",
+                                    "w-full bg-transparent placeholder:text-slate-700 focus:outline-none title-input-xl",
                                     TITLE_METRICS,
-                                    showTitleOverlay ? "text-transparent caret-white" : "text-slate-50 caret-white",
+                                    showTitleOverlay ? "text-transparent caret-transparent" : "text-slate-50 caret-white",
                                 )}
                             />
                         </div>
@@ -681,8 +776,31 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                                     <input
                                         ref={subtaskInputRef}
                                         value={subtaskDraft}
-                                        onChange={(e) => setSubtaskDraft(e.target.value)}
-                                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSubtask(); } }}
+                                        onChange={(e) => {
+                                            setSubtaskDraft(e.target.value);
+                                            keepSubtaskTypingInView(e.currentTarget);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                addSubtask();
+                                            }
+                                        }}
+                                        onKeyUp={(e) => {
+                                            keepSubtaskTypingInView(e.currentTarget);
+                                        }}
+                                        onSelect={(e) => {
+                                            keepSubtaskTypingInView(e.currentTarget);
+                                        }}
+                                        onClick={(e) => {
+                                            keepSubtaskTypingInView(e.currentTarget);
+                                        }}
+                                        onFocus={(e) => {
+                                            keepSubtaskTypingInView(e.currentTarget);
+                                        }}
+                                        onCompositionEnd={(e) => {
+                                            keepSubtaskTypingInView(e.currentTarget);
+                                        }}
                                         placeholder="New subtask…"
                                         className="flex-1 bg-transparent text-sm font-mono text-slate-400 placeholder:text-slate-800 focus:outline-none"
                                     />
@@ -875,7 +993,7 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
 
                                     <div className="shrink-0 flex items-center gap-1">
                                         <button
-                                            onClick={() => setFailureCost((v) => Math.max(1, Math.round((v - 0.5) * 2) / 2))}
+                                            onClick={() => setFailureCost((v) => Math.max(1, Math.round((v - 0.25) * 4) / 4))}
                                             className="h-[18px] w-[18px] flex items-center justify-center text-emerald-400 font-mono text-[18px] leading-none transition-opacity hover:opacity-70"
                                             style={{ textShadow: "0 0 8px rgba(52, 211, 153, 0.7)" }}
                                             aria-label="Decrease failure cost"
@@ -890,7 +1008,7 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                                                 onChange={(e) => setCostDraft(e.target.value)}
                                                 onBlur={() => {
                                                     const n = parseFloat(costDraft);
-                                                    if (!isNaN(n)) setFailureCost(Math.min(100, Math.max(1, Math.round(n * 2) / 2)));
+                                                    if (!isNaN(n)) setFailureCost(Math.min(100, Math.max(1, n)));
                                                     setCostEditing(false);
                                                 }}
                                                 onKeyDown={(e) => {
@@ -909,7 +1027,7 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                                             </button>
                                         )}
                                         <button
-                                            onClick={() => setFailureCost((v) => Math.min(100, Math.round((v + 0.5) * 2) / 2))}
+                                            onClick={() => setFailureCost((v) => Math.min(100, Math.round((v + 0.25) * 4) / 4))}
                                             className="h-[18px] w-[18px] flex items-center justify-center text-emerald-400 font-mono text-[18px] leading-none transition-opacity hover:opacity-70"
                                             style={{ textShadow: "0 0 8px rgba(52, 211, 153, 0.7)" }}
                                             aria-label="Increase failure cost"
@@ -980,12 +1098,27 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                         </Row>
 
                         <Row label="Start" icon={<span className="text-slate-600 text-xs font-mono">▶</span>}>
-                            <input
-                                type="datetime-local"
-                                value={eventStart}
-                                onChange={(e) => setEventStart(e.target.value)}
-                                className="bg-transparent text-slate-300 text-sm focus:outline-none font-mono"
-                            />
+                            <div className="relative">
+                                <input
+                                    ref={eventStartInputRef}
+                                    type="datetime-local"
+                                    value={eventStart}
+                                    onChange={(e) => setEventStart(e.target.value)}
+                                    className="bg-transparent text-emerald-400 text-sm focus:outline-none font-mono start-time-input pr-6"
+                                />
+                                <button
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={openEventStartPicker}
+                                    className="absolute right-0 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center"
+                                    aria-label="Open start time picker"
+                                >
+                                    <Calendar
+                                        className="h-3.5 w-3.5 text-emerald-400"
+                                        style={{ filter: "drop-shadow(0 0 6px rgba(52, 211, 153, 0.75))" }}
+                                    />
+                                </button>
+                            </div>
                         </Row>
 
                         {/* Event-only fields */}

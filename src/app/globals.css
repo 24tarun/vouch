@@ -157,7 +157,7 @@
       justify-content: center;
     }
 
-    input,
+    input:not(.title-input-xl),
     textarea,
     select {
       font-size: 16px !important;
@@ -173,6 +173,12 @@
 /* Task creator — amber calendar picker icon */
 .deadline-input::-webkit-calendar-picker-indicator {
     filter: brightness(0) saturate(100%) invert(84%) sepia(52%) saturate(749%) hue-rotate(332deg) brightness(103%);
+    cursor: pointer;
+}
+
+/* Task creator — emerald calendar picker icon */
+.start-time-input::-webkit-calendar-picker-indicator {
+    opacity: 0;
     cursor: pointer;
 }
 
