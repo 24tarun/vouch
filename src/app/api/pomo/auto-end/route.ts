@@ -142,7 +142,7 @@ export async function POST(req: NextRequest) {
                     pushPayload: {
                         title: "Pomodoro auto-ended",
                         body: `Logged for ${task.title}.`,
-                        url: `/dashboard/tasks/${task.id}`,
+                        url: `/tasks/${task.id}`,
                         tag: `pomo-auto-end-${session.id}`,
                         sound: "pomo-auto-end",
                         data: {

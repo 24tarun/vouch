@@ -44,6 +44,10 @@ import {
 import { isValidPomoDurationMinutes } from "@/lib/pomodoro";
 import { normalizeProofTimestampText } from "@/lib/proof-timestamp";
 import { aiEvaluationLimiter, checkRateLimit } from "@/lib/rate-limit";
+import {
+    getTaskSubmissionWindowState,
+    TASK_SUBMISSION_BEFORE_START_ERROR,
+} from "@/lib/task-submission-window";
 
 const INVALID_DEADLINE_ERROR = "Deadline is invalid.";
 const PAST_DEADLINE_ERROR = "Deadline must be in the future.";
@@ -524,9 +528,9 @@ async function insertTaskReminderRows(
 
 function revalidateTaskSurfaces(taskId: string, userId: string) {
     invalidateActiveTasksCache(userId);
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/stats");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/stats");
+    revalidatePath(`/tasks/${taskId}`);
 }
 
 async function getOwnedParentTask(
@@ -726,7 +730,7 @@ export async function createTaskSimple(title: string, subtasksInput?: string[]) 
     await enqueueGoogleCalendarUpsert(user.id, (task as any).id);
 
     invalidatePendingVoucherRequestsCache(defaultVoucherId);
-    revalidatePath("/dashboard/friends");
+    revalidatePath("/friends");
     revalidateTaskSurfaces((task as any).id, user.id);
     return { success: true, taskId: (task as any).id };
 }
@@ -1111,7 +1115,7 @@ export async function createTask(formData: FormData) {
     await enqueueGoogleCalendarUpsert((user as any).id, (task as any).id);
 
     invalidatePendingVoucherRequestsCache(voucherId);
-    revalidatePath("/dashboard/friends");
+    revalidatePath("/friends");
     revalidateTaskSurfaces((task as any).id, (user as any).id);
     return {
         success: true,
@@ -1166,8 +1170,8 @@ export async function cancelRepetition(taskId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/dashboard");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath(`/tasks/${taskId}`);
     return { success: true };
 }
 
@@ -1204,8 +1208,18 @@ export async function markTaskCompleteWithProofIntent(
         return { error: `Cannot mark complete from ${(task as any).status} status` };
     }
 
-    if (new Date() >= new Date((task as any).deadline)) {
+    const submissionWindow = getTaskSubmissionWindowState({
+        startAtIso: (task as any).google_event_start_at,
+        deadlineIso: (task as any).deadline,
+        now: new Date(),
+    });
+
+    if (submissionWindow.pastDeadline) {
         return { error: "Deadline has passed" };
+    }
+
+    if (submissionWindow.beforeStart) {
+        return { error: TASK_SUBMISSION_BEFORE_START_ERROR };
     }
 
     const { count: incompleteSubtasksCount } = await (supabase.from("task_subtasks") as any)
@@ -1300,10 +1314,10 @@ export async function markTaskCompleteWithProofIntent(
         invalidateActiveTasksCache((user as any).id);
         invalidatePendingVoucherRequestsCache((task as any).voucher_id);
         await enqueueGoogleCalendarUpsert((user as any).id, taskId);
-        revalidatePath("/dashboard");
-        revalidatePath("/dashboard/stats");
-        revalidatePath("/dashboard/friends");
-        revalidatePath(`/dashboard/tasks/${taskId}`);
+        revalidatePath("/tasks");
+        revalidatePath("/stats");
+        revalidatePath("/friends");
+        revalidatePath(`/tasks/${taskId}`);
         return { success: true };
     }
 
@@ -1453,11 +1467,11 @@ export async function markTaskCompleteWithProofIntent(
     invalidateActiveTasksCache((user as any).id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
     await enqueueGoogleCalendarUpsert((user as any).id, taskId);
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/stats");
+    revalidatePath("/tasks");
+    revalidatePath("/stats");
     // Mirror accept/deny behavior so voucher list cache is invalidated on new request.
-    revalidatePath("/dashboard/friends");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/friends");
+    revalidatePath(`/tasks/${taskId}`);
     return { success: true, proofUploadTarget };
 }
 
@@ -1686,10 +1700,10 @@ export async function finalizeTaskProofUpload(taskId: string, proofMeta: TaskPro
     }
 
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/stats");
-    revalidatePath("/dashboard/friends");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/stats");
+    revalidatePath("/friends");
+    revalidatePath(`/tasks/${taskId}`);
     return { success: true };
 }
 
@@ -1731,10 +1745,10 @@ export async function removeAwaitingVoucherProof(taskId: string) {
     });
 
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/stats");
-    revalidatePath("/dashboard/friends");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/stats");
+    revalidatePath("/friends");
+    revalidatePath(`/tasks/${taskId}`);
     return { success: true };
 }
 
@@ -1810,10 +1824,10 @@ export async function revertTaskCompletionAfterProofFailure(taskId: string) {
 
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/stats");
-    revalidatePath("/dashboard/friends");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/stats");
+    revalidatePath("/friends");
+    revalidatePath(`/tasks/${taskId}`);
 
     return { success: true, status: restoredStatus };
 }
@@ -1891,10 +1905,10 @@ export async function undoTaskComplete(taskId: string) {
 
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/stats");
-    revalidatePath("/dashboard/friends");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/stats");
+    revalidatePath("/friends");
+    revalidatePath(`/tasks/${taskId}`);
 
     return { success: true, status: restoredStatus };
 }
@@ -2435,7 +2449,7 @@ export async function postponeTask(taskId: string, newDeadlineIso: string) {
     await enqueueGoogleCalendarUpsert(user.id, taskId);
 
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
-    revalidatePath("/dashboard/friends");
+    revalidatePath("/friends");
     revalidateTaskSurfaces(taskId, user.id);
     return { success: true };
 }
@@ -2534,10 +2548,10 @@ export async function ownerTempDeleteTask(taskId: string) {
 
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/friends");
-    revalidatePath("/dashboard/stats");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/friends");
+    revalidatePath("/stats");
+    revalidatePath(`/tasks/${taskId}`);
     return { success: true };
 }
 
@@ -2622,8 +2636,8 @@ export async function forceMajeureTask(taskId: string) {
 
     await enqueueGoogleCalendarUpsert(user.id, taskId);
 
-    revalidatePath(`/dashboard/tasks/${taskId}`);
-    revalidatePath("/dashboard");
+    revalidatePath(`/tasks/${taskId}`);
+    revalidatePath("/tasks");
     return { success: true };
 }
 
@@ -2697,7 +2711,7 @@ export async function getTask(taskId: string) {
                 (task as any).updated_at = now.toISOString();
 
                 invalidateActiveTasksCache((task as any).user_id);
-                revalidatePath(`/dashboard/tasks/${taskId}`);
+                revalidatePath(`/tasks/${taskId}`);
             }
         }
 
@@ -2909,8 +2923,8 @@ export async function startPomoSession(taskId: string, durationMinutes: number) 
 
     if (error) return { error: error.message };
 
-    revalidatePath("/dashboard");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath(`/tasks/${taskId}`);
     return { success: true, session };
 }
 
@@ -2948,9 +2962,9 @@ export async function pausePomoSession(sessionId: string) {
         .eq("id", sessionId);
 
     if (error) return { error: error.message };
-    revalidatePath("/dashboard");
+    revalidatePath("/tasks");
     if (session.task_id) {
-        revalidatePath(`/dashboard/tasks/${session.task_id}`);
+        revalidatePath(`/tasks/${session.task_id}`);
     }
     return { success: true };
 }
@@ -2987,9 +3001,9 @@ export async function resumePomoSession(sessionId: string) {
         .single();
 
     if (error) return { error: error.message };
-    revalidatePath("/dashboard");
+    revalidatePath("/tasks");
     if ((resumed as any)?.task_id) {
-        revalidatePath(`/dashboard/tasks/${(resumed as any).task_id}`);
+        revalidatePath(`/tasks/${(resumed as any).task_id}`);
     }
     return { success: true };
 }
@@ -3041,9 +3055,9 @@ export async function endPomoSession(
 
     if (error) return { error: error.message };
     if (!shouldCount) {
-        revalidatePath("/dashboard");
+        revalidatePath("/tasks");
         if (session.task_id) {
-            revalidatePath(`/dashboard/tasks/${session.task_id}`);
+            revalidatePath(`/tasks/${session.task_id}`);
         }
         return { success: true, counted: false };
     }
@@ -3083,7 +3097,7 @@ export async function endPomoSession(
                 text: `Your pomodoro has ended and has been logged for ${task.title}.`,
                 email: false,
                 push: true,
-                url: `/dashboard/tasks/${task.id}`,
+                url: `/tasks/${task.id}`,
                 tag: `pomo-completed-${session.id}`,
                 data: {
                     taskId: task.id,
@@ -3094,9 +3108,9 @@ export async function endPomoSession(
         }
     }
 
-    revalidatePath("/dashboard");
+    revalidatePath("/tasks");
     if (session.task_id) {
-        revalidatePath(`/dashboard/tasks/${session.task_id}`);
+        revalidatePath(`/tasks/${session.task_id}`);
     }
     return { success: true, counted: true };
 }
@@ -3117,7 +3131,7 @@ export async function deletePomoSession(sessionId: string) {
         .eq("user_id", user.id);
 
     if (error) return { error: error.message };
-    revalidatePath("/dashboard");
+    revalidatePath("/tasks");
     return { success: true };
 }
 
@@ -3143,4 +3157,3 @@ export async function getActivePomoSession() {
 
     return { session: session || null, serverNow };
 }
-

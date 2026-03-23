@@ -117,9 +117,9 @@ export const voucherDeadlineWarning = schedules.task({
                         <h1>Vouch Requests</h1>
                         <p>Hi ${summary.username || "there"},</p>
                         <p>${body}</p>
-                        <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/friends">Open friends tab</a></p>
+                        <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/friends">Open friends tab</a></p>
                     `,
-                    url: "/dashboard/friends",
+                    url: "/friends",
                     tag: `voucher-digest-${voucherId}-${utcDate}`,
                     data: {
                         kind: "VOUCH_REQUEST_DIGEST",

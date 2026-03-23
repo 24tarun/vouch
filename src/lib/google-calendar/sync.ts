@@ -340,7 +340,7 @@ function getAppBaseUrl(): string {
 }
 
 function buildVouchTaskUrl(taskId: string): string {
-    return `${getAppBaseUrl()}/dashboard/tasks/${taskId}`;
+    return `${getAppBaseUrl()}/tasks/${taskId}`;
 }
 
 function buildGoogleEventDescription(task: Pick<Task, "id" | "description">): string {

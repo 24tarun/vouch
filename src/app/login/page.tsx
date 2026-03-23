@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
     completePasswordReset,
@@ -26,29 +26,16 @@ function LoginContent() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
+    const [privacyPolicyClicked, setPrivacyPolicyClicked] = useState(false);
+    const [privacyPolicyAccepted, setPrivacyPolicyAccepted] = useState(false);
     const [mode, setMode] = useState<AuthMode>(initialMode);
     const [isLoading, setIsLoading] = useState(false);
     const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
     const [exiting, setExiting] = useState(false);
 
-    const touchStartX = useRef(0);
-    const touchStartY = useRef(0);
-
     function navigateBack() {
         setExiting(true);
         setTimeout(() => router.push("/"), 320);
-    }
-
-    function onTouchStart(e: React.TouchEvent) {
-        touchStartX.current = e.touches[0].clientX;
-        touchStartY.current = e.touches[0].clientY;
-    }
-
-    function onTouchEnd(e: React.TouchEvent) {
-        const dx = e.changedTouches[0].clientX - touchStartX.current;
-        const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current);
-        // swipe right: horizontal > 72px, more horizontal than vertical
-        if (dx > 72 && dy < dx * 0.6) navigateBack();
     }
 
     const callbackErrorParam = searchParams.get("error");
@@ -62,15 +49,39 @@ function LoginContent() {
                     : null;
     const effectiveMessage = message ?? (callbackErrorMessage ? { type: "error" as const, text: callbackErrorMessage } : null);
 
+    function changeMode(nextMode: AuthMode) {
+        setMode(nextMode);
+        setMessage(null);
+        if (nextMode !== "signup") {
+            setPrivacyPolicyClicked(false);
+            setPrivacyPolicyAccepted(false);
+        }
+    }
+
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         setIsLoading(true);
         setMessage(null);
 
+        if (mode === "signup" && !privacyPolicyClicked) {
+            setMessage({ type: "error", text: "Please open the Privacy Policy before signing up." });
+            setIsLoading(false);
+            return;
+        }
+        if (mode === "signup" && !privacyPolicyAccepted) {
+            setMessage({ type: "error", text: "You must accept the Privacy Policy to create an account." });
+            setIsLoading(false);
+            return;
+        }
+
         const formData = new FormData();
         if (mode !== "reset") formData.append("email", email);
         if (mode !== "forgot") formData.append("password", password);
         if (mode === "reset") formData.append("confirmPassword", confirmPassword);
+        if (mode === "signup") {
+            formData.append("privacyPolicyClicked", privacyPolicyClicked ? "true" : "false");
+            formData.append("privacyPolicyAccepted", privacyPolicyAccepted ? "true" : "false");
+        }
 
         try {
             let result;
@@ -87,7 +98,7 @@ function LoginContent() {
                 else if (mode === "reset") {
                     setPassword("");
                     setConfirmPassword("");
-                    setMode("signin");
+                    changeMode("signin");
                 }
             }
         } catch (err: unknown) {
@@ -288,8 +299,6 @@ function LoginContent() {
             <div
                 className={`auth-shell ${exiting ? "page-exit" : "page-enter"}`}
                 style={{ background: "var(--bg)" }}
-                onTouchStart={onTouchStart}
-                onTouchEnd={onTouchEnd}
             >
 
                 {/* ── Left panel — editorial headline ── */}
@@ -396,7 +405,7 @@ function LoginContent() {
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                                     <label className="auth-label" htmlFor="password" style={{ marginBottom: 0 }}>Password</label>
                                     {mode === "signin" && (
-                                        <button type="button" className="auth-link-dim" onClick={() => { setMode("forgot"); setMessage(null); }}>
+                                        <button type="button" className="auth-link-dim" onClick={() => changeMode("forgot")}>
                                             Forgot?
                                         </button>
                                     )}
@@ -432,6 +441,45 @@ function LoginContent() {
                             </div>
                         )}
 
+                        {mode === "signup" && (
+                            <div style={{ border: "1px solid var(--border)", padding: "12px 14px", display: "grid", gap: "10px" }}>
+                                <a
+                                    href="/privacy-policy"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="auth-link"
+                                    style={{ textTransform: "none", letterSpacing: "0.02em", fontSize: "12px" }}
+                                    onClick={() => setPrivacyPolicyClicked(true)}
+                                >
+                                    Open Privacy Policy
+                                </a>
+
+                                <label
+                                    htmlFor="privacyPolicyAccepted"
+                                    style={{
+                                        display: "flex",
+                                        alignItems: "flex-start",
+                                        gap: "10px",
+                                        fontFamily: "'DM Mono', monospace",
+                                        fontSize: "11px",
+                                        color: "var(--fg-dim)",
+                                        letterSpacing: "0.03em",
+                                        lineHeight: 1.35,
+                                    }}
+                                >
+                                    <input
+                                        id="privacyPolicyAccepted"
+                                        type="checkbox"
+                                        checked={privacyPolicyAccepted}
+                                        onChange={(e) => setPrivacyPolicyAccepted(e.target.checked)}
+                                        disabled={!privacyPolicyClicked}
+                                        style={{ marginTop: "1px" }}
+                                    />
+                                    I have opened and agree to the Privacy Policy.
+                                </label>
+                            </div>
+                        )}
+
                         {effectiveMessage && (
                             <div style={{
                                 padding: "12px 16px",
@@ -447,7 +495,11 @@ function LoginContent() {
                             </div>
                         )}
 
-                        <button type="submit" className="auth-btn" disabled={isLoading}>
+                        <button
+                            type="submit"
+                            className="auth-btn"
+                            disabled={isLoading || (mode === "signup" && (!privacyPolicyClicked || !privacyPolicyAccepted))}
+                        >
                             {isLoading ? "Processing..."
                                 : mode === "signin"  ? "Sign In"
                                 : mode === "signup"  ? "Sign Up"
@@ -461,19 +513,19 @@ function LoginContent() {
                         {mode === "signin" ? (
                             <>
                                 No account?{" "}
-                                <button className="auth-link" onClick={() => { setMode("signup"); setMessage(null); }}>
+                                <button className="auth-link" onClick={() => changeMode("signup")}>
                                     Sign Up
                                 </button>
                             </>
                         ) : mode === "signup" ? (
                             <>
                                 Have an account?{" "}
-                                <button className="auth-link" onClick={() => { setMode("signin"); setMessage(null); }}>
+                                <button className="auth-link" onClick={() => changeMode("signin")}>
                                     Sign In
                                 </button>
                             </>
                         ) : (
-                            <button className="auth-link" onClick={() => { setMode("signin"); setMessage(null); }}>
+                            <button className="auth-link" onClick={() => changeMode("signin")}>
                                 ← Back to Sign In
                             </button>
                         )}

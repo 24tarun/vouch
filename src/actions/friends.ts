@@ -44,9 +44,9 @@ type PomoElapsedRow = {
 
 function revalidateFriendPaths() {
     try {
-        revalidatePath("/dashboard/friends");
-        revalidatePath("/dashboard/settings");
-        revalidatePath("/dashboard");
+        revalidatePath("/friends");
+        revalidatePath("/settings");
+        revalidatePath("/tasks");
     } catch {
         // Ignore revalidation errors
     }

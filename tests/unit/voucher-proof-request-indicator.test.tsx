@@ -7,7 +7,7 @@ import { cleanup, render } from "@testing-library/react";
 import {
     CompactPendingItem,
     applyProofRequestSuccessToPendingTasks,
-} from "../../src/app/dashboard/voucher/voucher-dashboard-client";
+} from "../../src/app/(app)/voucher/voucher-dashboard-client";
 import type { VoucherPendingTask } from "../../src/lib/types";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost" });

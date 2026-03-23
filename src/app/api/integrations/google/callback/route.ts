@@ -16,11 +16,11 @@ export async function GET(request: NextRequest) {
     const error = url.searchParams.get("error");
 
     if (error) {
-        return NextResponse.redirect(`${origin}/dashboard/settings?googleCalendar=oauth_denied`);
+        return NextResponse.redirect(`${origin}/settings?googleCalendar=oauth_denied`);
     }
 
     if (!code || !state) {
-        return NextResponse.redirect(`${origin}/dashboard/settings?googleCalendar=missing_code`);
+        return NextResponse.redirect(`${origin}/settings?googleCalendar=missing_code`);
     }
 
     const cookieStore = await cookies();
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     cookieStore.delete(GOOGLE_OAUTH_STATE_COOKIE);
 
     if (!expectedState || expectedState !== state) {
-        return NextResponse.redirect(`${origin}/dashboard/settings?googleCalendar=invalid_state`);
+        return NextResponse.redirect(`${origin}/settings?googleCalendar=invalid_state`);
     }
 
     const supabase = await createClient();
@@ -44,9 +44,9 @@ export async function GET(request: NextRequest) {
         const tokens = await exchangeGoogleCodeForTokens(code);
         const accountEmail = extractEmailFromIdToken(tokens.id_token);
         await upsertGoogleConnectionTokens(supabase, user.id, tokens, accountEmail);
-        return NextResponse.redirect(`${origin}/dashboard/settings?googleCalendar=connected`);
+        return NextResponse.redirect(`${origin}/settings?googleCalendar=connected`);
     } catch (callbackError) {
         console.error("Google OAuth callback failed:", callbackError);
-        return NextResponse.redirect(`${origin}/dashboard/settings?googleCalendar=connect_failed`);
+        return NextResponse.redirect(`${origin}/settings?googleCalendar=connect_failed`);
     }
 }

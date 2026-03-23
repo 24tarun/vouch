@@ -22,11 +22,11 @@ const RECONCILIATION_REFRESH_MS = 1200;
 function isTaskPatchEnabledPath(pathname: string | null): boolean {
     if (!pathname) return false;
     return (
-        pathname === "/dashboard" ||
-        pathname.startsWith("/dashboard/commitments") ||
-        pathname.startsWith("/dashboard/tasks/") ||
-        pathname.startsWith("/dashboard/voucher") ||
-        pathname.startsWith("/dashboard/friends")
+        pathname === "/tasks" ||
+        pathname.startsWith("/commit") ||
+        pathname.startsWith("/tasks/") ||
+        pathname.startsWith("/voucher") ||
+        pathname.startsWith("/friends")
     );
 }
 
@@ -88,6 +88,7 @@ function toRealtimeCommitmentRow(value: unknown): RealtimeCommitmentRow | null {
         status: row.status,
         start_date: row.start_date,
         end_date: row.end_date,
+        created_at: typeof row.created_at === "string" ? row.created_at : row.updated_at,
         updated_at: row.updated_at,
     };
 }

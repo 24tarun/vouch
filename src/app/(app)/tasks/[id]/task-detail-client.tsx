@@ -67,6 +67,10 @@ import {
 import { subscribeRealtimeTaskChanges } from "@/lib/realtime-task-events";
 import { isIncomingNewer, patchTaskScalars } from "@/lib/tasks-realtime-patch";
 import { getVoucherResponseDeadlineLocal } from "@/lib/voucher-deadline";
+import {
+    buildBeforeStartSubmissionMessage,
+    getTaskSubmissionWindowState,
+} from "@/lib/task-submission-window";
 
 interface TaskDetailClientProps {
     task: TaskWithRelations;
@@ -152,9 +156,17 @@ export default function TaskDetailClient({
     const proofPickerModeRef = useRef<ProofPickerMode>("draft");
     const shouldRestoreSubtaskInputFocusRef = useRef(false);
 
+    const submissionWindow = useMemo(
+        () => getTaskSubmissionWindowState({
+            startAtIso: taskState.google_event_start_at ?? null,
+            deadlineIso: taskState.deadline,
+            now: new Date(nowMs),
+        }),
+        [nowMs, taskState.deadline, taskState.google_event_start_at]
+    );
     const deadline = new Date(taskState.deadline);
     const isOverdue =
-        deadline < new Date() &&
+        submissionWindow.pastDeadline &&
         !["COMPLETED", "FAILED", "RECTIFIED", "SETTLED", "AWAITING_USER"].includes(taskState.status);
 
     const userTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", []);
@@ -173,6 +185,8 @@ export default function TaskDetailClient({
     const hasIncompletePomoRequirement =
         requiredPomoSeconds > 0 && remainingRequiredPomoSeconds > 0;
     const hasRunningPomoForTask = session?.status === "ACTIVE" && session.task_id === taskState.id;
+    const isBeforeStart = isActiveParentTask && submissionWindow.beforeStart;
+    const beforeStartMessage = buildBeforeStartSubmissionMessage(submissionWindow.startDate);
     const canManageActionChildren = isOwner && isActiveParentTask;
     const ownerCurrency = normalizeCurrency(taskState.user?.currency ?? viewerCurrency);
     const formattedFailureCost = formatCurrencyFromCents(taskState.failure_cost_cents, ownerCurrency);
@@ -879,6 +893,10 @@ export default function TaskDetailClient({
 
     async function handleMarkComplete() {
         if (isActionPending("markComplete")) return;
+        if (isBeforeStart) {
+            toast.error(beforeStartMessage);
+            return;
+        }
         if (incompleteSubtasksCount > 0) {
             toast.error("Complete all subtasks before marking this task complete.");
             return;
@@ -1294,7 +1312,7 @@ export default function TaskDetailClient({
         }
 
         refreshInBackground();
-        router.push("/dashboard");
+        router.push("/tasks");
         setActionPending("tempDelete", false);
     }
 
@@ -1813,13 +1831,18 @@ export default function TaskDetailClient({
                                 </Button>
                                 <Button
                                     onClick={handleMarkComplete}
-                                    disabled={isActionPending("markComplete") || isOverdue || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask}
+                                    disabled={isActionPending("markComplete") || isOverdue || isBeforeStart || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask}
                                     className={cn(
                                         "h-9 border text-emerald-300",
-                                        (incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask)
+                                        (isBeforeStart || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask)
                                             ? "bg-slate-800/50 border-slate-700/60 text-slate-500 cursor-not-allowed"
                                             : "bg-emerald-600/20 hover:bg-emerald-600/30 border-emerald-500/40"
                                     )}
+                                    title={
+                                        isBeforeStart
+                                            ? beforeStartMessage
+                                            : "Mark complete"
+                                    }
                                 >
                                     Mark Complete
                                 </Button>

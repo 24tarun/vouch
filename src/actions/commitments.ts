@@ -73,6 +73,12 @@ interface CommitmentInput {
     end_date: string;
 }
 
+interface SaveCommitmentInput extends CommitmentInput {
+    task_ids?: string[];
+    recurrence_rule_ids?: string[];
+    activate_now?: boolean;
+}
+
 interface CommitmentUpdateInput {
     name?: string;
     description?: string;
@@ -147,15 +153,29 @@ function normalizeDescription(raw?: string): string {
     return raw.trim();
 }
 
+function normalizeUniqueIdArray(values: unknown): string[] {
+    if (!Array.isArray(values)) return [];
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    for (const value of values) {
+        if (typeof value !== "string") continue;
+        const trimmed = value.trim();
+        if (!trimmed || seen.has(trimmed)) continue;
+        seen.add(trimmed);
+        normalized.push(trimmed);
+    }
+    return normalized;
+}
+
 function serializeDayStatuses(dayStatusMap: Map<string, DayStatus>): CommitmentDayStatus[] {
     return Array.from(dayStatusMap.entries()).map(([date, status]) => ({ date, status }));
 }
 
 function revalidateCommitmentSurfaces(commitmentId?: string) {
-    revalidatePath("/dashboard/commitments");
-    revalidatePath("/dashboard/commitments/new");
+    revalidatePath("/commit");
+    revalidatePath("/commit/new");
     if (commitmentId) {
-        revalidatePath(`/dashboard/commitments/${commitmentId}`);
+        revalidatePath(`/commit/${commitmentId}`);
     }
 }
 
@@ -368,6 +388,149 @@ export async function createCommitment(input: CommitmentInput) {
 
     revalidateCommitmentSurfaces(data.id);
     return { success: true as const, commitmentId: String(data.id) };
+}
+
+export async function saveCommitment(input: SaveCommitmentInput) {
+    const { supabase, userId } = await getAuthenticatedUserId();
+    if (!userId) return { success: false as const, error: "Not authenticated" };
+
+    const name = normalizeName(input.name);
+    const description = normalizeDescription(input.description);
+    const startDate = normalizeDateOnly(input.start_date || "");
+    const endDate = normalizeDateOnly(input.end_date || "");
+    const taskIds = normalizeUniqueIdArray(input.task_ids);
+    const recurrenceRuleIds = normalizeUniqueIdArray(input.recurrence_rule_ids);
+    const activateNow = Boolean(input.activate_now);
+
+    if (!name) return { success: false as const, error: "Commitment name is required." };
+    if (description.length < COMMITMENT_DESCRIPTION_MIN_LENGTH) {
+        return {
+            success: false as const,
+            error: `Description must be at least ${COMMITMENT_DESCRIPTION_MIN_LENGTH} characters.`,
+        };
+    }
+    if (description.length > COMMITMENT_DESCRIPTION_MAX_LENGTH) {
+        return {
+            success: false as const,
+            error: `Description must be ${COMMITMENT_DESCRIPTION_MAX_LENGTH} characters or fewer.`,
+        };
+    }
+    if (!startDate || !endDate) {
+        return { success: false as const, error: "Start and end dates are required." };
+    }
+
+    const windowValidation = validateDateWindow(startDate, endDate);
+    if (!windowValidation.ok) {
+        return { success: false as const, error: windowValidation.error };
+    }
+
+    if (activateNow) {
+        if (taskIds.length + recurrenceRuleIds.length < 1) {
+            return { success: false as const, error: "Link at least one task before activating." };
+        }
+        const today = new Date().toISOString().slice(0, 10);
+        if (startDate < today) {
+            return { success: false as const, error: "Commitment start date cannot be in the past." };
+        }
+    }
+
+    if (taskIds.length > 0) {
+        const { data: taskRows, error: tasksError } = await (supabase.from("tasks") as any)
+            .select("id, deadline")
+            .eq("user_id", userId as any)
+            .in("id", taskIds as any);
+        if (tasksError) return { success: false as const, error: tasksError.message };
+        const tasks = ((taskRows as Array<{ id: string; deadline: string }> | null) || []);
+        if (tasks.length !== taskIds.length) {
+            return { success: false as const, error: "One or more selected tasks were not found." };
+        }
+        const taskById = new Map(tasks.map((task) => [task.id, task]));
+        for (const taskId of taskIds) {
+            const task = taskById.get(taskId);
+            if (!task) {
+                return { success: false as const, error: "One or more selected tasks were not found." };
+            }
+            const deadlineDateOnly = toDateOnlyFromTimestamp(task.deadline);
+            if (!deadlineDateOnly || deadlineDateOnly < startDate || deadlineDateOnly > endDate) {
+                return {
+                    success: false as const,
+                    error: "One-off task deadline must fall within the commitment window.",
+                };
+            }
+        }
+    }
+
+    if (recurrenceRuleIds.length > 0) {
+        const { data: ruleRows, error: rulesError } = await (supabase.from("recurrence_rules") as any)
+            .select("id")
+            .eq("user_id", userId as any)
+            .in("id", recurrenceRuleIds as any);
+        if (rulesError) return { success: false as const, error: rulesError.message };
+        const rules = ((ruleRows as Array<{ id: string }> | null) || []);
+        if (rules.length !== recurrenceRuleIds.length) {
+            return { success: false as const, error: "One or more recurring series were not found." };
+        }
+    }
+
+    const { data: createdCommitment, error: createError } = await (supabase.from("commitments") as any)
+        .insert({
+            user_id: userId,
+            name,
+            description,
+            status: "DRAFT",
+            start_date: startDate,
+            end_date: endDate,
+        } as any)
+        .select("id")
+        .maybeSingle();
+
+    if (createError || !createdCommitment?.id) {
+        return { success: false as const, error: createError?.message || "Failed to create commitment." };
+    }
+
+    const commitmentId = String(createdCommitment.id);
+
+    const linksToInsert = [
+        ...taskIds.map((taskId) => ({
+            commitment_id: commitmentId,
+            task_id: taskId,
+            recurrence_rule_id: null,
+        })),
+        ...recurrenceRuleIds.map((recurrenceRuleId) => ({
+            commitment_id: commitmentId,
+            task_id: null,
+            recurrence_rule_id: recurrenceRuleId,
+        })),
+    ];
+
+    if (linksToInsert.length > 0) {
+        const { error: linksError } = await (supabase.from("commitment_task_links") as any)
+            .insert(linksToInsert as any);
+
+        if (linksError) {
+            await (supabase.from("commitments") as any)
+                .delete()
+                .eq("id", commitmentId as any)
+                .eq("user_id", userId as any);
+            return { success: false as const, error: linksError.message };
+        }
+    }
+
+    if (activateNow) {
+        const { error: activateError } = await (supabase.from("commitments") as any)
+            .update({ status: "ACTIVE" } as any)
+            .eq("id", commitmentId as any)
+            .eq("user_id", userId as any)
+            .eq("status", "DRAFT" as any);
+        if (activateError) return { success: false as const, error: activateError.message };
+    }
+
+    revalidateCommitmentSurfaces(commitmentId);
+    return {
+        success: true as const,
+        commitmentId,
+        status: activateNow ? ("ACTIVE" as const) : ("DRAFT" as const),
+    };
 }
 
 export async function updateCommitment(commitmentId: string, input: CommitmentUpdateInput) {
@@ -820,9 +983,9 @@ export async function notifyCommitmentFailureIfNeeded(taskId: string, recurrence
                 <p>Hi ${profile?.username || "there"},</p>
                 <p>Your commitment <strong>${commitment.name}</strong> has failed.</p>
                 <p>Rectify the failed task to revive the commitment.</p>
-                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/commitments/${commitment.id}">Open commitment</a></p>
+                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/commit/${commitment.id}">Open commitment</a></p>
             `,
-            url: `/dashboard/commitments/${commitment.id}`,
+            url: `/commit/${commitment.id}`,
             tag: `commitment-failed-${commitment.id}`,
             data: { commitmentId: commitment.id, kind: "COMMITMENT_FAILED" },
         });
@@ -977,9 +1140,9 @@ export async function notifyCommitmentRevivedIfNeeded(taskId: string, recurrence
                 <h1>${notificationTitle}</h1>
                 <p>Hi ${profile?.username || "there"},</p>
                 <p><strong>${commitment.name}</strong>: ${bodyLine}</p>
-                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/commitments/${commitment.id}">Open commitment</a></p>
+                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/commit/${commitment.id}">Open commitment</a></p>
             `,
-            url: `/dashboard/commitments/${commitment.id}`,
+            url: `/commit/${commitment.id}`,
             tag: `commitment-revived-${commitment.id}`,
             data: { commitmentId: commitment.id, kind: "COMMITMENT_REVIVED" },
         });

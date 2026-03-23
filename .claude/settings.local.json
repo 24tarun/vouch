@@ -32,7 +32,16 @@
       "mcp__supabase__execute_sql",
       "mcp__supabase__apply_migration",
       "WebFetch(domain:github.com)",
-      "Bash(python3 \"C:\\\\Users\\\\tarun\\\\.claude\\\\skills\\\\ui-ux-pro-max\\\\scripts\\\\search.py\" \"task accountability productivity dark saas landing page professional\" --design-system -p \"TAS\")"
+      "Bash(python3 \"C:\\\\Users\\\\tarun\\\\.claude\\\\skills\\\\ui-ux-pro-max\\\\scripts\\\\search.py\" \"task accountability productivity dark saas landing page professional\" --design-system -p \"TAS\")",
+      "Bash(cd:*)",
+      "Bash(mv \"src/app/\\(app\\)/commitments\" \"src/app/\\(app\\)/commit\")",
+      "Bash(mv \"src/app/\\(app\\)/page.tsx\" \"src/app/\\(app\\)/tasks/page.tsx\")",
+      "Bash(mv \"src/app/\\(app\\)/loading.tsx\" \"src/app/\\(app\\)/tasks/loading.tsx\")",
+      "Bash(mv \"src/app/\\(app\\)/dashboard-client.tsx\" \"src/app/\\(app\\)/tasks/dashboard-client.tsx\")",
+      "Bash(find \"src/app/\\(app\\)\" -type f)",
+      "Bash(cat \"src/app/\\(app\\)/voucher/page.tsx\")",
+      "Bash(mkdir -p \"C:\\\\LocalFiles\\\\coding\\\\vouch\\\\src\\\\components\\\\task-creator-variants\")",
+      "Bash(mkdir -p \"C:\\\\LocalFiles\\\\coding\\\\vouch\\\\src\\\\app\\\\task-creator-preview\")"
     ]
   }
 }

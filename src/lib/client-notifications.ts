@@ -93,6 +93,6 @@ export async function showSampleNotification(): Promise<ClientNotificationResult
         title: "TAS",
         body: "Notifications work",
         tag: "tas-notification-sample",
-        data: { url: "/dashboard" },
+        data: { url: "/tasks" },
     });
 }

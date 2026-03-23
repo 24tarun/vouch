@@ -87,7 +87,7 @@ export function DashboardHeaderActions({
             </DropdownMenu>
 
             <Button asChild variant="ghost" size="icon" className="text-slate-400 hover:text-white" haptic="light">
-                <Link href="/dashboard/settings" prefetch aria-label="Open settings" title="Open settings">
+                <Link href="/settings" prefetch aria-label="Open settings" title="Open settings">
                     <Settings className="h-4 w-4" />
                 </Link>
             </Button>

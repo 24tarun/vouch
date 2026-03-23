@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { addTaskLink, activateCommitment, createCommitment } from "@/actions/commitments";
+import { saveCommitment } from "@/actions/commitments";
 import { computeTotalTarget } from "@/lib/commitment-status";
 import { formatCurrencyFromCents, type SupportedCurrency } from "@/lib/currency";
 import { formatDateTimeDDMMYYYY } from "@/lib/date-format";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TaskPickerModal, type PickerRecurrenceRule, type PickerTask } from "@/components/TaskPickerModal";
+import { clearPendingCommitment, setPendingCommitment } from "@/lib/pending-commitment";
 
 interface CommitmentCreatorRecurrenceRule extends PickerRecurrenceRule {
     created_at: string;
@@ -116,45 +117,39 @@ export function CommitmentCreatorClient({
         if (isSaving) return;
         setIsSaving(true);
 
-        // Navigate immediately — server calls run in the background
-        router.push("/dashboard/commitments");
+        const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setPendingCommitment({
+            id: pendingId,
+            name: name.trim(),
+            description: description.trim(),
+            start_date: startDate,
+            end_date: endDate,
+            status: activateNow ? "ACTIVE" : "DRAFT",
+            created_at: new Date().toISOString(),
+        });
+
+        // Navigate immediately; persistence runs in the background.
+        router.push("/commit");
 
         void (async () => {
-            const commitmentResult = await createCommitment({
+            const commitmentResult = await saveCommitment({
                 name,
                 description,
                 start_date: startDate,
                 end_date: endDate,
+                task_ids: linkedTaskIds,
+                recurrence_rule_ids: linkedRecurrenceRuleIds,
+                activate_now: activateNow,
             });
 
             if (!commitmentResult.success) {
+                clearPendingCommitment(pendingId);
                 toast.error(commitmentResult.error ?? "Failed to save commitment.");
+                router.refresh();
                 return;
             }
 
-            const commitmentId = commitmentResult.commitmentId;
-            const linksToCreate = [
-                ...linkedTaskIds.map((taskId) => ({ task_id: taskId })),
-                ...linkedRecurrenceRuleIds.map((ruleId) => ({ recurrence_rule_id: ruleId })),
-            ];
-
-            if (linksToCreate.length > 0) {
-                const linkResults = await Promise.all(linksToCreate.map((link) => addTaskLink(commitmentId, link)));
-                const firstLinkError = linkResults.find((result) => !result.success);
-                if (firstLinkError && !firstLinkError.success) {
-                    toast.error(firstLinkError.error ?? "Failed to link tasks.");
-                    return;
-                }
-            }
-
-            if (activateNow) {
-                const activateResult = await activateCommitment(commitmentId);
-                if (!activateResult.success) {
-                    toast.error(activateResult.error ?? "Failed to activate commitment.");
-                    return;
-                }
-            }
-
+            clearPendingCommitment(pendingId);
             toast.success(activateNow ? "Commitment activated." : "Commitment saved as draft.");
             router.refresh();
         })();
@@ -172,7 +167,7 @@ export function CommitmentCreatorClient({
         if (durationDays < 3) issues.push("Duration must be at least 3 days.");
         if (linkedCount === 0) issues.push("Link at least one task or recurring series.");
         return issues;
-    }, [name, description, startDate, endDate, today, linkedCount]);
+    }, [name, description, startDate, today, linkedCount, durationDays]);
 
     const canActivate = activateIssues.length === 0 && !isSaving;
 
@@ -367,11 +362,12 @@ export function CommitmentCreatorClient({
                 </div>
                 <div className={`flex shrink-0 items-center gap-3 ${shaking ? "animate-shake" : ""}`}>
                     <Button asChild className="border border-red-500/40 bg-red-900/20 text-red-200 hover:bg-red-900/30">
-                        <Link href="/dashboard/commitments">Cancel</Link>
+                        <Link href="/commit">Cancel</Link>
                     </Button>
                     <Button
                         type="button"
                         onClick={() => handleAction(false)}
+                        disabled={isSaving}
                         className="border border-orange-500/40 bg-orange-900/20 text-orange-200 hover:bg-orange-900/30"
                     >
                         {isSaving ? "Saving..." : "Save as Draft"}
@@ -379,9 +375,10 @@ export function CommitmentCreatorClient({
                     <Button
                         type="button"
                         onClick={() => handleAction(true)}
+                        disabled={isSaving || !canActivate}
                         className="bg-blue-600/30 border border-blue-500/40 text-blue-100 hover:bg-blue-600/40"
                     >
-                        Activate
+                        {isSaving ? "Saving..." : "Activate"}
                     </Button>
                 </div>
             </div>
@@ -400,3 +397,4 @@ export function CommitmentCreatorClient({
         </div>
     );
 }
+

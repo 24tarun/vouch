@@ -29,12 +29,12 @@ export function NavLinks({ vouchCount = 0, statsBadgeCount = 0 }: NavLinksProps)
 
     const links = useMemo(
         () => [
-            { href: "/dashboard", label: "Tasks" },
-            { href: "/dashboard/stats", label: "Stats", badge: statsBadgeCount > 0 ? statsBadgeCount : undefined },
-            { href: "/dashboard/friends", label: "Friends", badge: vouchCount > 0 ? vouchCount : undefined },
-            { href: "/dashboard/commitments", label: "Commit" },
-            { href: "/dashboard/ledger", label: "Ledger" },
-            { href: "/dashboard/settings", label: "Settings" },
+            { href: "/tasks", label: "Tasks" },
+            { href: "/stats", label: "Stats", badge: statsBadgeCount > 0 ? statsBadgeCount : undefined },
+            { href: "/friends", label: "Friends", badge: vouchCount > 0 ? vouchCount : undefined },
+            { href: "/commit", label: "Commit" },
+            { href: "/ledger", label: "Ledger" },
+            { href: "/settings", label: "Settings" },
         ],
         [statsBadgeCount, vouchCount]
     );
@@ -91,7 +91,7 @@ export function NavLinks({ vouchCount = 0, statsBadgeCount = 0 }: NavLinksProps)
         <div className="w-full overflow-hidden">
             <div className="grid w-full grid-cols-6 items-center justify-items-center px-1">
                 {links.map((link) => {
-                    const isActive = pathname === link.href || (link.href !== "/dashboard" && pathname.startsWith(link.href));
+                    const isActive = pathname === link.href || (link.href !== "/tasks" && pathname.startsWith(link.href));
 
 
                     return (
@@ -107,7 +107,7 @@ export function NavLinks({ vouchCount = 0, statsBadgeCount = 0 }: NavLinksProps)
                             onTouchStart={() => prefetchLink(link.href)}
                             onClick={() => haptics.light()}
                         >
-                            {link.href === "/dashboard/ledger" ? (
+                            {link.href === "/ledger" ? (
                                 <>
                                     <span className="sr-only">Ledger</span>
                                     <span
@@ -125,7 +125,7 @@ export function NavLinks({ vouchCount = 0, statsBadgeCount = 0 }: NavLinksProps)
                                         €
                                     </span>
                                 </>
-                            ) : link.href === "/dashboard/friends" ? (
+                            ) : link.href === "/friends" ? (
                                 <span
                                     aria-hidden
                                     className={`inline-flex items-center transition-all ${isActive ? "text-blue-100" : "text-white"}`}
@@ -140,7 +140,7 @@ export function NavLinks({ vouchCount = 0, statsBadgeCount = 0 }: NavLinksProps)
                                 >
                                     <Users className="h-5 w-5" />
                                 </span>
-                            ) : link.href === "/dashboard/settings" ? (
+                            ) : link.href === "/settings" ? (
                                 <>
                                     <span className="sr-only">Settings</span>
                                     <span

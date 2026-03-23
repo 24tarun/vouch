@@ -35,7 +35,7 @@ export function CompactStatsItem({
     onRowClick,
 }: CompactStatsItemProps) {
     const router = useRouter();
-    const detailPath = `/dashboard/tasks/${task.id}`;
+    const detailPath = `/tasks/${task.id}`;
 
     const statusColors: Record<string, string> = {
         CREATED: "text-blue-400",

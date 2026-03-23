@@ -94,6 +94,16 @@ export function CommitmentCard({
         });
     };
 
+    const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        const target = e.target as HTMLElement;
+        // Keep card toggle behavior for normal taps/clicks, but never toggle when
+        // the interaction is with editable/interactive controls.
+        if (target.closest("textarea, input, select, button, a, label, [role='button'], [role='link']")) {
+            return;
+        }
+        handleToggle();
+    };
+
     const handleDescriptionBlur = async () => {
         const trimmed = draftDescription.trim();
         if (trimmed === (commitment.description?.trim() ?? "")) return;
@@ -147,8 +157,8 @@ export function CommitmentCard({
 
     return (
         <div
-            className="group -mx-4 mb-2 px-4 py-8 transition-colors bg-slate-800/15 hover:bg-slate-800/30 cursor-pointer select-none"
-            onClick={handleToggle}
+            className="group -mx-4 mb-2 px-4 py-8 transition-colors bg-slate-800/15 hover:bg-slate-800/30 cursor-pointer"
+            onClick={handleCardClick}
         >
             <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_160px_230px] md:items-stretch">
                 {/* Left: name + status + description */}
@@ -168,7 +178,7 @@ export function CommitmentCard({
                         <textarea
                             ref={descriptionRef}
                             rows={1}
-                            className="mt-4 w-full resize-none overflow-hidden bg-transparent text-base leading-relaxed text-slate-300 outline-none cursor-text placeholder:italic placeholder:text-slate-500 focus:ring-1 focus:ring-slate-600/60 rounded px-1 -ml-1"
+                            className="mt-4 w-full resize-none overflow-hidden bg-transparent text-base leading-relaxed text-slate-300 outline-none cursor-text select-text placeholder:italic placeholder:text-slate-500 focus:ring-1 focus:ring-slate-600/60 rounded px-1 -ml-1"
                             value={draftDescription}
                             onChange={(e) => setDraftDescription(e.target.value)}
                             onBlur={handleDescriptionBlur}

@@ -8,7 +8,7 @@ import {
 } from "@/lib/constants";
 import { normalizeCurrency } from "@/lib/currency";
 import { normalizePomoDurationMinutes } from "@/lib/pomodoro";
-import DashboardClient from "@/app/dashboard/dashboard-client";
+import DashboardClient from "./dashboard-client";
 import { getCachedActiveTasksForUser } from "@/actions/tasks";
 import { getUserReputationScore } from "@/actions/reputation";
 import { BuildStamp } from "@/components/BuildStamp";

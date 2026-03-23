@@ -14,6 +14,10 @@ import { canOwnerTemporarilyDelete } from "@/lib/task-delete-window";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import { DEFAULT_POMO_DURATION_MINUTES } from "@/lib/constants";
 import { normalizePomoDurationMinutes } from "@/lib/pomodoro";
+import {
+    buildBeforeStartSubmissionMessage,
+    getTaskSubmissionWindowState,
+} from "@/lib/task-submission-window";
 
 interface TaskRowProps {
     task: Task;
@@ -53,6 +57,7 @@ export function TaskRow({
     const [subtasks, setSubtasks] = useState(task.subtasks || []);
     const [subtaskPendingIds, setSubtaskPendingIds] = useState<Set<string>>(new Set());
     const [isExpanded, setIsExpanded] = useState(false);
+    const [isMobileTrayOpen, setIsMobileTrayOpen] = useState(false);
     const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
     const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
     const [editingSubtaskTitle, setEditingSubtaskTitle] = useState("");
@@ -63,7 +68,26 @@ export function TaskRow({
         [task.status]
     );
     const deadline = new Date(task.deadline);
-    const isOverdue = deadline < new Date() && !isActuallyCompleted;
+    const deadlineLabel = Number.isNaN(deadline.getTime())
+        ? "Invalid date"
+        : `${deadline.toLocaleTimeString("en-GB", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        })} ${deadline.toLocaleDateString("en-GB", { day: "2-digit" })} ${deadline
+            .toLocaleDateString("en-GB", { month: "short" })
+            .toLowerCase()}`;
+    const submissionWindow = useMemo(
+        () => getTaskSubmissionWindowState({
+            startAtIso: task.google_event_start_at ?? null,
+            deadlineIso: task.deadline,
+            now: new Date(nowMs),
+        }),
+        [nowMs, task.deadline, task.google_event_start_at]
+    );
+    const isOverdue = submissionWindow.pastDeadline && !isActuallyCompleted;
+    const isBeforeStart = submissionWindow.beforeStart && !isActuallyCompleted;
+    const beforeStartMessage = buildBeforeStartSubmissionMessage(submissionWindow.startDate);
     const isTempTask = task.id.startsWith("temp-");
     const isParentActive = ["CREATED", "POSTPONED"].includes(task.status);
     const hasSubtasks = subtasks.length > 0;
@@ -84,6 +108,8 @@ export function TaskRow({
             ? "Stop the running pomodoro first"
             : hasIncompletePomoRequirement
                 ? `Log ${Math.ceil((requiredPomoSeconds - pomoTotalSeconds) / 60)} more focus minute(s) first`
+                : isBeforeStart
+                    ? beforeStartMessage
                 : "Mark complete";
     const canEditSubtasks = isParentActive && !isTempTask;
     const canDeleteWindowOpen = canOwnerTemporarilyDelete(task, nowMs);
@@ -110,6 +136,7 @@ export function TaskRow({
         isActuallyCompleted ||
         isCompleting ||
         isOverdue ||
+        isBeforeStart ||
         !onComplete ||
         hasIncompleteSubtasks ||
         hasIncompletePomoRequirement ||
@@ -135,6 +162,7 @@ export function TaskRow({
             isCompleting ||
             isActuallyCompleted ||
             isOverdue ||
+            isBeforeStart ||
             hasIncompleteSubtasks ||
             hasIncompletePomoRequirement ||
             hasRunningPomoForTask
@@ -356,7 +384,7 @@ export function TaskRow({
     };
 
     const currentStatusColor = statusColors[task.status] || "";
-    const detailPath = `/dashboard/tasks/${task.id}`;
+    const detailPath = `/tasks/${task.id}`;
     const shouldPrefetchDetail = PREFETCH_STATUSES.has(task.status);
 
     const prefetchTaskDetails = () => {
@@ -383,7 +411,7 @@ export function TaskRow({
             disabled={isCompleteActionDisabled}
             className={cn(
                 `${quickActionButtonClass} group flex items-center justify-center shrink-0`,
-                (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask) &&
+                (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask || isBeforeStart) &&
                 !isActuallyCompleted &&
                 "opacity-60 cursor-not-allowed"
             )}
@@ -505,7 +533,7 @@ export function TaskRow({
             {layoutVariant === "completed" ? (
                 <div
                     className={cn(
-                        "group flex items-center gap-3 py-3 border-b border-slate-800/50 last:border-0 hover:bg-slate-900/20 -mx-4 px-4 transition-colors",
+                        "group flex items-center gap-3 py-2 md:py-3 rounded-md hover:bg-slate-900/20 -mx-4 px-4 transition-colors",
                         isActuallyCompleted && "opacity-80"
                     )}
                     onMouseEnter={prefetchTaskDetails}
@@ -516,10 +544,10 @@ export function TaskRow({
                 >
                     <button
                         onClick={handleCheck}
-                        disabled={isActuallyCompleted || isCompleting || isOverdue || !onComplete || hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask}
+                        disabled={isActuallyCompleted || isCompleting || isOverdue || isBeforeStart || !onComplete || hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask}
                         className={cn(
                             "flex-shrink-0 h-10 w-10 p-0 flex items-center justify-center transition-all",
-                            (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask) &&
+                            (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask || isBeforeStart) &&
                             !isActuallyCompleted &&
                             "opacity-50 cursor-not-allowed"
                         )}
@@ -559,7 +587,7 @@ export function TaskRow({
                     <div className="shrink-0 flex items-center gap-2 text-xs">
                         <div className={cn("flex items-center gap-1.5", isOverdue ? "text-red-500 font-bold" : "text-slate-400")}>
                             <span suppressHydrationWarning className="whitespace-nowrap">
-                                {`${deadline.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${deadline.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}`}
+                                {deadlineLabel}
                             </span>
                         </div>
 
@@ -636,7 +664,7 @@ export function TaskRow({
             ) : (
                 <div
                     className={cn(
-                        "group py-3 border-b border-slate-800/50 last:border-0 hover:bg-slate-900/20 -mx-4 px-4 transition-colors",
+                        "group py-2 md:py-3 rounded-md hover:bg-slate-900/20 -mx-4 px-4 transition-colors",
                         isActuallyCompleted && "opacity-80"
                     )}
                     onMouseEnter={prefetchTaskDetails}
@@ -670,15 +698,30 @@ export function TaskRow({
                         </div>
                         <div className="shrink-0 flex items-center gap-2">
                             <span suppressHydrationWarning className={cn("text-xs whitespace-nowrap", isOverdue ? "text-red-500 font-bold" : "text-slate-400")}>
-                                {`${deadline.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${deadline.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}`}
+                                {deadlineLabel}
                             </span>
                             {renderActiveQuickActions(false)}
                         </div>
                     </div>
 
                     <div className="md:hidden">
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0 flex items-center gap-1.5 overflow-hidden">
+                        {/* Single tappable row: circle + title + deadline */}
+                        <div
+                            className="flex items-center gap-2 cursor-pointer select-none"
+                            onClick={(e) => {
+                                if ((e.target as HTMLElement).closest("button,a")) return;
+                                setIsMobileTrayOpen((prev) => {
+                                    const next = !prev;
+                                    if (!next && isExpanded) {
+                                        setIsExpanded(false);
+                                        try { window.localStorage.removeItem(subtaskExpandStorageKey); } catch { }
+                                    }
+                                    return next;
+                                });
+                            }}
+                        >
+                            {renderCheckQuickAction()}
+                            <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
                                 <p
                                     className={cn(
                                         "text-sm font-medium truncate",
@@ -700,12 +743,91 @@ export function TaskRow({
                                 )}
                             </div>
                             <span suppressHydrationWarning className={cn("text-xs shrink-0 whitespace-nowrap", isOverdue ? "text-red-500 font-bold" : "text-slate-400")}>
-                                {`${deadline.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${deadline.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}`}
+                                {deadlineLabel}
                             </span>
                         </div>
 
-                        <div className="mt-2 flex items-center justify-center gap-2">
-                            {renderActiveQuickActions(true)}
+                        {/* Animated action tray */}
+                        <div className={cn(
+                            "overflow-hidden transition-[max-height] duration-200 ease-in-out",
+                            isMobileTrayOpen ? "max-h-[56px]" : "max-h-0"
+                        )}>
+                            <div className="flex items-center justify-around pt-1 pb-2 pl-10">
+                                <button
+                                    type="button"
+                                    onClick={() => onAttachProof?.(task)}
+                                    disabled={!canAttachProof}
+                                    className={cn(
+                                        "h-10 w-10 flex items-center justify-center transition-colors",
+                                        canAttachProof ? "text-blue-300" : "text-slate-600 cursor-not-allowed"
+                                    )}
+                                    aria-label="Attach proof"
+                                    title={hasProofAttached ? "Proof attached" : (requiresProofForCompletion ? "Attach proof (required)" : "Attach proof (optional)")}
+                                >
+                                    <Camera className="h-[18px] w-[18px]" />
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={handlePostpone}
+                                    disabled={!canPostpone}
+                                    className={cn(
+                                        "h-10 w-10 flex items-center justify-center transition-colors",
+                                        canPostpone ? "text-amber-300" : "text-slate-600 cursor-not-allowed"
+                                    )}
+                                    aria-label="Postpone task"
+                                    title={canPostpone ? "Postpone deadline (1x only)" : "Postpone unavailable"}
+                                >
+                                    <TriangleAlert className="h-[18px] w-[18px]" />
+                                </button>
+
+                                <PomoButton
+                                    taskId={task.id}
+                                    variant="icon"
+                                    defaultDurationMinutes={normalizedDefaultPomoDuration}
+                                    className="h-10 w-10 p-0 justify-center text-cyan-300 disabled:text-slate-600 [&_svg]:h-[18px] [&_svg]:w-[18px]"
+                                />
+
+                                <button
+                                    type="button"
+                                    onClick={handleDelete}
+                                    disabled={!canDelete}
+                                    className={cn(
+                                        "h-10 w-10 flex items-center justify-center transition-colors",
+                                        canDelete ? "text-red-400" : "text-slate-600 cursor-not-allowed"
+                                    )}
+                                    aria-label="Delete task"
+                                    title={canDelete
+                                        ? "Delete task (available for 5 minutes after creation)"
+                                        : isTempTask ? "Saving task..." : "Delete available only within 5 minutes of creation"}
+                                >
+                                    <Trash2 className="h-[18px] w-[18px]" />
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={handleExpandToggle}
+                                    className="h-10 w-10 flex items-center justify-center text-slate-400 js-subtask-toggle"
+                                    aria-label={isExpanded ? "Collapse subtasks" : (hasSubtasks ? "Expand subtasks" : "Add subtasks")}
+                                    title={isExpanded ? "Collapse subtasks" : (hasSubtasks ? "Expand subtasks" : "Add subtasks")}
+                                >
+                                    {isExpanded
+                                        ? <ChevronDown className="h-[18px] w-[18px]" />
+                                        : (hasSubtasks ? <ChevronRight className="h-[18px] w-[18px]" /> : <Plus className="h-[18px] w-[18px]" />)
+                                    }
+                                </button>
+
+                                <Link
+                                    href={detailPath}
+                                    prefetch
+                                    className="h-10 w-10 flex items-center justify-center text-slate-400"
+                                    aria-label="Open task"
+                                    title="Open task"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <ExternalLink className="h-[18px] w-[18px]" />
+                                </Link>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -717,9 +839,17 @@ export function TaskRow({
                 </div>
             )}
 
-            {isExpanded && (
+            <div
+                className={cn(
+                    "grid overflow-hidden transition-[grid-template-rows,opacity,margin-top,margin-bottom] duration-250 ease-out",
+                    isExpanded
+                        ? "grid-rows-[1fr] opacity-100 mt-1 mb-3"
+                        : "grid-rows-[0fr] opacity-0 mt-0 mb-0"
+                )}
+            >
+                <div className="overflow-hidden">
                 <div
-                    className="ml-8 mr-3 mb-3 mt-1 border-l border-slate-800/70 pl-3 space-y-1"
+                    className="ml-8 mr-3 border-l border-slate-800/70 pl-3 space-y-1"
                     onBlur={(e) => {
                         // If focus is still within this specific task's subtask section, don't close
                         if (e.relatedTarget && (e.currentTarget.contains(e.relatedTarget as Node) || (e.relatedTarget as HTMLElement).closest?.(".js-subtask-toggle"))) {
@@ -838,7 +968,6 @@ export function TaskRow({
                                         handleAddSubtask();
                                     }
                                 }}
-                                autoFocus
                                 placeholder="Add subtask…"
                                 ref={newSubtaskInputRef}
                                 className="flex-1 min-w-0 bg-transparent border-b border-slate-700/60 text-base md:text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-slate-500 py-1"
@@ -846,8 +975,10 @@ export function TaskRow({
                         </div>
                     )
                     }
+                    </div>
                 </div>
-            )}
+            </div>
         </div>
     );
 }
+

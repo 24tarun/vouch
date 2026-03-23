@@ -9,7 +9,7 @@ export default async function OnboardingPage() {
     } = await supabase.auth.getUser();
 
     if (user) {
-        redirect("/dashboard");
+        redirect("/tasks");
     }
 
     return <MobileOnboarding />;

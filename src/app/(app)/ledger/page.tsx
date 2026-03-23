@@ -146,7 +146,7 @@ export default async function LedgerPage() {
                                         </Badge>
                                         {taskId && (
                                             <Link
-                                                href={`/dashboard/tasks/${taskId}`}
+                                                href={`/tasks/${taskId}`}
                                                 prefetch
                                                 className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors inline-flex items-center justify-center"
                                                 aria-label="Open task"

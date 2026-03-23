@@ -100,9 +100,9 @@ async function autoEndLingeringPomoSession(
 
     if (!updatedSession) return;
     if (isStrictSession) {
-        revalidatePath("/dashboard");
+        revalidatePath("/tasks");
         if (session.task_id) {
-            revalidatePath(`/dashboard/tasks/${session.task_id}`);
+            revalidatePath(`/tasks/${session.task_id}`);
         }
         return;
     }
@@ -135,8 +135,8 @@ async function autoEndLingeringPomoSession(
         console.error("Failed to log auto-ended pomo event:", eventError);
     }
 
-    revalidatePath("/dashboard");
-    revalidatePath(`/dashboard/tasks/${session.task_id}`);
+    revalidatePath("/tasks");
+    revalidatePath(`/tasks/${session.task_id}`);
 }
 
 export async function signIn(formData: FormData) {
@@ -186,17 +186,25 @@ export async function signIn(formData: FormData) {
     }
 
     revalidatePath("/", "layout");
-    redirect("/dashboard");
+    redirect("/tasks");
 }
 
 export async function signUp(formData: FormData) {
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
+    const privacyPolicyAccepted = formData.get("privacyPolicyAccepted");
+    const privacyPolicyClicked = formData.get("privacyPolicyClicked");
     const supabase = await createClient();
 
     const parsedSignUp = signUpSchema.safeParse({ email, password });
     if (!parsedSignUp.success) {
         return { error: parsedSignUp.error.issues[0].message };
+    }
+    if (privacyPolicyClicked !== "true") {
+        return { error: "Please open the Privacy Policy before signing up." };
+    }
+    if (privacyPolicyAccepted !== "true") {
+        return { error: "You must accept the Privacy Policy to create an account." };
     }
 
     const { limited: signUpLimited } = await checkRateLimit(signupLimiter, `signup:${email}`);
@@ -213,6 +221,7 @@ export async function signUp(formData: FormData) {
             emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
             data: {
                 username: email.split("@")[0],
+                privacy_policy_accepted_at: new Date().toISOString(),
             },
         },
     });
@@ -678,10 +687,10 @@ export async function updateUserDefaults(formData: FormData) {
         revalidateTag(pendingVoucherRequestsTag(voucherId), "max");
     }
 
-    revalidatePath("/dashboard/settings");
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/ledger");
-    revalidatePath("/dashboard/friends");
+    revalidatePath("/settings");
+    revalidatePath("/tasks");
+    revalidatePath("/ledger");
+    revalidatePath("/friends");
     return { success: true };
 }
 
@@ -704,8 +713,8 @@ export async function setDashboardTipsHidden(hidden: boolean) {
         return { error: error.message };
     }
 
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/settings");
+    revalidatePath("/tasks");
+    revalidatePath("/settings");
     return { success: true };
 }
 
@@ -747,6 +756,6 @@ export async function updateUsername(formData: FormData) {
         return { error: error.message };
     }
 
-    revalidatePath("/dashboard/settings");
+    revalidatePath("/settings");
     return { success: true };
 }

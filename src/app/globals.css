@@ -170,6 +170,12 @@
   }
 }
 
+/* Task creator — amber calendar picker icon */
+.deadline-input::-webkit-calendar-picker-indicator {
+    filter: brightness(0) saturate(100%) invert(84%) sepia(52%) saturate(749%) hue-rotate(332deg) brightness(103%);
+    cursor: pointer;
+}
+
 @layer utilities {
   .pt-safe {
     padding-top: env(safe-area-inset-top);

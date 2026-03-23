@@ -15,6 +15,7 @@ import { setDashboardTipsHidden } from "@/actions/auth";
 import { getUserReputationScore } from "@/actions/reputation";
 import { DashboardHeaderActions, type DashboardSortMode } from "@/components/DashboardHeaderActions";
 import { TaskInput, type TaskInputCreatePayload } from "@/components/TaskInput";
+import { FloatingTaskCreator } from "@/components/task-creator-variants/FloatingTaskCreator";
 import { PostponeDeadlineDialog } from "@/components/PostponeDeadlineDialog";
 import { TaskRow } from "@/components/TaskRow";
 import { CollapsibleCompletedList } from "@/components/CollapsibleCompletedList";
@@ -37,6 +38,10 @@ import { purgeLocalProofMedia } from "@/lib/proof-media-warmup";
 import { subscribeRealtimeTaskChanges } from "@/lib/realtime-task-events";
 import { isIncomingNewer, patchTaskScalars } from "@/lib/tasks-realtime-patch";
 import { getVoucherResponseDeadlineLocal } from "@/lib/voucher-deadline";
+import {
+    buildBeforeStartSubmissionMessage,
+    getTaskSubmissionWindowState,
+} from "@/lib/task-submission-window";
 
 const MAX_COMPLETED_TASKS = 10;
 const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
@@ -70,25 +75,9 @@ function isDashboardActiveStatus(status: Task["status"]): boolean {
     return status === "CREATED" || status === "POSTPONED";
 }
 
-function isTaskCompletedToday(task: Task, reference: Date = new Date()): boolean {
-    const completionTimestamp = task.marked_completed_at || task.updated_at;
-    const completedAt = new Date(completionTimestamp);
-    if (Number.isNaN(completedAt.getTime())) return false;
-
-    const startOfDay = new Date(reference);
-    startOfDay.setHours(0, 0, 0, 0);
-    const startOfNextDay = new Date(startOfDay);
-    startOfNextDay.setDate(startOfNextDay.getDate() + 1);
-
-    return completedAt >= startOfDay && completedAt < startOfNextDay;
-}
-
 function splitTasks(tasks: Task[]) {
     const active = tasks.filter((task) => isDashboardActiveStatus(task.status));
-    const completed = tasks.filter((task) =>
-        !isDashboardActiveStatus(task.status) &&
-        isTaskCompletedToday(task)
-    );
+    const completed = tasks.filter((task) => !isDashboardActiveStatus(task.status));
 
     return { active, completed };
 }
@@ -195,6 +184,7 @@ export default function DashboardClient({
     const [tipsHidden, setTipsHidden] = useState(initialHideTips);
     const [isTogglingTips, setIsTogglingTips] = useState(false);
     const [sortMode, setSortMode] = useState<DashboardSortMode>("deadline_asc");
+    const [floatingCreatorOpen, setFloatingCreatorOpen] = useState(false);
     const [liveReputationScore, setLiveReputationScore] = useState<ReputationScoreData | null>(reputationScore);
     const proofInputRef = useRef<HTMLInputElement>(null);
     const proofByTaskIdRef = useRef<Record<string, TaskProofDraft>>({});
@@ -434,18 +424,11 @@ export default function DashboardClient({
                 return;
             }
 
-            if (isTaskCompletedToday(patchedTask)) {
-                const mergedCompletedTasks = [patchedTask, ...nextCompletedTasks].slice(0, MAX_COMPLETED_TASKS);
-                activeTasksRef.current = nextActiveTasks;
-                completedTasksRef.current = mergedCompletedTasks;
-                setActiveTasks(nextActiveTasks);
-                setCompletedTasks(mergedCompletedTasks);
-            } else {
-                activeTasksRef.current = nextActiveTasks;
-                completedTasksRef.current = nextCompletedTasks;
-                setActiveTasks(nextActiveTasks);
-                setCompletedTasks(nextCompletedTasks);
-            }
+            const mergedCompletedTasks = [patchedTask, ...nextCompletedTasks].slice(0, MAX_COMPLETED_TASKS);
+            activeTasksRef.current = nextActiveTasks;
+            completedTasksRef.current = mergedCompletedTasks;
+            setActiveTasks(nextActiveTasks);
+            setCompletedTasks(mergedCompletedTasks);
 
             clearTaskTransientState(taskId);
 
@@ -705,6 +688,19 @@ export default function DashboardClient({
 
     const handleCompleteTaskOptimistic = async (task: Task) => {
         if (completingTaskIds.has(task.id)) return;
+        const submissionWindow = getTaskSubmissionWindowState({
+            startAtIso: task.google_event_start_at ?? null,
+            deadlineIso: task.deadline,
+        });
+        if (submissionWindow.beforeStart) {
+            toast.error(buildBeforeStartSubmissionMessage(submissionWindow.startDate));
+            return;
+        }
+        if (submissionWindow.pastDeadline) {
+            toast.error("Deadline has passed");
+            return;
+        }
+
         const isSelfVouched = task.voucher_id === userId;
         const requiresProofForCompletion =
             Boolean(task.requires_proof) &&
@@ -971,6 +967,30 @@ export default function DashboardClient({
                 defaultEventDurationMinutes={defaultEventDurationMinutes}
                 selfUserId={userId}
                 onCreateTaskOptimistic={handleCreateTaskOptimistic}
+            />
+
+            {/* Mobile FAB */}
+            <button
+                onClick={() => setFloatingCreatorOpen(true)}
+                aria-label="Create task"
+                className="md:hidden fixed bottom-20 right-8 h-14 w-14 rounded-full flex items-center justify-center transition-all active:scale-95 z-30 backdrop-blur-sm"
+                style={{
+                    border: "1px solid rgba(52, 211, 153, 0.25)",
+                    background: "rgba(52, 211, 153, 0.06)",
+                }}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" style={{ color: "#34d399", filter: "drop-shadow(0 0 8px rgba(52, 211, 153, 0.9)) drop-shadow(0 0 16px rgba(52, 211, 153, 0.5))" }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+            </button>
+
+            {/* Mobile floating task creator */}
+            <FloatingTaskCreator
+                isOpen={floatingCreatorOpen}
+                onClose={() => setFloatingCreatorOpen(false)}
+                friends={friends}
+                selfUserId={userId}
+                defaultFailureCost={parseFloat(defaultFailureCostEuros) || 1}
             />
             {!tipsHidden && (
                 <div className="space-y-1 px-1 text-[10px] text-slate-400 font-mono uppercase tracking-wider">

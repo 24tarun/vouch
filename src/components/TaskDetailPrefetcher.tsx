@@ -78,7 +78,7 @@ export function TaskDetailPrefetcher({
         for (const taskId of detailPrefetchIds) {
             if (prefetchedDetailTaskIds.has(taskId)) continue;
             prefetchedDetailTaskIds.add(taskId);
-            void router.prefetch(`/dashboard/tasks/${taskId}`);
+            void router.prefetch(`/tasks/${taskId}`);
         }
     }, [detailPrefetchIds, router]);
 

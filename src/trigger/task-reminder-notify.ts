@@ -174,9 +174,9 @@ async function processDueTaskReminders(
                             <h1>Task reminder</h1>
                             <p>Hi ${owner?.username || "there"},</p>
                             <p>This is your reminder for <strong>${task.title}</strong>.</p>
-                            <p><a href="${appUrl}/dashboard/tasks/${task.id}">Open task details</a></p>
+                            <p><a href="${appUrl}/tasks/${task.id}">Open task details</a></p>
                         `,
-                        url: `/dashboard/tasks/${task.id}`,
+                        url: `/tasks/${task.id}`,
                         tag: `task-reminder-${reminder.id}`,
                         data: {
                             taskId: task.id,
@@ -199,7 +199,7 @@ async function processDueTaskReminders(
                         text,
                         email: false,
                         push: true,
-                        url: `/dashboard/tasks/${task.id}`,
+                        url: `/tasks/${task.id}`,
                         tag: `deadline-reminder-${reminder.id}`,
                         data: {
                             taskId: task.id,

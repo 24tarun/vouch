@@ -139,10 +139,10 @@ export async function voucherAccept(taskId: string) {
     // to path revalidation and realtime-triggered refresh to avoid stale server payloads.
     invalidateOwnerActiveTasksCache((task as any).user_id);
     invalidatePendingVoucherRequestsCache((user as any).id);
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/stats");
-    revalidatePath("/dashboard/friends");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/stats");
+    revalidatePath("/friends");
+    revalidatePath(`/tasks/${taskId}`);
     return { success: true };
 }
 
@@ -237,7 +237,7 @@ export async function voucherDeleteTask(taskId: string) {
           <p>Your voucher deleted the task: <strong>${(task as any).title}</strong>.</p>
           <p>If this was unexpected, please reach out to your voucher.</p>
           <br/>
-          <a href="${process.env.NEXT_PUBLIC_APP_URL || ""}/dashboard">Go to Vouch</a>
+          <a href="${process.env.NEXT_PUBLIC_APP_URL || ""}/tasks">Go to Vouch</a>
         `,
         });
     }
@@ -247,9 +247,9 @@ export async function voucherDeleteTask(taskId: string) {
     // to path revalidation and realtime-triggered refresh to avoid stale server payloads.
     invalidateOwnerActiveTasksCache((task as any).user_id);
     invalidatePendingVoucherRequestsCache((user as any).id);
-    revalidatePath("/dashboard/friends");
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/stats");
+    revalidatePath("/friends");
+    revalidatePath("/tasks");
+    revalidatePath("/stats");
 
     return { success: true };
 }
@@ -334,9 +334,9 @@ export async function voucherDeny(taskId: string) {
                 <p>Hi ${(task as any).user.username || "there"},</p>
                 <p>Your voucher denied <strong>${(task as any).title}</strong>.</p>
                 <p>Failure cost was applied to your ledger.</p>
-                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/tasks/${taskId}">Open task</a></p>
+                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/tasks/${taskId}">Open task</a></p>
             `,
-            url: `/dashboard/tasks/${taskId}`,
+            url: `/tasks/${taskId}`,
             tag: `task-denied-${taskId}`,
             data: { taskId, kind: "TASK_DENIED" },
         });
@@ -349,10 +349,10 @@ export async function voucherDeny(taskId: string) {
     // to path revalidation and realtime-triggered refresh to avoid stale server payloads.
     invalidateOwnerActiveTasksCache((task as any).user_id);
     invalidatePendingVoucherRequestsCache((user as any).id);
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/stats");
-    revalidatePath("/dashboard/friends");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/stats");
+    revalidatePath("/friends");
+    revalidatePath(`/tasks/${taskId}`);
     return { success: true };
 }
 
@@ -431,9 +431,9 @@ export async function voucherRequestProof(taskId: string) {
                 <h1>Proof requested</h1>
                 <p>Hi ${owner.username || "there"},</p>
                 <p>${voucherDisplayName} has asked for proof for <strong>${(task as any).title}</strong>.</p>
-                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/tasks/${taskId}">Open task</a></p>
+                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/tasks/${taskId}">Open task</a></p>
             `,
-            url: `/dashboard/tasks/${taskId}`,
+            url: `/tasks/${taskId}`,
             tag: `proof-request-${taskId}`,
             data: { taskId, kind: "PROOF_REQUESTED" },
         });
@@ -444,10 +444,10 @@ export async function voucherRequestProof(taskId: string) {
     // to path revalidation and realtime-triggered refresh to avoid stale server payloads.
     invalidateOwnerActiveTasksCache((task as any).user_id);
     invalidatePendingVoucherRequestsCache(user.id);
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/stats");
-    revalidatePath("/dashboard/friends");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/stats");
+    revalidatePath("/friends");
+    revalidatePath(`/tasks/${taskId}`);
     return { success: true };
 }
 
@@ -531,9 +531,9 @@ export async function authorizeRectify(taskId: string) {
     await enqueueGoogleCalendarUpsert((task as any).user_id, taskId);
     await notifyCommitmentRevivedIfNeeded(taskId, (task as any).recurrence_rule_id ?? null);
 
-    revalidatePath("/dashboard/friends");
-    revalidatePath("/dashboard/commitments");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/friends");
+    revalidatePath("/commit");
+    revalidatePath(`/tasks/${taskId}`);
     return { success: true };
 }
 
@@ -928,9 +928,9 @@ export async function escalateToHumanVoucher(
                 <p>Hi ${newVoucher.username || "there"},</p>
                 <p><strong>${(task as any).user?.username || "A friend"}</strong> is appealing the Orca's denial of <strong>"${(task as any).title}"</strong>.</p>
                 <p>The Orca's denial reason can be found in the task details. Your decision will be final.</p>
-                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/voucher">Review appealed task</a></p>
+                <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/voucher">Review appealed task</a></p>
             `,
-            url: "/dashboard/voucher",
+            url: "/voucher",
             tag: `task-escalated-${taskId}`,
             data: { taskId, kind: "TASK_ESCALATED_TO_VOUCHER" },
         });
@@ -939,9 +939,9 @@ export async function escalateToHumanVoucher(
     // Invalidate caches
     invalidateOwnerActiveTasksCache((task as any).user_id);
     invalidatePendingVoucherRequestsCache((newVoucherId as any));
-    revalidatePath("/dashboard");
-    revalidatePath("/dashboard/voucher");
-    revalidatePath(`/dashboard/tasks/${taskId}`);
+    revalidatePath("/tasks");
+    revalidatePath("/voucher");
+    revalidatePath(`/tasks/${taskId}`);
 
     return { success: true };
 }

@@ -130,7 +130,7 @@ export const monthlySettlement = schedules.task({
 
                             <div style="margin-top: 40px; background: #f8fafc; padding: 24px; border-radius: 8px; text-align: center;">
                                 <p style="margin: 0 0 16px 0; font-size: 14px; color: #475569;">Please proceed to settle your commitment to charity.</p>
-                                <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard/ledger" style="display: inline-block; background: #6366f1; color: white; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">Settle My Ledger</a>
+                                <a href="${process.env.NEXT_PUBLIC_APP_URL}/ledger" style="display: inline-block; background: #6366f1; color: white; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px;">Settle My Ledger</a>
                             </div>
 
                             <p style="font-size: 12px; color: #94a3b8; text-align: center; margin-top: 40px;">
@@ -158,7 +158,7 @@ export const monthlySettlement = schedules.task({
 
                             <p style="color: #64748b; font-size: 14px;">Your commitment to consistency is paying off. Let's keep the momentum going!</p>
 
-                            <a href="${process.env.NEXT_PUBLIC_APP_URL}/dashboard" style="display: inline-block; margin-top: 24px; background: #6366f1; color: white; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold;">New Month, New Goals</a>
+                            <a href="${process.env.NEXT_PUBLIC_APP_URL}/tasks" style="display: inline-block; margin-top: 24px; background: #6366f1; color: white; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: bold;">New Month, New Goals</a>
                         </div>
                     `,
                 });

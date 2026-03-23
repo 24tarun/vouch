@@ -219,16 +219,16 @@ async function approveTask(taskId: string, task: any, reason?: string): Promise<
     userId: task.user.id,
     title: "Task approved",
     text: `Orca approved your proof for "${task.title}".`,
-    url: `/dashboard/tasks/${taskId}`,
+    url: `/tasks/${taskId}`,
     tag: `task-approved-${taskId}`,
     data: { taskId, kind: "TASK_AI_APPROVED" },
   });
 
   // Invalidate caches
   revalidateTag(activeTasksTag(task.user_id), "max");
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/stats");
-  revalidatePath(`/dashboard/tasks/${taskId}`);
+  revalidatePath("/tasks");
+  revalidatePath("/stats");
+  revalidatePath(`/tasks/${taskId}`);
 }
 
 /**
@@ -313,16 +313,16 @@ async function denyTask(
     text: isFinal
       ? `Orca denied your proof for "${task.title}". Failure cost applied.`
       : `Orca denied your proof for "${task.title}". ${attemptsRemaining} attempt${attemptsRemaining !== 1 ? "s" : ""} left.`,
-    url: `/dashboard/tasks/${taskId}`,
+    url: `/tasks/${taskId}`,
     tag: isFinal ? `task-denied-final-${taskId}` : `task-denied-resubmit-${taskId}`,
     data: { taskId, kind: isFinal ? "TASK_AI_DENIED_FINAL" : "TASK_AI_DENIED_RESUBMIT" },
   });
 
   // Invalidate caches
   revalidateTag(activeTasksTag(task.user_id), "max");
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/stats");
-  revalidatePath(`/dashboard/tasks/${taskId}`);
+  revalidatePath("/tasks");
+  revalidatePath("/stats");
+  revalidatePath(`/tasks/${taskId}`);
 }
 
 /**
@@ -385,9 +385,9 @@ async function failTask(
         <h1>Orca has decided your fate</h1>
         <p>Hi ${task.user.username || "there"},</p>
         <p><strong>${reason}</strong></p>
-        <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/tasks/${taskId}">View task</a></p>
+        <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/tasks/${taskId}">View task</a></p>
       `,
-      url: `/dashboard/tasks/${taskId}`,
+      url: `/tasks/${taskId}`,
       tag: `task-failed-${taskId}`,
       data: { taskId, kind: "TASK_FAILED" },
     });
@@ -395,9 +395,9 @@ async function failTask(
 
   // Invalidate caches
   revalidateTag(activeTasksTag(task.user_id), "max");
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/stats");
-  revalidatePath(`/dashboard/tasks/${taskId}`);
+  revalidatePath("/tasks");
+  revalidatePath("/stats");
+  revalidatePath(`/tasks/${taskId}`);
 }
 
 /**
@@ -423,9 +423,9 @@ async function sendEvaluationErrorNotification(
       <p>Hi ${task.user.username || "there"},</p>
       <p>While reviewing your proof for <strong>${task.title}</strong>, Orca encountered a technical issue.</p>
       <p>Your task is still awaiting review. Please try resubmitting your proof, or escalate to a friend for a second opinion.</p>
-      <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/tasks/${task.id}">View task</a></p>
+      <p><a href="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/tasks/${task.id}">View task</a></p>
     `,
-    url: `/dashboard/tasks/${task.id}`,
+    url: `/tasks/${task.id}`,
     tag: `task-eval-error-${task.id}`,
     data: { taskId: task.id, kind: "TASK_EVAL_ERROR" },
   });

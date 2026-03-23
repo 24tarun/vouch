@@ -3,10 +3,10 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 function sanitizeNextPath(rawNext: string | null): string {
-    if (!rawNext) return "/dashboard";
-    if (!rawNext.startsWith("/")) return "/dashboard";
-    if (rawNext.startsWith("//")) return "/dashboard";
-    if (rawNext.startsWith("/\\")) return "/dashboard";
+    if (!rawNext) return "/tasks";
+    if (!rawNext.startsWith("/")) return "/tasks";
+    if (rawNext.startsWith("//")) return "/tasks";
+    if (rawNext.startsWith("/\\")) return "/tasks";
     return rawNext;
 }
 
