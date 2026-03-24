@@ -51,6 +51,10 @@ import { isValidPomoDurationMinutes } from "@/lib/pomodoro";
 import { normalizeProofTimestampText } from "@/lib/proof-timestamp";
 import { aiEvaluationLimiter, checkRateLimit } from "@/lib/rate-limit";
 import {
+    canPostponeDailyRecurringTaskToDeadline,
+    shouldRestrictDailyPostponeToSameRuleDay,
+} from "@/lib/postpone-daily-recurrence";
+import {
     getTaskSubmissionWindowState,
     TASK_SUBMISSION_BEFORE_START_ERROR,
 } from "@/lib/task-submission-window";
@@ -211,32 +215,6 @@ function parseAndValidateFutureDeadline(rawDeadline: string): { deadline?: Date;
     }
 
     return { deadline: parsedDeadline };
-}
-
-export function shouldRestrictDailyPostponeToSameRuleDay(ruleConfig: unknown): boolean {
-    if (!ruleConfig || typeof ruleConfig !== "object") return false;
-    const frequency = String((ruleConfig as { frequency?: unknown }).frequency ?? "").toUpperCase();
-    return frequency === "DAILY";
-}
-
-export function canPostponeDailyRecurringTaskToDeadline(
-    currentDeadline: Date,
-    newDeadline: Date,
-    recurrenceTimeZone?: string | null
-): boolean {
-    const safeTimeZone =
-        typeof recurrenceTimeZone === "string" && isValidTimeZone(recurrenceTimeZone)
-            ? recurrenceTimeZone
-            : "UTC";
-
-    const currentDay = getDatePartsInTimeZone(currentDeadline, safeTimeZone);
-    const nextDay = getDatePartsInTimeZone(newDeadline, safeTimeZone);
-
-    return (
-        currentDay.year === nextDay.year &&
-        currentDay.month === nextDay.month &&
-        currentDay.day === nextDay.day
-    );
 }
 
 function getDefaultTaskDeadline(): Date {

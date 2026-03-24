@@ -1,18 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import * as taskActionsModule from "../../src/actions/tasks";
-
-const {
+import {
     canPostponeDailyRecurringTaskToDeadline,
     shouldRestrictDailyPostponeToSameRuleDay,
-} = ((taskActionsModule as { default?: unknown }).default ?? taskActionsModule) as {
-    canPostponeDailyRecurringTaskToDeadline: (
-        currentDeadline: Date,
-        newDeadline: Date,
-        recurrenceTimeZone?: string | null
-    ) => boolean;
-    shouldRestrictDailyPostponeToSameRuleDay: (ruleConfig: unknown) => boolean;
-};
+} from "../../src/lib/postpone-daily-recurrence";
 
 test("daily recurrence allows postponing within the same rule-local day", () => {
     const currentDeadline = new Date("2026-03-24T09:00:00.000Z");
