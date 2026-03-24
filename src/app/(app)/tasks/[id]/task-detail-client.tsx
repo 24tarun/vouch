@@ -21,7 +21,7 @@ import {
 } from "@/actions/tasks";
 import { escalateToHumanVoucher } from "@/actions/voucher";
 import { Button } from "@/components/ui/button";
-import { Camera, Check, ChevronDown, Plus, Repeat, Trash2, X } from "lucide-react";
+import { Camera, Check, Plus, Repeat, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -45,7 +45,6 @@ import type { TaskWithRelations, TaskEvent } from "@/lib/types";
 import { PomoButton } from "@/components/ui/PomoButton";
 import { localDateTimeToIso } from "@/lib/datetime-local";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
-import { HardRefreshButton } from "@/components/HardRefreshButton";
 import { usePomodoro } from "@/components/PomodoroProvider";
 import { canOwnerTemporarilyDelete } from "@/lib/task-delete-window";
 import { MAX_SUBTASKS_PER_TASK } from "@/lib/constants";
@@ -150,8 +149,8 @@ export default function TaskDetailClient({
     const [nowMs, setNowMs] = useState(() => Date.now());
     const [subtasks, setSubtasks] = useState(task.subtasks || []);
     const [reminders, setReminders] = useState(sortTaskReminders(task.reminders));
-    const [remindersSectionOpen, setRemindersSectionOpen] = useState(true);
-    const [subtasksSectionOpen, setSubtasksSectionOpen] = useState(true);
+    const [remindersSectionOpen, setRemindersSectionOpen] = useState(false);
+    const [subtasksSectionOpen, setSubtasksSectionOpen] = useState(false);
     const [newReminderLocal, setNewReminderLocal] = useState("");
     const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
     const [subtaskError, setSubtaskError] = useState<string | null>(null);
@@ -207,6 +206,20 @@ export default function TaskDetailClient({
     const formattedFailureCost = formatCurrencyFromCents(taskState.failure_cost_cents, ownerCurrency);
     const uniformActionButtonClass = "h-9 px-4 text-[12px] leading-none whitespace-nowrap";
     const activeRowActionButtonClass = "h-12 px-5 text-[13px] leading-none whitespace-nowrap";
+    const handleToggleSubtasksSection = () => {
+        setSubtasksSectionOpen((prev) => {
+            const next = !prev;
+            if (next) setRemindersSectionOpen(false);
+            return next;
+        });
+    };
+    const handleToggleRemindersSection = () => {
+        setRemindersSectionOpen((prev) => {
+            const next = !prev;
+            if (next) setSubtasksSectionOpen(false);
+            return next;
+        });
+    };
 
     // AI Voucher resubmit state
     const isAiVouched = taskState.voucher_id === ORCA_PROFILE_ID;
@@ -1669,13 +1682,13 @@ export default function TaskDetailClient({
             <div className="td-rise td-d1 relative pt-2">
                 <div className="relative">
                     <div className="relative">
-                        <div className="hidden sm:flex absolute right-0 top-0">
-                            <HardRefreshButton />
-                        </div>
 
                         <div className="mx-auto max-w-2xl text-center">
                             <div className="flex flex-wrap items-center justify-center gap-3">
                                 <h1 className="text-3xl font-bold text-white leading-tight">
+                                    {iterationNumber !== null && (
+                                        <span className="text-purple-400">{`#${iterationNumber} `}</span>
+                                    )}
                                     {taskState.title}
                                 </h1>
                                 <span className={cn("text-[10px] tracking-wider uppercase px-2.5 py-1 rounded border font-bold shrink-0", statusColors[taskState.status])}>
@@ -1695,60 +1708,36 @@ export default function TaskDetailClient({
                             )}
                         </div>
 
-                        <div className="mt-4 flex sm:hidden items-center justify-center gap-2.5">
-                            <HardRefreshButton />
-                        </div>
                     </div>
                 </div>
             </div>
 
             {/* ② STATS STRIP */}
             <div className="td-rise td-d2 rounded-xl border border-slate-800/80 bg-slate-950/40 px-4 py-4 sm:px-5">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5">
-                {/* Deadline */}
-                <div className="min-h-[82px]">
-                    <p className="mb-2 text-[10px] uppercase tracking-wider font-bold text-cyan-400">Deadline</p>
-                    <p className={`text-2xl font-light ${isOverdue ? 'text-red-400 drop-shadow-[0_0_8px_rgba(248,113,113,0.5)]' : 'text-white'}`}>
-                        {formatDateDdMmYy(deadline)}
-                    </p>
-                    <p className="mt-0.5 text-xs font-mono text-slate-500">{formatTime24h(deadline)}</p>
+                <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-3 min-h-[32px]">
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Deadline</p>
+                        <p className="text-xs font-mono text-right text-slate-200">
+                            {formatDateTimeDdMmYy(deadline)}
+                        </p>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 min-h-[32px]">
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Failure Cost</p>
+                        <p className="text-xs font-mono text-slate-200 text-right">{formattedFailureCost}</p>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 min-h-[32px]">
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Voucher</p>
+                        <p className="text-xs font-mono text-slate-200 text-right truncate">
+                            {isAiVouched ? "Orca" : (taskState.voucher?.username || "Unassigned")}
+                        </p>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 min-h-[32px]">
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Focused</p>
+                        <p className="text-xs font-mono text-slate-200 text-right">
+                            {`${formatFocusTime(totalPomoSeconds)}, ${pomoSummary?.sessionCount ?? 0} session${(pomoSummary?.sessionCount ?? 0) === 1 ? "" : "s"}`}
+                        </p>
+                    </div>
                 </div>
-                {/* Hedge */}
-                <div className="min-h-[82px]">
-                    <p className="mb-2 text-[10px] uppercase tracking-wider font-bold text-cyan-400">Failure Cost</p>
-                    <p className="text-2xl font-light text-pink-400 drop-shadow-[0_0_8px_rgba(244,114,182,0.4)]">
-                        {formattedFailureCost}
-                    </p>
-                </div>
-                {/* Focus */}
-                <div className="min-h-[82px]">
-                    <p className="mb-2 text-[10px] uppercase tracking-wider font-bold text-cyan-400">Focused</p>
-                    <p className="text-2xl font-light text-cyan-300 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]">
-                        {formatFocusTime(totalPomoSeconds)}
-                    </p>
-                    <p className="mt-0.5 text-xs font-mono text-slate-500">
-                        {pomoSummary?.sessionCount ? `${pomoSummary.sessionCount} session${pomoSummary.sessionCount !== 1 ? 's' : ''}` : 'no sessions'}
-                    </p>
-                </div>
-                {/* Voucher */}
-                <div className="min-h-[82px]">
-                    <p className="mb-2 text-[10px] uppercase tracking-wider font-bold text-cyan-400">Voucher</p>
-                    <p className="text-2xl font-light text-blue-300 truncate">
-                        {isAiVouched ? 'Orca' : (taskState.voucher?.username || 'Unassigned')}
-                    </p>
-                </div>
-                {/* Repetition */}
-                <div className="min-h-[82px]">
-                    <p className="mb-2 text-[10px] uppercase tracking-wider font-bold text-purple-400">Iteration</p>
-                    <p className="text-2xl font-light text-purple-300">
-                        {iterationNumber !== null ? `#${iterationNumber}` : "--"}
-                    </p>
-                    <p className="mt-0.5 text-xs font-mono text-slate-500">
-                        {iterationLabel}
-                    </p>
-                </div>
-                <div className="min-h-[82px]" />
-            </div>
             </div>
 
             {/* Google Sync */}
@@ -1916,28 +1905,6 @@ export default function TaskDetailClient({
                                 ))}
                             </div>
                         )}
-                        <div className="flex flex-wrap gap-2 pt-1">
-                            <Button variant="ghost" onClick={handleForceMajeure} disabled={isActionPending("forceMajeure")}
-                                className={cn(uniformActionButtonClass, "border border-slate-700 bg-slate-800/30 text-slate-400 hover:text-white hover:bg-slate-700/50")}>
-                                Use Force Majeure
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {(taskState.status === "ACCEPTED" || taskState.status === "AUTO_ACCEPTED" || taskState.status === "ORCA_ACCEPTED") && (
-                <div className="td-rise td-d3 rounded-xl border border-emerald-500/20 bg-emerald-950/10 overflow-hidden">
-                    <div className="h-px bg-gradient-to-r from-emerald-500/60 via-emerald-400/20 to-transparent" />
-                    <div className="px-5 py-3 flex items-center gap-3">
-                        <div style={{ width: 24, height: 1, background: '#34d399', boxShadow: '0 0 6px rgba(52,211,153,0.4)', flexShrink: 0 }} />
-                        <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-400">
-                            {taskState.status === "AUTO_ACCEPTED"
-                                ? 'accepted — voucher did not respond'
-                                : taskState.status === "ORCA_ACCEPTED"
-                                    ? 'accepted by orca'
-                                    : 'accepted'}
-                        </span>
                     </div>
                 </div>
             )}
@@ -2010,238 +1977,222 @@ export default function TaskDetailClient({
                 </div>
             )}
 
-            {/* ④ ACTIONS BAR — active tasks only */}
-            {(taskState.status === "ACTIVE" || taskState.status === "POSTPONED") && (
-                <div className="td-rise td-d3 space-y-3">
-                    {isOwner && isActiveParentTask && potentialRp !== null && potentialRp > 0 && (
-                        <p className="text-xs font-mono text-orange-400/80">
-                            ↑ +{potentialRp} RP on completion
+            {/* ACTIONS BAR */}
+            <div className="td-rise td-d3 space-y-3">
+                {isOwner && isActiveParentTask && potentialRp !== null && potentialRp > 0 && (
+                    <p className="text-xs font-mono text-orange-400/80">
+                        +{potentialRp} RP on completion
+                    </p>
+                )}
+                {incompleteSubtasksCount > 0 && (
+                    <div className="px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-800">
+                        <p className="text-xs font-mono text-slate-500">
+                            Complete all subtasks first ({completedSubtasksCount}/{subtasks.length})
                         </p>
-                    )}
-                    {incompleteSubtasksCount > 0 && (
-                        <div className="px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-800">
-                            <p className="text-xs font-mono text-slate-500">
-                                Complete all subtasks first ({completedSubtasksCount}/{subtasks.length})
-                            </p>
+                    </div>
+                )}
+                {hasIncompletePomoRequirement && (
+                    <div className="px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-800">
+                        <p className="text-xs font-mono text-slate-500">
+                            Log {formatFocusTime(remainingRequiredPomoSeconds)} more focus time ({formatFocusTime(totalPomoSeconds)}/{taskState.required_pomo_minutes}m)
+                        </p>
+                    </div>
+                )}
+                {hasRunningPomoForTask && (
+                    <div className="px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-800">
+                        <p className="text-xs font-mono text-slate-500">
+                            Stop the running pomodoro before completing
+                        </p>
+                    </div>
+                )}
+                <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 sm:p-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <div className={cn(!isOwner || !isActiveParentTask ? "pointer-events-none opacity-45 saturate-0" : "")}>
+                            <PomoButton taskId={taskState.id} variant="full" className="h-12 w-full" defaultDurationMinutes={defaultPomoDurationMinutes} />
                         </div>
-                    )}
-                    {hasIncompletePomoRequirement && (
-                        <div className="px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-800">
-                            <p className="text-xs font-mono text-slate-500">
-                                Log {formatFocusTime(remainingRequiredPomoSeconds)} more focus time ({formatFocusTime(totalPomoSeconds)}/{taskState.required_pomo_minutes}m)
-                            </p>
-                        </div>
-                    )}
-                    {hasRunningPomoForTask && (
-                        <div className="px-3 py-2 rounded-lg bg-slate-900/50 border border-slate-800">
-                            <p className="text-xs font-mono text-slate-500">
-                                Stop the running pomodoro before completing
-                            </p>
-                        </div>
-                    )}
-                    <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 sm:p-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        <PomoButton taskId={taskState.id} variant="full" className="h-12 w-full" defaultDurationMinutes={defaultPomoDurationMinutes} />
-                        <Button type="button" variant="ghost" onClick={() => openProofPicker("draft")} disabled={isActionPending("markComplete")}
+                        <Button type="button" variant="ghost" onClick={() => openProofPicker("draft")} disabled={isActionPending("markComplete") || !isOwner}
                             className={cn("h-12 w-full p-0 border transition-all justify-center",
-                                proofDraft
+                                proofDraft && isOwner
                                     ? "border-cyan-500/40 bg-cyan-500/8 text-cyan-300"
-                                    : "border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600")}
-                            style={proofDraft ? { boxShadow: '0 0 12px rgba(0,217,255,0.18)' } : {}}
+                                    : "border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600",
+                                (!isOwner) && "border-slate-800 text-slate-700 cursor-not-allowed")}
+                            style={proofDraft && isOwner ? { boxShadow: '0 0 12px rgba(0,217,255,0.18)' } : {}}
                             title={proofDraft ? "Proof attached" : (requiresProofForCompletion ? "Attach proof (required)" : "Attach proof (optional)")}
                             aria-label="Attach proof">
                             <Camera className="h-5 w-5" />
                         </Button>
-                        {/* Primary CTA */}
                         <Button onClick={handleMarkComplete}
-                            disabled={isActionPending("markComplete") || isOverdue || isBeforeStart || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask}
+                            disabled={isActionPending("markComplete") || !isOwner || !isActiveParentTask || isOverdue || isBeforeStart || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask}
                             className={cn(activeRowActionButtonClass, "w-full justify-center tracking-[0.1em] uppercase font-bold transition-all border",
-                                (isBeforeStart || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask || isOverdue)
+                                (!isOwner || !isActiveParentTask || isBeforeStart || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask || isOverdue)
                                     ? "border-slate-800 bg-transparent text-slate-500 cursor-not-allowed"
                                     : "border-cyan-500/35 bg-cyan-500/8 text-cyan-300 hover:bg-cyan-500/15 hover:text-cyan-200")}
                             title={isBeforeStart ? beforeStartMessage : "Mark complete"}>
                             {isActionPending("markComplete") ? "..." : "Mark Complete"}
                         </Button>
-                        {taskState.status === "ACTIVE" && !taskState.postponed_at && !isOverdue && (
-                            <Button type="button" variant="outline" onClick={() => setIsPostponeDialogOpen(true)} disabled={isActionPending("postpone")}
-                                className={cn(activeRowActionButtonClass, "w-full justify-center bg-transparent border-amber-500/25 text-amber-400/80 hover:bg-amber-500/8 hover:border-amber-400/50 hover:text-amber-300")}>
-                                Postpone (1×)
-                            </Button>
-                        )}
-                        {(taskState.recurrence_rule_id || isRepetitionStopped) && (
-                            <Button variant="ghost" onClick={handleCancelRepetition} disabled={isActionPending("cancelRepetition") || isRepetitionStopped}
-                                className={cn(activeRowActionButtonClass, "w-full justify-center border",
-                                    isRepetitionStopped
-                                        ? "border-slate-800 text-slate-600 cursor-not-allowed"
-                                        : "border-red-900/40 bg-red-950/15 text-red-400/80 hover:bg-red-900/25 hover:text-red-300")}>
-                                <Repeat className="mr-1.5 h-3.5 w-3.5" />
-                                {isRepetitionStopped ? "Repetitions Stopped" : "Stop Repeating"}
-                            </Button>
-                        )}
-                        <Button type="button" variant="ghost" onClick={handleTempDelete} disabled={isActionPending("tempDelete") || !canTempDelete}
+                        <Button type="button" variant="outline" onClick={() => setIsPostponeDialogOpen(true)}
+                            disabled={isActionPending("postpone") || !isOwner || taskState.status !== "ACTIVE" || Boolean(taskState.postponed_at) || isOverdue}
+                            className={cn(activeRowActionButtonClass, "w-full justify-center border",
+                                (!isOwner || taskState.status !== "ACTIVE" || Boolean(taskState.postponed_at) || isOverdue)
+                                    ? "border-slate-800 bg-transparent text-slate-500 cursor-not-allowed"
+                                    : "bg-transparent border-amber-500/25 text-amber-400/80 hover:bg-amber-500/8 hover:border-amber-400/50 hover:text-amber-300")}>
+                            Postpone (1x)
+                        </Button>
+                        <Button variant="ghost" onClick={handleCancelRepetition}
+                            disabled={isActionPending("cancelRepetition") || !isOwner || !taskState.recurrence_rule_id || isRepetitionStopped}
+                            className={cn(activeRowActionButtonClass, "w-full justify-center border",
+                                (!isOwner || !taskState.recurrence_rule_id || isRepetitionStopped)
+                                    ? "border-slate-800 text-slate-600 cursor-not-allowed"
+                                    : "border-red-900/40 bg-red-950/15 text-red-400/80 hover:bg-red-900/25 hover:text-red-300")}>
+                            <Repeat className="mr-1.5 h-3.5 w-3.5" />
+                            {isRepetitionStopped ? "Repetitions Stopped" : "Stop Repeating"}
+                        </Button>
+                        <Button variant="ghost" onClick={handleForceMajeure}
+                            disabled={isActionPending("forceMajeure") || !isOwner || (taskState.status !== "DENIED" && taskState.status !== "MISSED")}
+                            className={cn(activeRowActionButtonClass, "w-full justify-center border",
+                                (!isOwner || (taskState.status !== "DENIED" && taskState.status !== "MISSED"))
+                                    ? "border-slate-800 text-slate-600 cursor-not-allowed"
+                                    : "border-slate-700 bg-slate-800/30 text-slate-300 hover:text-white hover:bg-slate-700/50")}>
+                            Use Force Majeure
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={handleTempDelete} disabled={isActionPending("tempDelete") || !isOwner || !canTempDelete}
                             className={cn("h-12 w-full p-0 border transition-colors justify-center",
-                                canTempDelete
+                                (isOwner && canTempDelete)
                                     ? "border-red-900/40 text-red-400/70 hover:bg-red-950/25 hover:text-red-300"
                                     : "border-slate-800 text-slate-700 cursor-not-allowed")}
                             title={canTempDelete ? "Delete task" : "Delete available only within 5 min of creation"}
                             aria-label="Delete task">
                             <Trash2 className="h-5 w-5" />
                         </Button>
+                        <Button type="button" variant="ghost" onClick={handleToggleSubtasksSection} disabled={!isOwner}
+                            className={cn(activeRowActionButtonClass, "w-full justify-between border px-3",
+                                !isOwner
+                                    ? "border-slate-800 text-slate-700 cursor-not-allowed"
+                                    : subtasksSectionOpen
+                                        ? "border-slate-600 bg-slate-900/70 text-slate-200"
+                                        : "border-slate-800 bg-slate-900/30 text-slate-400 hover:bg-slate-900/50 hover:text-slate-300")}>
+                            <span className="text-[11px] uppercase tracking-wider font-bold">Subtasks</span>
+                            <span className="text-xs font-mono">{completedSubtasksCount}/{subtasks.length}</span>
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={handleToggleRemindersSection} disabled={!isOwner}
+                            className={cn(activeRowActionButtonClass, "w-full justify-between border px-3",
+                                !isOwner
+                                    ? "border-slate-800 text-slate-700 cursor-not-allowed"
+                                    : remindersSectionOpen
+                                        ? "border-slate-600 bg-slate-900/70 text-slate-200"
+                                        : "border-slate-800 bg-slate-900/30 text-slate-400 hover:bg-slate-900/50 hover:text-slate-300")}>
+                            <span className="text-[11px] uppercase tracking-wider font-bold">Reminders</span>
+                            <span className="text-xs font-mono">{reminders.length}</span>
+                        </Button>
                     </div>
-                </div>
-                </div>
-            )}
-
-            {/* Stop repetitions — non-active tasks */}
-            {(taskState.status !== "ACTIVE" && taskState.status !== "POSTPONED") && (taskState.recurrence_rule_id || isRepetitionStopped) && (
-                <div className="td-rise td-d3">
-                    <Button variant="ghost" onClick={handleCancelRepetition} disabled={isActionPending("cancelRepetition") || isRepetitionStopped}
-                        className={cn(uniformActionButtonClass, "border",
-                            isRepetitionStopped
-                                ? "border-slate-800 text-slate-600 cursor-not-allowed"
-                                : "border-red-900/40 bg-red-950/15 text-red-400/80 hover:bg-red-900/25 hover:text-red-300")}>
-                        <Repeat className="mr-1.5 h-3.5 w-3.5" />
-                        {isRepetitionStopped ? "Repetitions Stopped" : "Stop Repeating"}
-                    </Button>
-                </div>
-            )}
-
-            {/* ⑤ SUBTASKS — owner only */}
-            {isOwner && (
-                <div className="td-rise td-d4 space-y-3">
-                    <button type="button" onClick={() => setSubtasksSectionOpen((prev) => !prev)}
-                        className="w-full flex items-center justify-between cursor-pointer" aria-expanded={subtasksSectionOpen}>
-                        <div className="flex flex-1 items-center gap-3">
-                            <div className="h-px flex-1 bg-cyan-400/80 shadow-[0_0_6px_rgba(0,217,255,0.35)]" />
-                            <span className="text-[10px] uppercase tracking-wider font-bold text-cyan-400">subtasks</span>
-                            <div className="h-px flex-1 bg-cyan-400/80 shadow-[0_0_6px_rgba(0,217,255,0.35)]" />
-                        </div>
-                        <div className="ml-3 flex items-center gap-2">
-                            <span className="text-xs font-mono text-slate-600">{completedSubtasksCount}/{subtasks.length}</span>
-                            <ChevronDown className={cn("h-4 w-4 text-slate-600 transition-transform", subtasksSectionOpen && "rotate-180")} />
-                        </div>
-                    </button>
-                    {subtasksSectionOpen && (
-                        <div className="space-y-2">
-                            {subtasks.length > 0 && (
-                                <div className="space-y-0.5">
-                                    {subtasks.map((subtask) => {
-                                        const isPending = pendingSubtaskIds.has(subtask.id);
-                                        return (
-                                            <div key={subtask.id} className="flex items-center gap-3 px-1 py-1.5 rounded-lg hover:bg-slate-900/40 transition-colors group/sub">
-                                                <button type="button" disabled={!canManageActionChildren || isPending}
-                                                    onClick={() => handleToggleSubtask(subtask.id)}
-                                                    className={cn("h-5 w-5 rounded-full border flex items-center justify-center shrink-0 transition-all",
-                                                        subtask.is_completed ? "border-emerald-500/50 bg-emerald-600/15 text-emerald-400" : "border-slate-700 text-transparent hover:border-slate-500",
-                                                        (!canManageActionChildren || isPending) && "cursor-not-allowed opacity-40")}
-                                                    style={subtask.is_completed ? { boxShadow: '0 0 6px rgba(52,211,153,0.25)' } : {}}>
-                                                    {subtask.is_completed && <Check className="h-3 w-3" strokeWidth={3} />}
-                                                </button>
-                                                <button type="button" disabled={!canManageActionChildren || isPending}
-                                                    onClick={() => handleToggleSubtask(subtask.id)}
-                                                    className={cn("flex-1 min-w-0 text-left text-sm font-mono transition-colors",
-                                                        subtask.is_completed ? "text-slate-600 line-through" : "text-slate-300",
-                                                        (!canManageActionChildren || isPending) && "cursor-not-allowed")}>
-                                                    <span className="truncate block">{subtask.title}</span>
-                                                </button>
-                                                <button type="button" disabled={!canManageActionChildren || isPending}
-                                                    onClick={() => handleDeleteSubtask(subtask.id)}
-                                                    className="h-6 w-6 flex items-center justify-center text-slate-700 hover:text-red-400 transition-colors opacity-0 group-hover/sub:opacity-100 cursor-pointer"
-                                                    aria-label="Delete subtask">
-                                                    <Trash2 className="h-3.5 w-3.5" />
-                                                </button>
-                                            </div>
-                                        );
-                                    })}
+                    {isOwner && (subtasksSectionOpen || remindersSectionOpen) && (
+                        <div className="mt-4 border-t border-slate-800/80 pt-4 space-y-4">
+                            {subtasksSectionOpen && (
+                                <div className="space-y-2">
+                                    {subtasks.length > 0 && (
+                                        <div className="space-y-0.5">
+                                            {subtasks.map((subtask) => {
+                                                const isPending = pendingSubtaskIds.has(subtask.id);
+                                                return (
+                                                    <div key={subtask.id} className="flex items-center gap-3 px-1 py-1.5 rounded-lg hover:bg-slate-900/40 transition-colors group/sub">
+                                                        <button type="button" disabled={!canManageActionChildren || isPending}
+                                                            onClick={() => handleToggleSubtask(subtask.id)}
+                                                            className={cn("h-5 w-5 rounded-full border flex items-center justify-center shrink-0 transition-all",
+                                                                subtask.is_completed ? "border-emerald-500/50 bg-emerald-600/15 text-emerald-400" : "border-slate-700 text-transparent hover:border-slate-500",
+                                                                (!canManageActionChildren || isPending) && "cursor-not-allowed opacity-40")}
+                                                            style={subtask.is_completed ? { boxShadow: "0 0 6px rgba(52,211,153,0.25)" } : {}}>
+                                                            {subtask.is_completed && <Check className="h-3 w-3" strokeWidth={3} />}
+                                                        </button>
+                                                        <button type="button" disabled={!canManageActionChildren || isPending}
+                                                            onClick={() => handleToggleSubtask(subtask.id)}
+                                                            className={cn("flex-1 min-w-0 text-left text-sm font-mono transition-colors",
+                                                                subtask.is_completed ? "text-slate-600 line-through" : "text-slate-300",
+                                                                (!canManageActionChildren || isPending) && "cursor-not-allowed")}>
+                                                            <span className="truncate block">{subtask.title}</span>
+                                                        </button>
+                                                        <button type="button" disabled={!canManageActionChildren || isPending}
+                                                            onClick={() => handleDeleteSubtask(subtask.id)}
+                                                            className="h-6 w-6 flex items-center justify-center text-slate-700 hover:text-red-400 transition-colors opacity-0 group-hover/sub:opacity-100 cursor-pointer"
+                                                            aria-label="Delete subtask">
+                                                            <Trash2 className="h-3.5 w-3.5" />
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    <form onSubmit={handleAddSubtask}>
+                                        <div className="flex items-center gap-2">
+                                            <Input ref={newSubtaskInputRef} value={newSubtaskTitle} onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                                                placeholder="add a subtask..." maxLength={500}
+                                                className={cn("h-8 font-mono text-xs bg-slate-900/50 border-slate-800 text-slate-300 placeholder:text-slate-700",
+                                                    !canManageActionChildren && "border-slate-900 text-slate-600 cursor-not-allowed")}
+                                                disabled={!canManageActionChildren || isAddingSubtask} />
+                                            <Button type="submit" size="sm" onPointerDown={(e) => e.preventDefault()}
+                                                disabled={!canManageActionChildren || isAddingSubtask}
+                                                className="h-8 w-8 p-0 bg-transparent border border-slate-800 text-slate-500 hover:text-slate-300 hover:border-slate-700 disabled:opacity-30">
+                                                <Plus className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    </form>
+                                    {subtaskError && <p className="text-xs font-mono text-red-400">{subtaskError}</p>}
                                 </div>
                             )}
-                            <form onSubmit={handleAddSubtask}>
-                                <div className="flex items-center gap-2">
-                                    <Input ref={newSubtaskInputRef} value={newSubtaskTitle} onChange={(e) => setNewSubtaskTitle(e.target.value)}
-                                        placeholder="add a subtask..." maxLength={500}
-                                        className={cn("h-8 font-mono text-xs bg-slate-900/50 border-slate-800 text-slate-300 placeholder:text-slate-700",
-                                            !canManageActionChildren && "border-slate-900 text-slate-600 cursor-not-allowed")}
-                                        disabled={!canManageActionChildren || isAddingSubtask} />
-                                    <Button type="submit" size="sm" onPointerDown={(e) => e.preventDefault()}
-                                        disabled={!canManageActionChildren || isAddingSubtask}
-                                        className="h-8 w-8 p-0 bg-transparent border border-slate-800 text-slate-500 hover:text-slate-300 hover:border-slate-700 disabled:opacity-30">
-                                        <Plus className="h-4 w-4" />
-                                    </Button>
+
+                            {remindersSectionOpen && (
+                                <div className="space-y-2">
+                                    {reminders.length > 0 && (
+                                        <div className="space-y-0.5">
+                                            {reminders.map((reminder) => {
+                                                const reminderDate = new Date(reminder.reminder_at);
+                                                const reminderMs = reminderDate.getTime();
+                                                const reminderIso = Number.isNaN(reminderMs) ? reminder.reminder_at : reminderDate.toISOString();
+                                                const isPastReminder = Number.isNaN(reminderMs) || reminderMs <= nowMs;
+                                                const notifiedAtMs = reminder.notified_at ? new Date(reminder.notified_at).getTime() : Number.NaN;
+                                                const createdAtMs = new Date(reminder.created_at).getTime();
+                                                const showPastForSeededHistory = isDefaultDeadlineReminderSource(reminder.source) && !Number.isNaN(notifiedAtMs) && !Number.isNaN(createdAtMs) && createdAtMs === notifiedAtMs;
+                                                const pastReminderLabel = showPastForSeededHistory ? "Past" : (reminder.notified_at ? "Sent" : "Past");
+                                                return (
+                                                    <div key={reminder.id} className="flex items-center justify-between gap-3 px-1 py-1.5">
+                                                        <span className="text-xs font-mono text-slate-400">
+                                                            {Number.isNaN(reminderMs) ? reminder.reminder_at : formatDateTimeDdMmYy(reminderIso)}
+                                                        </span>
+                                                        {isPastReminder ? (
+                                                            <span className="text-[10px] uppercase tracking-wider font-bold text-slate-700">
+                                                                {pastReminderLabel}
+                                                            </span>
+                                                        ) : (
+                                                            <button type="button"
+                                                                disabled={!canManageActionChildren || isActionPending("saveReminders")}
+                                                                onClick={() => void handleRemoveReminder(reminderIso)}
+                                                                className="text-xs font-mono text-red-500/60 hover:text-red-400 transition-colors disabled:text-slate-700 disabled:cursor-not-allowed cursor-pointer">
+                                                                Remove
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    <form onSubmit={handleAddReminder}>
+                                        <div className="flex items-center gap-2">
+                                            <Input type="datetime-local" value={newReminderLocal} onChange={(e) => setNewReminderLocal(e.target.value)}
+                                                disabled={!canManageActionChildren || isActionPending("saveReminders")}
+                                                className={cn("h-8 font-mono text-xs bg-slate-900/50 border-slate-800 text-slate-300 [color-scheme:dark]",
+                                                    (!canManageActionChildren || isActionPending("saveReminders")) && "opacity-40 cursor-not-allowed")} />
+                                            <Button type="submit" variant="outline"
+                                                disabled={!canManageActionChildren || isActionPending("saveReminders") || !newReminderLocal.trim()}
+                                                className="h-8 text-[11px] bg-transparent border-slate-800 text-slate-500 hover:text-slate-300 hover:border-slate-700 disabled:opacity-30">
+                                                Add
+                                            </Button>
+                                        </div>
+                                    </form>
                                 </div>
-                            </form>
-                            {subtaskError && <p className="text-xs font-mono text-red-400">{subtaskError}</p>}
+                            )}
                         </div>
                     )}
                 </div>
-            )}
-
-            {/* ⑥ REMINDERS — owner only */}
-            {isOwner && (
-                <div className="td-rise td-d4 space-y-3">
-                    <button type="button" onClick={() => setRemindersSectionOpen((prev) => !prev)}
-                        className="w-full flex items-center justify-between cursor-pointer" aria-expanded={remindersSectionOpen}>
-                        <div className="flex flex-1 items-center gap-3">
-                            <div className="h-px flex-1 bg-cyan-400/80 shadow-[0_0_6px_rgba(0,217,255,0.35)]" />
-                            <span className="text-[10px] uppercase tracking-wider font-bold text-cyan-400">reminders</span>
-                            <div className="h-px flex-1 bg-cyan-400/80 shadow-[0_0_6px_rgba(0,217,255,0.35)]" />
-                        </div>
-                        <div className="ml-3 flex items-center gap-2">
-                            <span className="text-xs font-mono text-slate-600">{reminders.length}</span>
-                            <ChevronDown className={cn("h-4 w-4 text-slate-600 transition-transform", remindersSectionOpen && "rotate-180")} />
-                        </div>
-                    </button>
-                    {remindersSectionOpen && (
-                        <div className="space-y-2">
-                            {reminders.length > 0 && (
-                                <div className="space-y-0.5">
-                                    {reminders.map((reminder) => {
-                                        const reminderDate = new Date(reminder.reminder_at);
-                                        const reminderMs = reminderDate.getTime();
-                                        const reminderIso = Number.isNaN(reminderMs) ? reminder.reminder_at : reminderDate.toISOString();
-                                        const isPastReminder = Number.isNaN(reminderMs) || reminderMs <= nowMs;
-                                        const notifiedAtMs = reminder.notified_at ? new Date(reminder.notified_at).getTime() : Number.NaN;
-                                        const createdAtMs = new Date(reminder.created_at).getTime();
-                                        const showPastForSeededHistory = isDefaultDeadlineReminderSource(reminder.source) && !Number.isNaN(notifiedAtMs) && !Number.isNaN(createdAtMs) && createdAtMs === notifiedAtMs;
-                                        const pastReminderLabel = showPastForSeededHistory ? "Past" : (reminder.notified_at ? "Sent" : "Past");
-                                        return (
-                                            <div key={reminder.id} className="flex items-center justify-between gap-3 px-1 py-1.5">
-                                                <span className="text-xs font-mono text-slate-400">
-                                                    {Number.isNaN(reminderMs) ? reminder.reminder_at : formatDateTimeDdMmYy(reminderIso)}
-                                                </span>
-                                                {isPastReminder ? (
-                                                    <span className="text-[10px] uppercase tracking-wider font-bold text-slate-700">
-                                                        {pastReminderLabel}
-                                                    </span>
-                                                ) : (
-                                                    <button type="button"
-                                                        disabled={!canManageActionChildren || isActionPending("saveReminders")}
-                                                        onClick={() => void handleRemoveReminder(reminderIso)}
-                                                        className="text-xs font-mono text-red-500/60 hover:text-red-400 transition-colors disabled:text-slate-700 disabled:cursor-not-allowed cursor-pointer">
-                                                        Remove
-                                                    </button>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                            <form onSubmit={handleAddReminder}>
-                                <div className="flex items-center gap-2">
-                                    <Input type="datetime-local" value={newReminderLocal} onChange={(e) => setNewReminderLocal(e.target.value)}
-                                        disabled={!canManageActionChildren || isActionPending("saveReminders")}
-                                        className={cn("h-8 font-mono text-xs bg-slate-900/50 border-slate-800 text-slate-300 [color-scheme:dark]",
-                                            (!canManageActionChildren || isActionPending("saveReminders")) && "opacity-40 cursor-not-allowed")} />
-                                    <Button type="submit" variant="outline"
-                                        disabled={!canManageActionChildren || isActionPending("saveReminders") || !newReminderLocal.trim()}
-                                        className="h-8 text-[11px] bg-transparent border-slate-800 text-slate-500 hover:text-slate-300 hover:border-slate-700 disabled:opacity-30">
-                                        Add
-                                    </Button>
-                                </div>
-                            </form>
-                        </div>
-                    )}
-                </div>
-            )}
+            </div>
 
             {/* Divider */}
             <div className="h-px bg-gradient-to-r from-transparent via-slate-800/80 to-transparent" />
@@ -2256,8 +2207,8 @@ export default function TaskDetailClient({
                 {activitySteps.length === 0 ? (
                     <p className="text-center text-xs font-mono text-slate-700">No activity yet</p>
                 ) : (
-                    <div className="relative mx-auto w-full max-w-2xl">
-                        <div className="pointer-events-none absolute left-[5px] top-2 bottom-2 w-px bg-gradient-to-b from-cyan-500/35 via-slate-800 to-transparent md:left-1/2 md:-translate-x-1/2" />
+                    <div className="relative mx-auto w-full max-w-3xl">
+                        <div className="pointer-events-none absolute left-1/2 top-2 bottom-2 w-px -translate-x-1/2 bg-gradient-to-b from-cyan-500/35 via-slate-800 to-transparent" />
                         {activitySteps.map((step, index) => {
                             const isRightSide = index % 2 === 0;
                             const toneConfig =
@@ -2287,22 +2238,30 @@ export default function TaskDetailClient({
                                                 };
 
                             return (
-                                <div key={step.id} className="relative pl-7 pb-4 last:pb-0 md:pl-0">
-                                    <div className={cn("absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full md:left-1/2 md:-translate-x-1/2", toneConfig.dot)} />
+                                <div key={step.id} className="relative pb-4 last:pb-0">
+                                    <div className={cn("absolute left-1/2 top-1.5 h-2.5 w-2.5 -translate-x-1/2 rounded-full", toneConfig.dot)} />
+                                    <div
+                                        className={cn(
+                                            "absolute top-[9px] h-px w-10",
+                                            isRightSide
+                                                ? "left-1/2 ml-1.5 bg-gradient-to-r from-cyan-500/45 to-transparent"
+                                                : "right-1/2 mr-1.5 bg-gradient-to-l from-cyan-500/45 to-transparent"
+                                        )}
+                                    />
                                     <div className={cn(
                                         "space-y-1.5",
                                         isRightSide
-                                            ? "md:ml-[calc(50%+1rem)] md:max-w-[calc(50%-1rem)]"
-                                            : "md:mr-[calc(50%+1rem)] md:max-w-[calc(50%-1rem)] md:text-right"
+                                            ? "ml-[calc(50%+2.75rem)] max-w-[calc(50%-2.75rem)] text-left"
+                                            : "mr-[calc(50%+2.75rem)] max-w-[calc(50%-2.75rem)] text-right"
                                     )}>
                                         <p className={cn("text-xs font-mono tracking-wide uppercase", toneConfig.title, step.titleColorClass)}>
                                             {step.title}
                                         </p>
-                                        <p className={cn("text-[10px] font-mono text-slate-500", !isRightSide && "md:text-right")}>
+                                        <p className="text-[10px] font-mono text-slate-500">
                                             {step.timestamp}
                                         </p>
                                         {step.detail && (
-                                            <p className={cn("text-[11px] font-mono text-slate-500 break-words", !isRightSide && "md:text-right")}>
+                                            <p className="text-[11px] font-mono text-slate-500 break-words">
                                                 {step.detail}
                                             </p>
                                         )}
