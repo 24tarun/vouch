@@ -2709,38 +2709,53 @@ export async function getTask(taskId: string) {
 
             if (shouldAutoFail) {
                 const currentPeriod = now.toISOString().slice(0, 7);
+                const nowIso = now.toISOString();
+                const admin = createAdminClient();
 
-                await (supabase.from("tasks") as any)
-                    .update({ status: "MISSED", updated_at: now.toISOString() } as any)
-                    .eq("id", (taskId as any));
+                // Claim transition only if task is still ACTIVE/POSTPONED to prevent duplicate penalties.
+                const { data: claimedRows, error: claimError } = await (admin.from("tasks") as any)
+                    .update({ status: "MISSED", updated_at: nowIso } as any)
+                    .eq("id", (taskId as any))
+                    .in("status", ["ACTIVE", "POSTPONED"] as any)
+                    .select("id");
 
-                await (supabase.from("ledger_entries") as any).insert({
-                    user_id: (task as any).user_id,
-                    task_id: (task as any).id,
-                    period: currentPeriod,
-                    amount_cents: (task as any).failure_cost_cents,
-                    entry_type: "failure",
-                });
-
-                const { error: deadlineEventError } = await (supabase.from("task_events") as any).insert({
-                    task_id: (task as any).id,
-                    event_type: "DEADLINE_MISSED",
-                    actor_id: null,
-                    from_status: (task as any).status,
-                    to_status: "MISSED",
-                    metadata: { reason: "Deadline passed without completion" },
-                });
-                if (deadlineEventError && deadlineEventError.code !== "23505") {
-                    console.error("Failed to log DEADLINE_MISSED event:", deadlineEventError);
+                if (claimError) {
+                    console.error("Failed to claim task for MISSED transition in getTask:", claimError);
                 }
 
-                await enqueueGoogleCalendarUpsert((task as any).user_id, taskId);
+                const didClaim = Array.isArray(claimedRows) && claimedRows.length > 0;
+                if (didClaim) {
+                    const { error: ledgerInsertError } = await (admin.from("ledger_entries") as any).insert({
+                        user_id: (task as any).user_id,
+                        task_id: (task as any).id,
+                        period: currentPeriod,
+                        amount_cents: (task as any).failure_cost_cents,
+                        entry_type: "failure",
+                    });
+                    if (ledgerInsertError) {
+                        console.error("Failed to insert MISSED ledger entry in getTask:", ledgerInsertError);
+                    }
 
-                (task as any).status = "MISSED";
-                (task as any).updated_at = now.toISOString();
+                    const { error: deadlineEventError } = await (admin.from("task_events") as any).insert({
+                        task_id: (task as any).id,
+                        event_type: "DEADLINE_MISSED",
+                        actor_id: null,
+                        from_status: (task as any).status,
+                        to_status: "MISSED",
+                        metadata: { reason: "Deadline passed without completion" },
+                    });
+                    if (deadlineEventError && deadlineEventError.code !== "23505") {
+                        console.error("Failed to log DEADLINE_MISSED event:", deadlineEventError);
+                    }
 
-                invalidateActiveTasksCache((task as any).user_id);
-                revalidatePath(`/tasks/${taskId}`);
+                    await enqueueGoogleCalendarUpsert((task as any).user_id, taskId);
+
+                    (task as any).status = "MISSED";
+                    (task as any).updated_at = nowIso;
+
+                    invalidateActiveTasksCache((task as any).user_id);
+                    revalidatePath(`/tasks/${taskId}`);
+                }
             }
         }
 
