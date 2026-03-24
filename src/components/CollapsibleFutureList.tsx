@@ -21,7 +21,7 @@ export function CollapsibleFutureList({ tasks, renderTask }: CollapsibleFutureLi
             <Button
                 variant="ghost"
                 onClick={toggle}
-                className="group flex items-center gap-2 text-slate-400 hover:text-white px-0 hover:bg-transparent"
+                className="group -ml-2.5 md:ml-0 flex items-center gap-2 text-slate-400 hover:text-white px-0 hover:bg-transparent"
                 aria-expanded={isOpen}
                 aria-controls="dashboard-future-tasks-panel"
             >

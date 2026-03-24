@@ -989,6 +989,7 @@ export default function DashboardClient({
                 friends={friends}
                 selfUserId={userId}
                 defaultVoucherId={defaultVoucherId}
+                defaultCurrency={currency}
                 defaultFailureCost={parseFloat(defaultFailureCostEuros) || 1}
             />
             {!tipsHidden && (

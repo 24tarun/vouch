@@ -78,6 +78,7 @@ const REQUIRED_PROOF_FOR_COMPLETION_ERROR = "Attach proof before marking this ta
 const INVALID_REQUIRES_PROOF_ERROR = "Invalid requires-proof payload.";
 const TITLE_REQUIRED_ERROR = "Title cannot be empty.";
 const SUBTASK_TITLE_TOO_LONG_ERROR = `Subtask title cannot exceed ${SUBTASK_TITLE_MAX_LENGTH} characters.`;
+const DAILY_RECURRING_POSTPONE_SAME_DAY_ERROR = "Daily repeating tasks can only be postponed within the same day.";
 
 const createTaskSchema = z.object({
     title: z.string().trim().min(1, "Title is required").max(500, "Title too long"),
@@ -210,6 +211,32 @@ function parseAndValidateFutureDeadline(rawDeadline: string): { deadline?: Date;
     }
 
     return { deadline: parsedDeadline };
+}
+
+export function shouldRestrictDailyPostponeToSameRuleDay(ruleConfig: unknown): boolean {
+    if (!ruleConfig || typeof ruleConfig !== "object") return false;
+    const frequency = String((ruleConfig as { frequency?: unknown }).frequency ?? "").toUpperCase();
+    return frequency === "DAILY";
+}
+
+export function canPostponeDailyRecurringTaskToDeadline(
+    currentDeadline: Date,
+    newDeadline: Date,
+    recurrenceTimeZone?: string | null
+): boolean {
+    const safeTimeZone =
+        typeof recurrenceTimeZone === "string" && isValidTimeZone(recurrenceTimeZone)
+            ? recurrenceTimeZone
+            : "UTC";
+
+    const currentDay = getDatePartsInTimeZone(currentDeadline, safeTimeZone);
+    const nextDay = getDatePartsInTimeZone(newDeadline, safeTimeZone);
+
+    return (
+        currentDay.year === nextDay.year &&
+        currentDay.month === nextDay.month &&
+        currentDay.day === nextDay.day
+    );
 }
 
 function getDefaultTaskDeadline(): Date {
@@ -2435,6 +2462,34 @@ export async function postponeTask(taskId: string, newDeadlineIso: string) {
     }
     if ((task as any).postponed_at) {
         return { error: "Task has already been postponed once" };
+    }
+
+    if ((task as any).recurrence_rule_id) {
+        const { data: recurrenceRule, error: recurrenceRuleError } = await (supabase.from("recurrence_rules") as any)
+            .select("rule_config, timezone")
+            .eq("id", (task as any).recurrence_rule_id)
+            .eq("user_id", user.id)
+            .maybeSingle();
+
+        if (recurrenceRuleError) {
+            return { error: recurrenceRuleError.message };
+        }
+
+        if (shouldRestrictDailyPostponeToSameRuleDay((recurrenceRule as any)?.rule_config)) {
+            const recurrenceTimeZone =
+                typeof (recurrenceRule as any)?.timezone === "string"
+                    ? ((recurrenceRule as any).timezone as string)
+                    : null;
+            const canPostponeWithinSameRuleDay = canPostponeDailyRecurringTaskToDeadline(
+                currentDeadline,
+                newDeadlineDate,
+                recurrenceTimeZone
+            );
+
+            if (!canPostponeWithinSameRuleDay) {
+                return { error: DAILY_RECURRING_POSTPONE_SAME_DAY_ERROR };
+            }
+        }
     }
 
     if (["AWAITING_VOUCHER", "AWAITING_ORCA", "MARKED_COMPLETE", "ACCEPTED", "AUTO_ACCEPTED", "ORCA_ACCEPTED", "DENIED", "MISSED", "RECTIFIED", "SETTLED", "DELETED"].includes((task as any).status)) {

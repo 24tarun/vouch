@@ -20,7 +20,7 @@ export function CollapsibleCompletedList({ tasks }: CollapsibleCompletedListProp
             <Button
                 variant="ghost"
                 onClick={toggle}
-                className="group flex items-center gap-2 text-slate-400 hover:text-white px-0 hover:bg-transparent"
+                className="group -ml-2.5 md:ml-0 flex items-center gap-2 text-slate-400 hover:text-white px-0 hover:bg-transparent"
                 aria-expanded={isOpen}
             >
                 {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}

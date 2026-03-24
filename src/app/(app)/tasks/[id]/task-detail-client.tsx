@@ -246,14 +246,6 @@ export default function TaskDetailClient({
 
     const formatDateTimeDdMmYy = (value: Date | string) =>
         `${formatDateDdMmYy(value)} ${formatTime24h(value)}`;
-    const formatDateMmDdYyyy = (value: Date | string) =>
-        new Date(value).toLocaleDateString("en-US", {
-            month: "2-digit",
-            day: "2-digit",
-            year: "numeric",
-        });
-    const formatDateTimeMmDdYyyy24h = (value: Date | string) =>
-        `${formatDateMmDdYyyy(value)} ${formatTime24h(value)}`;
     const formatOrdinal = (value: number) => {
         const abs = Math.abs(Math.trunc(value));
         const mod100 = abs % 100;
@@ -1745,15 +1737,6 @@ export default function TaskDetailClient({
                 <div className="flex items-center gap-2">
                     <span className="text-[10px] uppercase tracking-wider font-bold text-slate-600">Sync</span>
                     <span className={`text-xs font-medium font-mono ${googleSyncDirectionClassName}`}>{googleSyncDirectionLabel}</span>
-                </div>
-            )}
-
-            {/* Postponed notice */}
-            {taskState.postponed_at && (
-                <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg border-l-2 border-amber-400/60 bg-amber-500/5">
-                    <p className="text-xs font-mono text-amber-300/80">
-                        Postponed once — {formatDateTimeDdMmYy(taskState.postponed_at)} → {formatDateTimeMmDdYyyy24h(taskState.deadline)}
-                    </p>
                 </div>
             )}
 

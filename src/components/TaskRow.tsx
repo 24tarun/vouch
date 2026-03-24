@@ -432,7 +432,7 @@ export function TaskRow({
             onClick={handleCheck}
             disabled={isCompleteActionDisabled}
             className={cn(
-                `${quickActionButtonClass} group flex items-center justify-center shrink-0`,
+                `${quickActionButtonClass} group -ml-2.5 md:ml-0 flex items-center justify-center shrink-0`,
                 (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask || isBeforeStart) &&
                 !isActuallyCompleted &&
                 "opacity-60 cursor-not-allowed"
@@ -568,7 +568,7 @@ export function TaskRow({
                         onClick={handleCheck}
                         disabled={isActuallyCompleted || isCompleting || isOverdue || isBeforeStart || !onComplete || hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask}
                         className={cn(
-                            "flex-shrink-0 h-10 w-10 p-0 flex items-center justify-center transition-all",
+                            "flex-shrink-0 h-10 w-10 p-0 -ml-2.5 md:ml-0 flex items-center justify-center transition-all",
                             (hasIncompleteSubtasks || hasIncompletePomoRequirement || hasRunningPomoForTask || isBeforeStart) &&
                             !isActuallyCompleted &&
                             "opacity-50 cursor-not-allowed"

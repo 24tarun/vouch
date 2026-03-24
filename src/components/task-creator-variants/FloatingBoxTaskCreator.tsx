@@ -1,9 +1,10 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Bell, Camera, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Plus, Repeat, X } from "lucide-react";
+import { Bell, Camera, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Plus, Repeat, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/lib/types";
+import { getCurrencySymbol, getFailureCostBounds, type SupportedCurrency } from "@/lib/currency";
 import { GlassToggle } from "@/components/GlassToggle";
 import { createTask } from "@/actions/tasks";
 import { toast } from "sonner";
@@ -34,6 +35,7 @@ interface Props {
     friends?: Profile[];
     selfUserId?: string;
     defaultVoucherId?: string | null;
+    defaultCurrency: SupportedCurrency;
     defaultFailureCost?: number;
 }
 
@@ -42,7 +44,15 @@ export interface FloatingBoxTaskCreatorHandle {
 }
 
 export const FloatingBoxTaskCreator = forwardRef<FloatingBoxTaskCreatorHandle, Props>(
-function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = "", defaultVoucherId, defaultFailureCost = 1 }: Props, ref) {
+function FloatingBoxTaskCreator({
+    isOpen,
+    onClose,
+    friends = [],
+    selfUserId = "",
+    defaultVoucherId,
+    defaultCurrency,
+    defaultFailureCost = 1,
+}: Props, ref) {
     const [title, setTitle] = useState("");
     const [titleCaretIndex, setTitleCaretIndex] = useState(0);
     const [isTitleFocused, setIsTitleFocused] = useState(false);
@@ -72,6 +82,9 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
     const [selectedVoucherId, setSelectedVoucherId] = useState<string>(resolveDefaultVoucher);
     const [voucherOpen, setVoucherOpen] = useState(false);
     const voucherRef = useRef<HTMLDivElement>(null);
+    const currencySymbol = getCurrencySymbol(defaultCurrency);
+    const failureCostBounds = getFailureCostBounds(defaultCurrency);
+    const failureCostStep = defaultCurrency === "INR" ? 1 : 0.25;
 
     // Repeat
     const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>("");
@@ -517,6 +530,7 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
 
     const reset = () => {
         setTitle(""); setTitleCaretIndex(0); setIsTitleFocused(false);
+        setIsLoading(false);
         setSubtasks([]); setSubtaskDraft("");
         setIsEvent(false); setEventColor(null); setRequiresProof(false);
         setRecurrenceType(""); setCustomDays([]); setShowCustomDays(false);
@@ -547,6 +561,7 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
         }
 
         setIsLoading(true);
+        handleClose();
         try {
             const formData = new FormData();
             formData.append("title", cleanTitle);
@@ -586,7 +601,6 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                 console.error("Failed to create task", result.error);
             } else {
                 toast.success("Task created");
-                handleClose();
             }
         } catch (error) {
             toast.error("Failed to create task");
@@ -1002,7 +1016,14 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
 
                                     <div className="shrink-0 flex items-center gap-1">
                                         <button
-                                            onClick={() => setFailureCost((v) => Math.max(1, Math.round((v - 0.25) * 4) / 4))}
+                                            onClick={() =>
+                                                setFailureCost((v) =>
+                                                    Math.max(
+                                                        failureCostBounds.minMajor,
+                                                        Math.round((v - failureCostStep) / failureCostStep) * failureCostStep
+                                                    )
+                                                )
+                                            }
                                             className="h-[18px] w-[18px] flex items-center justify-center text-emerald-400 font-mono text-[18px] leading-none transition-opacity hover:opacity-70"
                                             style={{ textShadow: "0 0 8px rgba(52, 211, 153, 0.7)" }}
                                             aria-label="Decrease failure cost"
@@ -1017,7 +1038,15 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                                                 onChange={(e) => setCostDraft(e.target.value)}
                                                 onBlur={() => {
                                                     const n = parseFloat(costDraft);
-                                                    if (!isNaN(n)) setFailureCost(Math.min(100, Math.max(1, n)));
+                                                    if (!isNaN(n)) {
+                                                        const clamped = Math.min(
+                                                            failureCostBounds.maxMajor,
+                                                            Math.max(failureCostBounds.minMajor, n)
+                                                        );
+                                                        setFailureCost(
+                                                            Math.round(clamped / failureCostStep) * failureCostStep
+                                                        );
+                                                    }
                                                     setCostEditing(false);
                                                 }}
                                                 onKeyDown={(e) => {
@@ -1032,11 +1061,18 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                                                 className="text-emerald-400 text-xs font-mono tabular-nums hover:text-emerald-300 transition-colors min-w-[4.5rem]"
                                                 aria-label="Edit failure cost"
                                             >
-                                                {`<$${failureCost.toFixed(2)}>`}
+                                                {`<${currencySymbol}${failureCost.toFixed(2)}>`}
                                             </button>
                                         )}
                                         <button
-                                            onClick={() => setFailureCost((v) => Math.min(100, Math.round((v + 0.25) * 4) / 4))}
+                                            onClick={() =>
+                                                setFailureCost((v) =>
+                                                    Math.min(
+                                                        failureCostBounds.maxMajor,
+                                                        Math.round((v + failureCostStep) / failureCostStep) * failureCostStep
+                                                    )
+                                                )
+                                            }
                                             className="h-[18px] w-[18px] flex items-center justify-center text-emerald-400 font-mono text-[18px] leading-none transition-opacity hover:opacity-70"
                                             style={{ textShadow: "0 0 8px rgba(52, 211, 153, 0.7)" }}
                                             aria-label="Increase failure cost"
@@ -1176,7 +1212,6 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                     <div className="flex gap-3 mt-2">
                         <button
                             onClick={handleClose}
-                            disabled={isLoading}
                             style={{
                                 border: "1px solid rgba(239, 68, 68, 0.35)",
                                 background: "rgba(239, 68, 68, 0.07)",
@@ -1191,7 +1226,6 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                         </button>
                         <button
                             onClick={handleSubmit}
-                            disabled={isLoading}
                             style={{
                                 border: "1px solid rgba(0, 217, 255, 0.35)",
                                 background: "rgba(0, 217, 255, 0.07)",
@@ -1199,11 +1233,10 @@ function FloatingBoxTaskCreator({ isOpen, onClose, friends = [], selfUserId = ""
                                 color: "#00d9ff",
                             }}
                             className="flex-1 font-medium py-4 rounded-xl text-xs uppercase tracking-[0.12em] transition-all active:opacity-70 disabled:opacity-40 flex items-center justify-center gap-2"
-                            onMouseEnter={(e) => { if (!isLoading) { e.currentTarget.style.background = "rgba(0, 217, 255, 0.12)"; e.currentTarget.style.borderColor = "rgba(0, 217, 255, 0.55)"; } }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0, 217, 255, 0.12)"; e.currentTarget.style.borderColor = "rgba(0, 217, 255, 0.55)"; }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0, 217, 255, 0.07)"; e.currentTarget.style.borderColor = "rgba(0, 217, 255, 0.35)"; }}
                         >
-                            {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                            {isLoading ? "Creating…" : "Commit"}
+                            Commit
                         </button>
                     </div>
                 </div>
