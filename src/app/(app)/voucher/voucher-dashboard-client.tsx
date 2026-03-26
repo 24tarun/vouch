@@ -34,6 +34,7 @@ const HISTORY_PAGE_SIZE = 10;
 const RECTIFY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const VOUCH_HISTORY_OPEN_SESSION_KEY = "voucher.history.open";
 const PENDING_FALLBACK_POLL_MS = 60000;
+const ACCEPTED_STATUS_ERROR = "Cannot accept task in ACCEPTED status";
 const ACTIVE_PENDING_STATUSES = new Set(["ACTIVE", "POSTPONED"]);
 const ALL_PENDING_STATUSES = new Set(["ACTIVE", "POSTPONED", "AWAITING_VOUCHER", "AWAITING_ORCA", "MARKED_COMPLETE"]);
 const HISTORY_STATUSES = new Set(["ACCEPTED", "AUTO_ACCEPTED", "ORCA_ACCEPTED", "DENIED", "MISSED", "RECTIFIED", "SETTLED", "DELETED"]);
@@ -132,15 +133,14 @@ export default function VoucherDashboardClient({
     const [historyHasMore, setHistoryHasMore] = useState(true);
 
     const setTaskInFlight = (taskId: string, pending: boolean) => {
-        setInFlightIds((prev) => {
-            const next = new Set(prev);
-            if (pending) {
-                next.add(taskId);
-            } else {
-                next.delete(taskId);
-            }
-            return next;
-        });
+        const next = new Set(inFlightIdsRef.current);
+        if (pending) {
+            next.add(taskId);
+        } else {
+            next.delete(taskId);
+        }
+        inFlightIdsRef.current = next;
+        setInFlightIds(next);
     };
 
     const suppressPendingTask = (taskId: string) => {
@@ -293,14 +293,14 @@ export default function VoucherDashboardClient({
     };
 
     async function handleAccept(taskId: string) {
-        if (inFlightIds.has(taskId)) return;
+        if (inFlightIdsRef.current.has(taskId)) return;
         const currentTask = pendingState.find((task) => task.id === taskId);
         if (!currentTask) return;
 
         setTaskInFlight(taskId, true);
         const nowIso = new Date().toISOString();
 
-        await runOptimisticMutation({
+        const mutationResult = await runOptimisticMutation({
             captureSnapshot: () => ({ pendingState, historyState }),
             applyOptimistic: () => {
                 suppressPendingTask(taskId);
@@ -336,11 +336,17 @@ export default function VoucherDashboardClient({
             },
         });
 
+        if (!mutationResult.ok && mutationResult.error === ACCEPTED_STATUS_ERROR) {
+            startRefreshTransition(() => {
+                router.refresh();
+            });
+        }
+
         setTaskInFlight(taskId, false);
     }
 
     async function handleDeny(taskId: string) {
-        if (inFlightIds.has(taskId)) return;
+        if (inFlightIdsRef.current.has(taskId)) return;
         const currentTask = pendingState.find((task) => task.id === taskId);
         if (!currentTask) return;
 
@@ -387,7 +393,7 @@ export default function VoucherDashboardClient({
     }
 
     async function handleRectify(taskId: string) {
-        if (inFlightIds.has(taskId)) return;
+        if (inFlightIdsRef.current.has(taskId)) return;
         const currentTask = historyState.find((task) => task.id === taskId);
         if (!currentTask) return;
 
@@ -426,7 +432,7 @@ export default function VoucherDashboardClient({
     }
 
     async function handleRequestProof(taskId: string) {
-        if (inFlightIds.has(taskId)) return;
+        if (inFlightIdsRef.current.has(taskId)) return;
         setTaskInFlight(taskId, true);
 
         const result = await voucherRequestProof(taskId);

@@ -82,15 +82,22 @@ export function TaskRow({
         [task.status]
     );
     const deadline = new Date(task.deadline);
-    const deadlineLabel = Number.isNaN(deadline.getTime())
-        ? "Invalid date"
-        : `${deadline.toLocaleTimeString("en-GB", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-        })} ${deadline.toLocaleDateString("en-GB", { day: "2-digit" })} ${deadline
-            .toLocaleDateString("en-GB", { month: "short" })
-            .toLowerCase()}`;
+    const [deadlineLabel, setDeadlineLabel] = useState("--:-- -- ---");
+    useEffect(() => {
+        if (Number.isNaN(deadline.getTime())) {
+            setDeadlineLabel("Invalid date");
+            return;
+        }
+        setDeadlineLabel(
+            `${deadline.toLocaleTimeString("en-GB", {
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+            })} ${deadline.toLocaleDateString("en-GB", { day: "2-digit" })} ${deadline
+                .toLocaleDateString("en-GB", { month: "short" })
+                .toLowerCase()}`
+        );
+    }, [task.deadline]);
     const submissionWindow = useMemo(
         () => getTaskSubmissionWindowState({
             startAtIso: task.google_event_start_at ?? null,

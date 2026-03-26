@@ -186,8 +186,9 @@ export async function voucherDeny(taskId: string) {
         return { error: error.message };
     }
 
-    // Create ledger entry
-    await (supabase.from("ledger_entries" as any) as any).insert({
+    // Create ledger entry (use admin client to bypass RLS — voucher's auth.uid() ≠ task owner)
+    const adminForLedger = createAdminClient();
+    await (adminForLedger.from("ledger_entries" as any) as any).insert({
         user_id: (task as any).user_id,
         task_id: taskId as any,
         period: currentPeriod,
@@ -382,7 +383,9 @@ export async function authorizeRectify(taskId: string) {
     });
 
     // Create negative ledger entry to cancel out the failure
-    await (supabase.from("ledger_entries" as any) as any).insert({
+    // Use admin client to bypass RLS — voucher's auth.uid() ≠ task owner
+    const adminForLedger = createAdminClient();
+    await (adminForLedger.from("ledger_entries" as any) as any).insert({
         user_id: (task as any).user_id,
         task_id: (taskId as any),
         period: currentPeriod,
