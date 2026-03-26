@@ -21,7 +21,12 @@ import { reconcilePendingTasksFromServer } from "@/lib/voucher-pending-reconcile
 import { ProofMedia } from "@/components/ProofMedia";
 import { canVoucherSeeTask } from "@/lib/voucher-task-visibility";
 import { useCollapsibleSection } from "@/lib/ui/useCollapsibleSection";
-import { formatPomoBadge } from "@/lib/format-pomo";
+import {
+    VoucherDeadlineBadge,
+    VoucherPendingStatusBadge,
+    VoucherPomoAccumulatedBadge,
+    VoucherProofRequestBadge,
+} from "@/components/voucher/VoucherBadges";
 
 interface VoucherDashboardClientProps {
     pendingTasks: VoucherPendingTask[];
@@ -615,16 +620,6 @@ export function CompactPendingItem({
     const hoursLeft = hasValidDeadline
         ? Math.max(0, Math.floor((deadline.getTime() - renderTimestamp) / (1000 * 60 * 60)))
         : Number.POSITIVE_INFINITY;
-    const pomoTotalSeconds = task.pomo_total_seconds || 0;
-    const statusLabel = task.pending_display_type === "ACTIVE" ? "ACTIVE" : "AWAITING VOUCHER";
-    const statusClass = task.pending_display_type === "ACTIVE"
-        ? "bg-blue-500/10 text-blue-300 border-blue-500/30 text-[10px]"
-        : "bg-purple-500/10 text-purple-300 border-purple-500/30 text-[10px]";
-    const deadlineClass = !hasValidDeadline
-        ? "bg-slate-500/10 text-slate-400 border-slate-500/20 text-[10px]"
-        : (hoursLeft < 1
-            ? "bg-red-500/10 text-red-500 border-red-500/30 text-[10px]"
-            : "bg-purple-500/10 text-purple-400 border-purple-500/30 text-[10px]");
     const proof = task.completion_proof;
     const proofVersion = proof
         ? (proof.updated_at || task.updated_at)
@@ -634,7 +629,6 @@ export function CompactPendingItem({
         : null;
     const ownerCurrency = normalizeCurrency(task.user?.currency);
     const formattedFailureCost = formatCurrencyFromCents(task.failure_cost_cents, ownerCurrency);
-    const showProofRequestBadge = Boolean(task.proof_request_open) && (task.proof_request_count || 0) > 0;
 
     useEffect(() => {
         if (!isProofFullscreen) return;
@@ -660,23 +654,16 @@ export function CompactPendingItem({
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className={statusClass}>
-                        {statusLabel}
-                    </Badge>
-                    <Badge variant="outline" className={deadlineClass}>
-                        {deadlineLabel}
-                    </Badge>
-                    {pomoTotalSeconds > 0 && (
-                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-300 border-emerald-500/30 text-[10px]">
-                            <Timer className="h-3 w-3 mr-1" />
-                            {formatPomoBadge(pomoTotalSeconds)}
-                        </Badge>
-                    )}
-                    {showProofRequestBadge && (
-                        <Badge variant="outline" className="bg-amber-500/10 text-amber-300 border-amber-500/30 text-[10px]">
-                            {`?${task.proof_request_count}`}
-                        </Badge>
-                    )}
+                    <VoucherPendingStatusBadge pendingDisplayType={task.pending_display_type} />
+                    <VoucherDeadlineBadge
+                        deadlineLabel={deadlineLabel}
+                        hasValidDeadline={hasValidDeadline}
+                        hoursLeft={hoursLeft}
+                    />
+                    <VoucherPomoAccumulatedBadge totalSeconds={task.pomo_total_seconds || 0} />
+                    <VoucherProofRequestBadge
+                        proofRequestCount={task.proof_request_open ? (task.proof_request_count || 0) : 0}
+                    />
                 </div>
 
                 <p className="text-sm text-slate-500 mt-2">

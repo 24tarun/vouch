@@ -519,7 +519,7 @@ export function DesktopLanding() {
                   { badge: "badge-red",     label: "Failure",          desc: "Task missed or denied → failure cost added to your monthly ledger." },
                   { badge: "badge-emerald", label: "Rectified",        desc: "Voucher-authorized reversal. Negative entry cancels a prior failure." },
                   { badge: "badge-orange",  label: "Voucher Penalty",  desc: "Voucher ignores review window → 30¢ charged to them, not you." },
-                  { badge: "badge-purple",  label: "Force Majeure",    desc: "One emergency waiver per month — use it for genuine circumstances." },
+                  { badge: "badge-purple",  label: "Override",         desc: "One emergency waiver per month — use it for genuine circumstances." },
                   { badge: "badge-cyan",    label: "Settlement Email", desc: "Month-end summary sent automatically. Charity payment coming soon." },
                 ].map(({ badge, label, desc }) => (
                   <div key={label} style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>

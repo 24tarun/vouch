@@ -17,6 +17,7 @@ interface PomoButtonProps {
     className?: string;
     variant?: "icon" | "full";
     defaultDurationMinutes?: number;
+    fullDurationSuffixText?: string;
 }
 
 export function PomoButton({
@@ -24,6 +25,7 @@ export function PomoButton({
     className,
     variant = "icon",
     defaultDurationMinutes = DEFAULT_POMO_DURATION_MINUTES,
+    fullDurationSuffixText,
 }: PomoButtonProps) {
     const { startSession, session, isLoading } = usePomodoro();
     const normalizedDefaultDuration = normalizePomoDurationMinutes(defaultDurationMinutes);
@@ -81,26 +83,35 @@ export function PomoButton({
                     <TomatoPixelIcon size={24} speed={1.5} glow={0.8} />
                 </button>
                 <div className="h-5 w-px bg-cyan-500/30" />
-                <input
-                    type="number"
-                    min="1"
-                    max={String(MAX_POMO_DURATION_MINUTES)}
-                    step="1"
-                    inputMode="numeric"
-                    value={durationInput}
-                    onChange={(e) => setDurationInput(e.target.value)}
-                    onFocus={(e) => e.currentTarget.select()}
-                    onClick={(e) => e.currentTarget.select()}
-                    disabled={isLoading}
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleStart();
-                        }
-                    }}
-                    className="h-full w-20 px-2 bg-transparent text-cyan-300 text-xs font-mono text-center cursor-text focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    aria-label="Pomodoro duration in minutes"
-                />
+                <div className={cn(
+                    "h-full px-2 bg-transparent text-cyan-300 text-xs font-mono",
+                    fullDurationSuffixText ? "flex items-center gap-1.5" : "contents"
+                )}>
+                    <input
+                        type="number"
+                        min="1"
+                        max={String(MAX_POMO_DURATION_MINUTES)}
+                        step="1"
+                        inputMode="numeric"
+                        value={durationInput}
+                        onChange={(e) => setDurationInput(e.target.value)}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onClick={(e) => e.currentTarget.select()}
+                        disabled={isLoading}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleStart();
+                            }
+                        }}
+                        className={cn(
+                            "h-full bg-transparent text-cyan-300 text-xs font-mono cursor-text focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none",
+                            fullDurationSuffixText ? "w-9 text-right" : "w-20 px-2 text-center"
+                        )}
+                        aria-label="Pomodoro duration in minutes"
+                    />
+                    {fullDurationSuffixText && <span className="whitespace-nowrap">{fullDurationSuffixText}</span>}
+                </div>
             </div>
         );
     }

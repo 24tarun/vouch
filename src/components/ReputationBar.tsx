@@ -28,7 +28,7 @@ export function ReputationBar({ data, className }: ReputationBarProps) {
             <div className="flex items-baseline justify-between mb-1 px-0.5">
                 <span
                     className="font-mono text-white tabular-nums"
-                    style={{ fontSize: "11px", textShadow: "0 0 6px rgba(251,146,60,0.7)" }}
+                    style={{ fontSize: "11px", textShadow: "0 0 6px rgba(249,115,22,0.7)" }}
                 >
                     {data.score}
                 </span>
@@ -56,8 +56,8 @@ export function ReputationBar({ data, className }: ReputationBarProps) {
                     className="absolute inset-y-0 left-0 rounded-full transition-all duration-700 ease-out"
                     style={{
                         width: `${fill}%`,
-                        background: "linear-gradient(90deg, rgb(234,88,12) 0%, rgb(251,146,60) 100%)",
-                        boxShadow: "0 0 8px 1px rgba(251,146,60,0.5)",
+                        background: "linear-gradient(90deg, rgb(249,115,22) 0%, rgb(249,115,22) 100%)",
+                        boxShadow: "0 0 8px 1px rgba(249,115,22,0.5)",
                     }}
                 />
             </div>

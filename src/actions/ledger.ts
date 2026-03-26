@@ -44,10 +44,10 @@ export async function getLedgerEntriesForPeriod(period: string) {
     return { entries: (entries ?? []) as any[], totalCents };
 }
 
-function formatLedgerEntryType(entryType: string): string {
+function formatLedgerEntryType(entryType: string, taskStatus?: string): string {
     if (entryType === "voucher_timeout_penalty") return "Voucher Timeout Penalty";
-    if (entryType === "force_majeure") return "Force Majeure";
-    if (entryType === "failure") return "Failure";
+    if (entryType === "override") return "Override";
+    if (entryType === "failure") return taskStatus === "DENIED" ? "Denied" : "Missed";
     if (entryType === "rectified") return "Rectified";
     return entryType;
 }
@@ -93,7 +93,7 @@ export async function sendLedgerReportEmail() {
         <tr>
             <td style="padding: 8px; border-bottom: 1px solid #eee;">${new Date(entry.created_at).toLocaleDateString()}</td>
             <td style="padding: 8px; border-bottom: 1px solid #eee;">${entry.task?.title || "Manual Entry"}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #eee;">${formatLedgerEntryType(entry.entry_type)}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee;">${formatLedgerEntryType(entry.entry_type, entry.task?.status)}</td>
             <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: ${entry.amount_cents > 0 ? '#dc322f' : '#859900'}; font-family: monospace;">
                 ${entry.amount_cents > 0 ? '+' : ''}${formatCurrencyFromCents(entry.amount_cents, currency)}
             </td>

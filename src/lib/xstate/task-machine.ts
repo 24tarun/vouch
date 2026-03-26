@@ -34,7 +34,7 @@ export type TaskEvent =
     | { type: "TIMEOUT_VOUCHER" }
     | { type: "RECTIFY" }
     | { type: "MONTH_CLOSE" }
-    | { type: "FORCE_MAJEURE" };
+    | { type: "OVERRIDE" };
 
 // Context for the task machine
 export interface TaskContext {
@@ -122,7 +122,7 @@ export const taskMachine = setup({
                     target: "MISSED",
                     actions: ["updateTimestamp"],
                 },
-                FORCE_MAJEURE: {
+                OVERRIDE: {
                     target: "SETTLED",
                     actions: ["updateTimestamp"],
                 },
@@ -139,7 +139,7 @@ export const taskMachine = setup({
                     target: "MISSED",
                     actions: ["updateTimestamp"],
                 },
-                FORCE_MAJEURE: {
+                OVERRIDE: {
                     target: "SETTLED",
                     actions: ["updateTimestamp"],
                 },
@@ -295,8 +295,8 @@ export const taskMachine = setup({
 // Helper function to get valid transitions from a state
 export function getValidTransitions(status: TaskStatus): TaskEvent["type"][] {
     const transitions: Record<TaskStatus, TaskEvent["type"][]> = {
-        ACTIVE: ["POSTPONE", "MARK_COMPLETE", "DEADLINE_PASSED", "FORCE_MAJEURE"],
-        POSTPONED: ["MARK_COMPLETE", "DEADLINE_PASSED", "FORCE_MAJEURE"],
+        ACTIVE: ["POSTPONE", "MARK_COMPLETE", "DEADLINE_PASSED", "OVERRIDE"],
+        POSTPONED: ["MARK_COMPLETE", "DEADLINE_PASSED", "OVERRIDE"],
         MARKED_COMPLETE: ["VOUCHER_ACCEPT", "VOUCHER_DENY", "TIMEOUT_VOUCHER", "ORCA_APPROVE", "ORCA_DENY"],
         AWAITING_VOUCHER: ["VOUCHER_ACCEPT", "VOUCHER_DENY", "TIMEOUT_VOUCHER"],
         AWAITING_ORCA: ["ORCA_APPROVE", "ORCA_DENY"],

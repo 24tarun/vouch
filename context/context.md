@@ -133,7 +133,7 @@ Denial history for AI voucher. `id`, `task_id`, `attempt_number`, `reason`, `den
 Immutable audit log. `task_id`, `event_type`, `actor_id`, `created_at`.
 
 ### `ledger_entries`
-Financial log. `user_id`, `task_id`, `entry_type` (failure/rectified/force_majeure/voucher_timeout_penalty), `amount_cents`, `currency`, `period_year`, `period_month`.
+Financial log. `user_id`, `task_id`, `entry_type` (failure/rectified/override/voucher_timeout_penalty), `amount_cents`, `currency`, `period_year`, `period_month`.
 
 ### `task_completion_proofs`
 Proof uploads. `task_id`, `upload_state` (PENDING/UPLOADED), `media_type`, `storage_object_path`.
@@ -260,7 +260,8 @@ ReputationTaskInput {
 
 - Failure cost stored in cents. Currency per-user (`EUR`/`USD`/`INR`).
 - App bounds: EUR/USD 1.00â€“100.00, INR 50â€“1000. DB hard bounds: 1â€“100000 cents.
-- Ledger entry types: `failure` (+, owner charged), `rectified` (âˆ’, cancels failure), `voucher_timeout_penalty` (+, voucher charged 30Â¢), `force_majeure` (âˆ’, not yet implemented in UI)
+- Ledger entry types: `failure` (+, owner charged), `rectified` (−, cancels failure), `voucher_timeout_penalty` (+, voucher charged 30¢), `override` (−, owner waiver that settles a failed task)
+- Ledger badge labels: failure entries display as "Denied" or "Missed" based on `task.status`, not "Failure"
 - Monthly settlement job sends email summaries; does not execute payments.
 
 ---

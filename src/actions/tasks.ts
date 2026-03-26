@@ -2617,7 +2617,7 @@ export async function ownerTempDeleteTask(taskId: string) {
     return { success: true };
 }
 
-export async function forceMajeureTask(taskId: string) {
+export async function overrideTask(taskId: string) {
     const supabase = await createClient();
     const {
         data: { user },
@@ -2638,27 +2638,27 @@ export async function forceMajeureTask(taskId: string) {
     }
 
     if ((task as any).status !== "DENIED" && (task as any).status !== "MISSED") {
-        return { error: "Force Majeure can only be used on tasks that have failed or been denied." };
+        return { error: "Override can only be used on tasks that have been denied or missed." };
     }
 
-    // Check force majeure usage (max 1 per month)
+    // Check override usage (max 1 per month)
     const now = new Date();
     const currentPeriod = now.toISOString().slice(0, 7);
 
     // Block cross-month: task must have failed in the current calendar month
     const failedPeriod = new Date((task as any).updated_at).toISOString().slice(0, 7);
     if (failedPeriod !== currentPeriod) {
-        return { error: "Force Majeure can only be used on tasks that failed this month." };
+        return { error: "Override can only be used on tasks that failed this month." };
     }
 
     const { count } = await supabase
-        .from("force_majeure" as any)
+        .from("overrides" as any)
         .select("*", { count: 'exact', head: true })
         .eq("user_id", user.id)
         .eq("period", currentPeriod);
 
     if ((count || 0) >= 1) {
-        return { error: "You have already used your force majeure for this month" };
+        return { error: "You have already used your override for this month" };
     }
 
     // Update status to SETTLED
@@ -2671,8 +2671,8 @@ export async function forceMajeureTask(taskId: string) {
         return { error: error.message };
     }
 
-    // Create force majeure record
-    await (supabase.from("force_majeure" as any) as any).insert({
+    // Create override record
+    await (supabase.from("overrides" as any) as any).insert({
         user_id: user.id,
         task_id: taskId as any,
         period: currentPeriod,
@@ -2684,13 +2684,13 @@ export async function forceMajeureTask(taskId: string) {
         task_id: taskId as any,
         period: currentPeriod,
         amount_cents: -(task as any).failure_cost_cents,
-        entry_type: "force_majeure",
+        entry_type: "override",
     });
 
     // Log event
     await (supabase.from("task_events") as any).insert({
         task_id: taskId as any,
-        event_type: "FORCE_MAJEURE",
+        event_type: "OVERRIDE",
         actor_id: user.id,
         from_status: (task as any).status,
         to_status: "SETTLED",

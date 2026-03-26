@@ -13,6 +13,7 @@ import { CompactStatsItem, type CompactStatsTask } from "@/components/CompactSta
 import { CommitmentDayStrip } from "@/components/CommitmentDayStrip";
 import { Button } from "@/components/ui/button";
 import { formatCurrencyFromCents, getCurrencySymbol, type SupportedCurrency } from "@/lib/currency";
+import { CommitmentStatusLabel } from "@/components/commitments/CommitmentStatusLabel";
 
 interface CommitmentCardProps {
     commitment: CommitmentListItem;
@@ -25,16 +26,6 @@ function toUtcDateOnly(value: string | Date): string | null {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return null;
     return date.toISOString().slice(0, 10);
-}
-
-function statusStyle(status: string): { className: string; glow: string } {
-    if (status === "ACTIVE")
-        return { className: "text-cyan-400", glow: "0 0 6px rgba(34,211,238,0.5)" };
-    if (status === "COMPLETED")
-        return { className: "text-emerald-400", glow: "0 0 6px rgba(52,211,153,0.5)" };
-    if (status === "FAILED")
-        return { className: "text-red-400", glow: "0 0 6px rgba(248,113,113,0.5)" };
-    return { className: "text-slate-500", glow: "none" };
 }
 
 export function CommitmentCard({
@@ -68,7 +59,6 @@ export function CommitmentCard({
     }, [draftDescription, isExpanded]);
 
     const status = commitment.derived_status || commitment.status;
-    const { className: statusClass, glow: statusGlow } = statusStyle(status);
     const description = commitment.description?.trim() || "";
     const daysAccomplished = commitment.day_statuses.filter((d) => d.status === "passed").length;
 
@@ -193,12 +183,7 @@ export function CommitmentCard({
                         <p className="truncate text-[1.7rem] font-semibold leading-none text-white transition-colors group-hover:text-blue-400">
                             {commitment.name}
                         </p>
-                        <span
-                            className={`shrink-0 font-mono text-[10px] font-bold uppercase tracking-widest ${statusClass}`}
-                            style={{ textShadow: statusGlow }}
-                        >
-                            {status}
-                        </span>
+                        <CommitmentStatusLabel status={status} />
                     </div>
                     {isExpanded ? (
                         <textarea

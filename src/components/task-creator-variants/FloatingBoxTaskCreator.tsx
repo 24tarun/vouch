@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Bell, Camera, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Plus, Repeat, X } from "lucide-react";
+import { Bell, Camera, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Plus, Repeat, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/lib/types";
 import { getCurrencySymbol, getFailureCostBounds, type SupportedCurrency } from "@/lib/currency";
@@ -652,7 +652,7 @@ function FloatingBoxTaskCreator({
                     isOpen ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4 pointer-events-none",
                 )}
                 style={{
-                    background: "rgba(2, 6, 23, 0.56)",
+                    background: "rgba(15, 23, 42, 0.50)",
                     border: "1px solid rgba(255,255,255,0.06)",
                     boxShadow: "0 18px 48px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)",
                 }}
@@ -997,6 +997,7 @@ function FloatingBoxTaskCreator({
                     <Divider>
                             <div ref={voucherRef} className="space-y-2 pr-10">
                                 <div className="flex items-center gap-2">
+                                    <User className="h-4 w-4 text-blue-300 shrink-0" />
                                     <button
                                         onClick={() => setVoucherOpen((p) => !p)}
                                         className="w-[8.75rem] sm:w-[9.5rem] min-w-0 flex items-center justify-between gap-2 px-0 py-0 text-slate-300 text-sm font-mono transition-colors hover:text-slate-100"

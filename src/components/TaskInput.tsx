@@ -495,17 +495,28 @@ export function TaskInput({
     const formatDeadlineLabel = (date: Date | null) => {
         if (!hasMounted) return "Set date";
         if (!date) return "Set date";
-        return date.toLocaleString(undefined, {
-            month: "short",
-            day: "numeric",
+        const dd = String(date.getDate()).padStart(2, "0");
+        const mm = String(date.getMonth() + 1).padStart(2, "0");
+        const yyyy = date.getFullYear();
+        const time = date.toLocaleTimeString("en-GB", {
             hour: "2-digit",
             minute: "2-digit",
+            hour12: false,
         });
+        return `${dd}/${mm}/${yyyy} at ${time}`;
     };
 
     const formatDeadlineTitle = (date: Date | null) => {
         if (!hasMounted || !date) return "Set Date";
-        return date.toLocaleString();
+        const dd = String(date.getDate()).padStart(2, "0");
+        const mm = String(date.getMonth() + 1).padStart(2, "0");
+        const yyyy = date.getFullYear();
+        const time = date.toLocaleTimeString("en-GB", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        });
+        return `${dd}/${mm}/${yyyy} at ${time}`;
     };
 
     const formatReminderLabel = (date: Date) => {

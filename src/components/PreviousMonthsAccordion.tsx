@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
-import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { getLedgerEntriesForPeriod } from "@/actions/ledger";
 import { formatCurrencyFromCents, type SupportedCurrency } from "@/lib/currency";
+import { LedgerEntryRow } from "@/components/ledger/LedgerEntryRow";
 
 interface Props {
     periods: string[];
@@ -90,54 +89,19 @@ export function PreviousMonthsAccordion({ periods, currency }: Props) {
                                     ) : (
                                         data.entries.map((entry: any) => {
                                             const taskId = entry.task?.id || entry.task_id || null;
-                                            const absAmountLabel = formatCurrencyFromCents(Math.abs(entry.amount_cents), currency);
                                             return (
-                                                <div key={entry.id} className="group flex items-center gap-3 py-5 border-b border-slate-900/50 last:border-0 hover:bg-slate-900/10 -mx-4 px-4 transition-colors">
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2">
-                                                            <p className="text-base font-medium text-slate-300 group-hover:text-slate-100 transition-colors truncate">
-                                                                {entry.task?.title || "Accountability Adjustment"}
-                                                            </p>
-                                                            <Badge variant="outline" className={`text-[9px] h-4 py-0 px-1 border-slate-900 uppercase tracking-tighter ${
-                                                                entry.entry_type === "failure"
-                                                                    ? "text-red-500"
-                                                                    : entry.entry_type === "voucher_timeout_penalty"
-                                                                        ? "text-orange-400"
-                                                                        : entry.entry_type === "force_majeure"
-                                                                            ? "text-yellow-500"
-                                                                            : "text-green-500"
-                                                            }`}>
-                                                                {entry.entry_type === "failure"
-                                                                    ? "Failure"
-                                                                    : entry.entry_type === "voucher_timeout_penalty"
-                                                                        ? "Voucher Timeout"
-                                                                        : entry.entry_type === "force_majeure"
-                                                                            ? "Force Majeure"
-                                                                            : "Rectified"}
-                                                            </Badge>
-                                                            {taskId && (
-                                                                <Link
-                                                                    href={`/tasks/${taskId}`}
-                                                                    className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors inline-flex items-center justify-center"
-                                                                    aria-label="Open task"
-                                                                >
-                                                                    <ExternalLink className="h-3.5 w-3.5" />
-                                                                </Link>
-                                                            )}
-                                                        </div>
-                                                        <p className="text-xs text-slate-600 mt-1">
-                                                            {new Date(entry.created_at).toLocaleDateString()} at {new Date(entry.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                                                        </p>
-                                                    </div>
-                                                    <div className="flex flex-col items-end">
-                                                        <span className={`text-lg font-mono ${entry.amount_cents > 0 ? "text-red-500" : "text-green-500"}`}>
-                                                            {entry.amount_cents > 0 ? "+" : "-"}{absAmountLabel}
-                                                        </span>
-                                                        <span className="text-[10px] text-slate-700 uppercase tracking-widest mt-1">
-                                                            {entry.amount_cents < 0 ? "Reversal" : "Amount"}
-                                                        </span>
-                                                    </div>
-                                                </div>
+                                                <LedgerEntryRow
+                                                    key={entry.id}
+                                                    id={entry.id}
+                                                    title={entry.task?.title || "Accountability Adjustment"}
+                                                    entryType={entry.entry_type}
+                                                    taskStatus={entry.task?.status}
+                                                    createdAt={entry.created_at}
+                                                    amountCents={entry.amount_cents}
+                                                    currency={currency}
+                                                    taskHref={taskId ? `/tasks/${taskId}` : null}
+                                                    compact
+                                                />
                                             );
                                         })
                                     )}

@@ -8,12 +8,13 @@ import {
     cancelRepetition,
     deleteTaskSubtask,
     finalizeTaskProofUpload,
-    forceMajeureTask,
+    overrideTask,
     initAwaitingVoucherProofUpload,
     markTaskCompleteWithProofIntent,
     ownerTempDeleteTask,
     postponeTask,
     removeAwaitingVoucherProof,
+    renameTaskSubtask,
     replaceTaskReminders,
     revertTaskCompletionAfterProofFailure,
     undoTaskComplete,
@@ -71,6 +72,8 @@ import {
     buildBeforeStartSubmissionMessage,
     getTaskSubmissionWindowState,
 } from "@/lib/task-submission-window";
+import { TaskStatusBadge } from "@/components/tasks/TaskStatusBadge";
+import { RecurringIndicator } from "@/components/tasks/RecurringIndicator";
 
 interface TaskDetailClientProps {
     task: TaskWithRelations;
@@ -85,6 +88,7 @@ interface TaskDetailClientProps {
     viewerId: string;
     viewerCurrency: SupportedCurrency;
     potentialRp: number | null;
+    hasUsedOverrideThisMonth: boolean;
 }
 
 interface TaskProofDraft {
@@ -139,6 +143,7 @@ export default function TaskDetailClient({
     viewerId,
     viewerCurrency,
     potentialRp,
+    hasUsedOverrideThisMonth,
 }: TaskDetailClientProps) {
     const router = useRouter();
     const { session } = usePomodoro();
@@ -155,6 +160,8 @@ export default function TaskDetailClient({
     const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
     const [subtaskError, setSubtaskError] = useState<string | null>(null);
     const [pendingSubtaskIds, setPendingSubtaskIds] = useState<Set<string>>(new Set());
+    const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+    const [editingSubtaskTitle, setEditingSubtaskTitle] = useState("");
     const [isAddingSubtask, setIsAddingSubtask] = useState(false);
     const [proofDraft, setProofDraft] = useState<TaskProofDraft | null>(null);
     const [proofUploadError, setProofUploadError] = useState<string | null>(null);
@@ -206,6 +213,10 @@ export default function TaskDetailClient({
     const formattedFailureCost = formatCurrencyFromCents(taskState.failure_cost_cents, ownerCurrency);
     const uniformActionButtonClass = "h-9 px-4 text-[12px] leading-none whitespace-nowrap";
     const activeRowActionButtonClass = "h-12 px-5 text-[13px] leading-none whitespace-nowrap";
+    const canUseOverride =
+        isOwner &&
+        (taskState.status === "DENIED" || taskState.status === "MISSED") &&
+        !hasUsedOverrideThisMonth;
     const handleToggleSubtasksSection = () => {
         setSubtasksSectionOpen((prev) => {
             const next = !prev;
@@ -329,6 +340,13 @@ export default function TaskDetailClient({
             }
             return next;
         });
+    };
+
+    const startEditingSubtask = (subtaskId: string, currentTitle: string) => {
+        if (!canManageActionChildren || pendingSubtaskIds.has(subtaskId)) return;
+        setSubtaskError(null);
+        setEditingSubtaskId(subtaskId);
+        setEditingSubtaskTitle(currentTitle);
     };
 
     const setTaskProofDraft = (nextDraft: TaskProofDraft | null) => {
@@ -897,33 +915,6 @@ export default function TaskDetailClient({
         refreshInBackground();
     };
 
-    const statusColors: Record<string, string> = {
-        ACTIVE: "bg-blue-500/20 text-blue-300 border border-blue-500/30",
-        POSTPONED: "bg-amber-500/20 text-amber-300 border border-amber-500/30",
-        MARKED_COMPLETE: "bg-purple-500/20 text-purple-300 border border-purple-500/30",
-        AWAITING_VOUCHER: "bg-purple-500/20 text-purple-300 border border-purple-500/30",
-        AWAITING_ORCA: "bg-purple-500/20 text-purple-300 border border-purple-500/30",
-        AWAITING_USER: "bg-orange-500/20 text-orange-300 border border-orange-500/30",
-        ACCEPTED: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30",
-        AUTO_ACCEPTED: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30",
-        ORCA_ACCEPTED: "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30",
-        ORCA_DENIED: "bg-red-500/20 text-red-300 border border-red-500/30",
-        ESCALATED: "bg-blue-500/20 text-blue-300 border border-blue-500/30",
-        DENIED: "bg-red-500/20 text-red-300 border border-red-500/30",
-        MISSED: "bg-red-500/20 text-red-300 border border-red-500/30",
-        RECTIFIED: "bg-orange-500/20 text-orange-300 border border-orange-500/30",
-        SETTLED: "bg-slate-600/40 text-slate-300 border border-slate-600/50",
-    };
-    const taskStatusLabel =
-        taskState.status === "AUTO_ACCEPTED"
-            ? "AUTO ACCEPTED"
-            : taskState.status === "ORCA_ACCEPTED"
-                ? "ORCA ACCEPTED"
-                : taskState.status === "ORCA_DENIED"
-                    ? "ORCA DENIED"
-                    : taskState.status === "SETTLED"
-                        ? "FORCE MAJEURE"
-                        : taskState.status.replace(/_/g, " ");
     const proofSummary = storedProof
         ? `Uploaded (${storedProof.media_kind})`
         : proofDraft
@@ -1293,11 +1284,70 @@ export default function TaskDetailClient({
         setSubtaskPending(subtaskId, false);
     }
 
-    async function handleForceMajeure() {
-        if (isActionPending("forceMajeure")) return;
-        if (!confirm("Are you sure? This uses your 1 monthly Force Majeure pass and will settle the task without failure cost.")) return;
+    async function handleRenameSubtask() {
+        if (!editingSubtaskId) return;
+        const targetId = editingSubtaskId;
+        const trimmed = editingSubtaskTitle.trim();
+        const currentSubtask = subtasks.find((subtask) => subtask.id === targetId);
 
-        setActionPending("forceMajeure", true);
+        setEditingSubtaskId(null);
+        setEditingSubtaskTitle("");
+
+        if (!currentSubtask) return;
+        if (!trimmed) {
+            setSubtaskError("Subtask title cannot be empty.");
+            return;
+        }
+        if (trimmed === currentSubtask.title) return;
+
+        setSubtaskPending(targetId, true);
+        setSubtaskError(null);
+        const nowIso = new Date().toISOString();
+
+        const result = await runOptimisticMutation({
+            captureSnapshot: () => ({ subtasks }),
+            applyOptimistic: () => {
+                setSubtasks((prev) =>
+                    prev.map((subtask) =>
+                        subtask.id === targetId
+                            ? { ...subtask, title: trimmed, updated_at: nowIso }
+                            : subtask
+                    )
+                );
+            },
+            runMutation: () => renameTaskSubtask(taskState.id, targetId, trimmed),
+            rollback: (snapshot) => {
+                setSubtasks(snapshot.subtasks);
+            },
+            onSuccess: (mutationResult) => {
+                if (mutationResult && "subtask" in mutationResult && mutationResult.subtask) {
+                    setSubtasks((prev) =>
+                        prev.map((subtask) =>
+                            subtask.id === targetId
+                                ? (mutationResult.subtask as typeof subtask)
+                                : subtask
+                        )
+                    );
+                }
+            },
+        });
+
+        if (!result.ok && result.error) {
+            setSubtaskError(result.error);
+        }
+
+        setSubtaskPending(targetId, false);
+    }
+
+    async function handleOverride() {
+        if (isActionPending("override")) return;
+        if (hasUsedOverrideThisMonth) {
+            toast.error("You have already used your override for this month");
+            return;
+        }
+        if (!confirm("Are you sure? This uses your 1 monthly Override pass and will settle the task without failure cost.")) return;
+
+        setActionPending("override", true);
         const optimisticUpdatedAt = new Date().toISOString();
 
         await runOptimisticMutation({
@@ -1309,7 +1359,7 @@ export default function TaskDetailClient({
                     updated_at: optimisticUpdatedAt,
                 }));
             },
-            runMutation: () => forceMajeureTask(taskState.id),
+            runMutation: () => overrideTask(taskState.id),
             rollback: (snapshot) => {
                 setTaskState(snapshot.taskState);
             },
@@ -1318,7 +1368,7 @@ export default function TaskDetailClient({
             },
         });
 
-        setActionPending("forceMajeure", false);
+        setActionPending("override", false);
     }
 
     async function handleCancelRepetition() {
@@ -1435,9 +1485,9 @@ export default function TaskDetailClient({
     const statusTextColors: Record<string, string> = {
         ACTIVE: "text-blue-300",
         POSTPONED: "text-amber-300",
-        MARKED_COMPLETE: "text-purple-300",
-        AWAITING_VOUCHER: "text-purple-300",
-        AWAITING_ORCA: "text-purple-300",
+        MARKED_COMPLETE: "text-amber-400",
+        AWAITING_VOUCHER: "text-amber-400",
+        AWAITING_ORCA: "text-amber-400",
         ORCA_DENIED: "text-red-300",
         AWAITING_USER: "text-orange-300",
         ESCALATED: "text-blue-300",
@@ -1464,7 +1514,7 @@ export default function TaskDetailClient({
         VOUCHER_DENY: "text-red-300",
         VOUCHER_DELETE: "text-red-300",
         RECTIFY: "text-orange-300",
-        FORCE_MAJEURE: "text-slate-300",
+        OVERRIDE: "text-slate-300",
         DEADLINE_MISSED: "text-red-300",
         VOUCHER_TIMEOUT: "text-amber-300",
         POMO_COMPLETED: "text-cyan-300",
@@ -1683,13 +1733,11 @@ export default function TaskDetailClient({
                                     )}
                                     {taskState.title}
                                 </h1>
-                                <span className={cn("text-[10px] tracking-wider uppercase px-2.5 py-1 rounded border font-bold shrink-0", statusColors[taskState.status])}>
-                                    {taskStatusLabel}
-                                </span>
+                                <TaskStatusBadge status={taskState.status} />
                             </div>
                             {recurrenceSummary && (
                                 <div className="mt-2 flex items-center justify-center gap-1.5 text-purple-400">
-                                    <Repeat className="h-3.5 w-3.5 shrink-0" />
+                                    <RecurringIndicator className="text-purple-400" />
                                     <p className="text-xs uppercase tracking-wider font-bold">
                                         {recurrenceSummary}
                                     </p>
@@ -1863,7 +1911,7 @@ export default function TaskDetailClient({
                 </div>
             )}
 
-            {(taskState.status === "DENIED" || taskState.status === "MISSED") && (
+            {taskState.status === "DENIED" && (
                 <div className="td-rise td-d3 rounded-xl border border-red-500/20 bg-red-950/10 overflow-hidden">
                     <div className="h-px bg-gradient-to-r from-red-500/60 via-red-400/20 to-transparent" />
                     <div className="px-5 py-4 space-y-3">
@@ -1888,16 +1936,6 @@ export default function TaskDetailClient({
                                 ))}
                             </div>
                         )}
-                    </div>
-                </div>
-            )}
-
-            {taskState.status === "RECTIFIED" && (
-                <div className="td-rise td-d3 rounded-xl border border-orange-500/20 bg-orange-950/10 overflow-hidden">
-                    <div className="h-px bg-gradient-to-r from-orange-500/60 via-orange-400/20 to-transparent" />
-                    <div className="px-5 py-3 flex items-center gap-3">
-                        <div style={{ width: 24, height: 1, background: '#fb923c', boxShadow: '0 0 6px rgba(251,146,60,0.4)', flexShrink: 0 }} />
-                        <span className="text-[10px] uppercase tracking-wider font-bold text-orange-400">rectified</span>
                     </div>
                 </div>
             )}
@@ -1991,13 +2029,19 @@ export default function TaskDetailClient({
                 <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 sm:p-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         <div className={cn(!isOwner || !isActiveParentTask ? "pointer-events-none opacity-45 saturate-0" : "")}>
-                            <PomoButton taskId={taskState.id} variant="full" className="h-12 w-full" defaultDurationMinutes={defaultPomoDurationMinutes} />
+                            <PomoButton
+                                taskId={taskState.id}
+                                variant="full"
+                                className="h-12 w-full"
+                                defaultDurationMinutes={defaultPomoDurationMinutes}
+                                fullDurationSuffixText="m pomodoro?"
+                            />
                         </div>
                         <Button type="button" variant="ghost" onClick={() => openProofPicker("draft")} disabled={isActionPending("markComplete") || !isOwner}
                             className={cn("h-12 w-full p-0 border transition-all justify-center",
                                 proofDraft && isOwner
                                     ? "border-cyan-500/40 bg-cyan-500/8 text-cyan-300"
-                                    : "border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600",
+                                    : "border-cyan-500/35 bg-cyan-500/8 text-cyan-300 hover:bg-cyan-500/15 hover:text-cyan-200",
                                 (!isOwner) && "border-slate-800 text-slate-700 cursor-not-allowed")}
                             style={proofDraft && isOwner ? { boxShadow: '0 0 12px rgba(0,217,255,0.18)' } : {}}
                             title={proofDraft ? "Proof attached" : (requiresProofForCompletion ? "Attach proof (required)" : "Attach proof (optional)")}
@@ -2006,10 +2050,10 @@ export default function TaskDetailClient({
                         </Button>
                         <Button onClick={handleMarkComplete}
                             disabled={isActionPending("markComplete") || !isOwner || !isActiveParentTask || isOverdue || isBeforeStart || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask}
-                            className={cn(activeRowActionButtonClass, "w-full justify-center tracking-[0.1em] uppercase font-bold transition-all border",
+                            className={cn(activeRowActionButtonClass, "w-full justify-center transition-all border",
                                 (!isOwner || !isActiveParentTask || isBeforeStart || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask || isOverdue)
                                     ? "border-slate-800 bg-transparent text-slate-500 cursor-not-allowed"
-                                    : "border-cyan-500/35 bg-cyan-500/8 text-cyan-300 hover:bg-cyan-500/15 hover:text-cyan-200")}
+                                    : "border-emerald-500/35 bg-emerald-500/8 text-emerald-300 hover:bg-emerald-500/15 hover:text-emerald-200")}
                             title={isBeforeStart ? beforeStartMessage : "Mark complete"}>
                             {isActionPending("markComplete") ? "..." : "Mark Complete"}
                         </Button>
@@ -2018,8 +2062,8 @@ export default function TaskDetailClient({
                             className={cn(activeRowActionButtonClass, "w-full justify-center border",
                                 (!isOwner || taskState.status !== "ACTIVE" || Boolean(taskState.postponed_at) || isOverdue)
                                     ? "border-slate-800 bg-transparent text-slate-500 cursor-not-allowed"
-                                    : "bg-transparent border-amber-500/25 text-amber-400/80 hover:bg-amber-500/8 hover:border-amber-400/50 hover:text-amber-300")}>
-                            Postpone (1x)
+                                    : "border-amber-500/35 bg-amber-500/8 text-amber-300 hover:bg-amber-500/15 hover:border-amber-500/45 hover:text-amber-200")}>
+                            Postpone once?
                         </Button>
                         <Button variant="ghost" onClick={handleCancelRepetition}
                             disabled={isActionPending("cancelRepetition") || !isOwner || !taskState.recurrence_rule_id || isRepetitionStopped}
@@ -2030,13 +2074,13 @@ export default function TaskDetailClient({
                             <Repeat className="mr-1.5 h-3.5 w-3.5" />
                             {isRepetitionStopped ? "Repetitions Stopped" : "Stop Repeating"}
                         </Button>
-                        <Button variant="ghost" onClick={handleForceMajeure}
-                            disabled={isActionPending("forceMajeure") || !isOwner || (taskState.status !== "DENIED" && taskState.status !== "MISSED")}
+                        <Button variant="ghost" onClick={handleOverride}
+                            disabled={isActionPending("override") || !canUseOverride}
                             className={cn(activeRowActionButtonClass, "w-full justify-center border",
-                                (!isOwner || (taskState.status !== "DENIED" && taskState.status !== "MISSED"))
+                                !canUseOverride
                                     ? "border-slate-800 text-slate-600 cursor-not-allowed"
                                     : "border-slate-700 bg-slate-800/30 text-slate-300 hover:text-white hover:bg-slate-700/50")}>
-                            Use Force Majeure
+                            Use Override
                         </Button>
                         <Button type="button" variant="ghost" onClick={handleTempDelete} disabled={isActionPending("tempDelete") || !isOwner || !canTempDelete}
                             className={cn("h-12 w-full p-0 border transition-colors justify-center",
@@ -2054,8 +2098,8 @@ export default function TaskDetailClient({
                                     : subtasksSectionOpen
                                         ? "border-slate-600 bg-slate-900/70 text-slate-200"
                                         : "border-slate-800 bg-slate-900/30 text-slate-400 hover:bg-slate-900/50 hover:text-slate-300")}>
-                            <span className="text-[11px] uppercase tracking-wider font-bold">Subtasks</span>
-                            <span className="text-xs font-mono">{completedSubtasksCount}/{subtasks.length}</span>
+                            <span className="text-[13px] leading-none">Subtasks</span>
+                            <span className="text-[13px] leading-none opacity-80">{completedSubtasksCount}/{subtasks.length}</span>
                         </Button>
                         <Button type="button" variant="ghost" onClick={handleToggleRemindersSection} disabled={!isOwner}
                             className={cn(activeRowActionButtonClass, "w-full justify-between border px-3",
@@ -2064,8 +2108,8 @@ export default function TaskDetailClient({
                                     : remindersSectionOpen
                                         ? "border-slate-600 bg-slate-900/70 text-slate-200"
                                         : "border-slate-800 bg-slate-900/30 text-slate-400 hover:bg-slate-900/50 hover:text-slate-300")}>
-                            <span className="text-[11px] uppercase tracking-wider font-bold">Reminders</span>
-                            <span className="text-xs font-mono">{reminders.length}</span>
+                            <span className="text-[13px] leading-none">Reminders</span>
+                            <span className="text-[13px] leading-none opacity-80">{reminders.length}</span>
                         </Button>
                     </div>
                     {isOwner && (subtasksSectionOpen || remindersSectionOpen) && (
@@ -2086,16 +2130,45 @@ export default function TaskDetailClient({
                                                             style={subtask.is_completed ? { boxShadow: "0 0 6px rgba(52,211,153,0.25)" } : {}}>
                                                             {subtask.is_completed && <Check className="h-3 w-3" strokeWidth={3} />}
                                                         </button>
-                                                        <button type="button" disabled={!canManageActionChildren || isPending}
-                                                            onClick={() => handleToggleSubtask(subtask.id)}
-                                                            className={cn("flex-1 min-w-0 text-left text-sm font-mono transition-colors",
-                                                                subtask.is_completed ? "text-slate-600 line-through" : "text-slate-300",
-                                                                (!canManageActionChildren || isPending) && "cursor-not-allowed")}>
-                                                            <span className="truncate block">{subtask.title}</span>
-                                                        </button>
+                                                        {editingSubtaskId === subtask.id ? (
+                                                            <input
+                                                                type="text"
+                                                                value={editingSubtaskTitle}
+                                                                onChange={(event) => setEditingSubtaskTitle(event.target.value)}
+                                                                onKeyDown={(event) => {
+                                                                    if (event.key === "Enter") {
+                                                                        event.preventDefault();
+                                                                        void handleRenameSubtask();
+                                                                    }
+                                                                    if (event.key === "Escape") {
+                                                                        setEditingSubtaskId(null);
+                                                                        setEditingSubtaskTitle("");
+                                                                    }
+                                                                }}
+                                                                onBlur={() => void handleRenameSubtask()}
+                                                                autoFocus
+                                                                disabled={isPending}
+                                                                className="flex-1 min-w-0 bg-transparent border-b border-slate-500 text-sm font-mono text-slate-300 focus:outline-none focus:border-slate-400 py-0.5"
+                                                            />
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                disabled={!canManageActionChildren || isPending}
+                                                                onClick={() => startEditingSubtask(subtask.id, subtask.title)}
+                                                                className={cn(
+                                                                    "flex-1 min-w-0 text-left text-sm font-mono transition-colors py-0.5",
+                                                                    subtask.is_completed ? "text-slate-600 line-through" : "text-slate-300",
+                                                                    canManageActionChildren && !isPending && "hover:text-white cursor-text",
+                                                                    (!canManageActionChildren || isPending) && "cursor-not-allowed"
+                                                                )}
+                                                                title={canManageActionChildren ? "Click to edit" : "Subtasks are locked"}
+                                                            >
+                                                                <span className="truncate block">{subtask.title}</span>
+                                                            </button>
+                                                        )}
                                                         <button type="button" disabled={!canManageActionChildren || isPending}
                                                             onClick={() => handleDeleteSubtask(subtask.id)}
-                                                            className="h-6 w-6 flex items-center justify-center text-slate-700 hover:text-red-400 transition-colors opacity-0 group-hover/sub:opacity-100 cursor-pointer"
+                                                            className="h-6 w-6 flex items-center justify-center text-red-400 hover:text-red-300 transition-colors opacity-100 cursor-pointer"
                                                             aria-label="Delete subtask">
                                                             <Trash2 className="h-3.5 w-3.5" />
                                                         </button>

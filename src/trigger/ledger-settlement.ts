@@ -30,7 +30,7 @@ interface SettlementEntry {
 
 function formatLedgerEntryType(entryType: string): string {
     if (entryType === "voucher_timeout_penalty") return "Voucher Timeout Penalty";
-    if (entryType === "force_majeure") return "Force Majeure";
+    if (entryType === "override") return "Override";
     if (entryType === "failure") return "Failure";
     if (entryType === "rectified") return "Rectified";
     return entryType;

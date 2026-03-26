@@ -1241,10 +1241,10 @@ export default function SettingsClient({
                             <>
                                 <Button
                                     type="button"
-                                    variant="outline"
+                                    variant="ghost"
                                     onClick={handleGoogleRefreshCalendars}
                                     disabled={isGoogleActionLoading}
-                                    className="border-slate-700 text-slate-200 hover:bg-slate-800"
+                                    className="border border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
                                 >
                                     {isGoogleActionLoading ? "Working..." : "Refresh Calendars"}
                                 </Button>

@@ -40,9 +40,9 @@ export function CompactStatsItem({
     const statusColors: Record<string, string> = {
         ACTIVE: "text-blue-400",
         POSTPONED: "text-amber-400",
-        MARKED_COMPLETE: "text-yellow-400",
-        AWAITING_VOUCHER: "text-yellow-400",
-        AWAITING_ORCA: "text-yellow-400",
+        MARKED_COMPLETE: "text-amber-400",
+        AWAITING_VOUCHER: "text-amber-400",
+        AWAITING_ORCA: "text-amber-400",
         AWAITING_USER: "text-orange-300",
         ACCEPTED: "text-lime-300",
         AUTO_ACCEPTED: "text-lime-300",
@@ -67,7 +67,7 @@ export function CompactStatsItem({
         DENIED: "DENIED",
         MISSED: "MISSED",
         RECTIFIED: "RECTIFIED",
-        SETTLED: "FORCE MAJEURE",
+        SETTLED: "OVERRIDE",
         DELETED: "DELETED",
     };
 

@@ -134,7 +134,7 @@ export interface LedgerEntry {
     task_id: string;
     period: string; // YYYY-MM
     amount_cents: number;
-    entry_type: "failure" | "rectified" | "force_majeure" | "voucher_timeout_penalty";
+    entry_type: "failure" | "rectified" | "override" | "voucher_timeout_penalty";
     created_at: string;
 }
 
@@ -147,7 +147,7 @@ export interface RectifyPass {
     created_at: string;
 }
 
-export interface ForceMajeure {
+export interface Override {
     id: string;
     user_id: string;
     task_id: string;
@@ -396,10 +396,10 @@ export interface Database {
                 Insert: Omit<RectifyPass, "id" | "created_at">
                 Update: Partial<RectifyPass>
             }
-            force_majeure: {
-                Row: ForceMajeure
-                Insert: Omit<ForceMajeure, "id" | "created_at">
-                Update: Partial<ForceMajeure>
+            overrides: {
+                Row: Override
+                Insert: Omit<Override, "id" | "created_at">
+                Update: Partial<Override>
             }
             pomo_sessions: {
                 Row: PomoSession

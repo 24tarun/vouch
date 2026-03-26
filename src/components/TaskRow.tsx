@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { addTaskSubtask, deleteTaskSubtask, renameTaskSubtask, toggleTaskSubtask } from "@/actions/tasks";
 import type { Task } from "@/lib/types";
-import { Camera, Check, ChevronDown, ChevronRight, ExternalLink, Plus, Repeat, Trash2, TriangleAlert } from "lucide-react";
+import { Camera, Check, ChevronDown, ChevronRight, ExternalLink, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "./ui/button";
 import { PomoButton } from "./ui/PomoButton";
 import { usePomodoro } from "@/components/PomodoroProvider";
@@ -14,6 +14,7 @@ import { canOwnerTemporarilyDelete } from "@/lib/task-delete-window";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import { DEFAULT_POMO_DURATION_MINUTES } from "@/lib/constants";
 import { normalizePomoDurationMinutes } from "@/lib/pomodoro";
+import { RecurringIndicator } from "@/components/tasks/RecurringIndicator";
 import {
     buildBeforeStartSubmissionMessage,
     getTaskSubmissionWindowState,
@@ -82,21 +83,15 @@ export function TaskRow({
         [task.status]
     );
     const deadline = new Date(task.deadline);
-    const [deadlineLabel, setDeadlineLabel] = useState("--:-- -- ---");
-    useEffect(() => {
-        if (Number.isNaN(deadline.getTime())) {
-            setDeadlineLabel("Invalid date");
-            return;
-        }
-        setDeadlineLabel(
-            `${deadline.toLocaleTimeString("en-GB", {
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: false,
-            })} ${deadline.toLocaleDateString("en-GB", { day: "2-digit" })} ${deadline
-                .toLocaleDateString("en-GB", { month: "short" })
-                .toLowerCase()}`
-        );
+    const deadlineLabel = useMemo(() => {
+        if (Number.isNaN(deadline.getTime())) return "Invalid date";
+        return `${deadline.toLocaleTimeString("en-GB", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        })} ${deadline.toLocaleDateString("en-GB", { day: "2-digit" })} ${deadline
+            .toLocaleDateString("en-GB", { month: "short" })
+            .toLowerCase()}`;
     }, [task.deadline]);
     const submissionWindow = useMemo(
         () => getTaskSubmissionWindowState({
@@ -603,9 +598,7 @@ export function TaskRow({
                         >
                             {task.title}
                         </p>
-                        {task.recurrence_rule_id && (
-                            <Repeat className="h-3.5 w-3.5 text-purple-400 shrink-0" />
-                        )}
+                        {task.recurrence_rule_id && <RecurringIndicator />}
                         {hasSubtasks && (
                             <span className="text-[10px] text-slate-500 font-mono shrink-0">
                                 {completedSubtasksCount}/{subtasks.length}
@@ -716,9 +709,7 @@ export function TaskRow({
                             >
                                 {task.title}
                             </p>
-                            {task.recurrence_rule_id && (
-                                <Repeat className="h-3.5 w-3.5 text-purple-400 shrink-0" />
-                            )}
+                            {task.recurrence_rule_id && <RecurringIndicator />}
                             {hasSubtasks && (
                                 <span className="text-[10px] text-slate-500 font-mono shrink-0">
                                     {completedSubtasksCount}/{subtasks.length}
@@ -762,9 +753,7 @@ export function TaskRow({
                                 >
                                     {task.title}
                                 </p>
-                                {task.recurrence_rule_id && (
-                                    <Repeat className="h-3.5 w-3.5 text-purple-400 shrink-0" />
-                                )}
+                                {task.recurrence_rule_id && <RecurringIndicator />}
                                 {hasSubtasks && (
                                     <span className="text-[10px] text-slate-500 font-mono shrink-0">
                                         {completedSubtasksCount}/{subtasks.length}

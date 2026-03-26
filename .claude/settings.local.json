@@ -47,7 +47,8 @@
       "Bash(head -n 2115 \"C:/LocalFiles/coding/vouch/src/app/\\(app\\)/tasks/[id]/task-detail-client.tsx\")",
       "Bash(\"/tmp/task-detail-clean.tsx\")",
       "Read(//tmp/**)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(cat \"/c/LocalFiles/coding/vouch/src/app/\\(app\\)/ledger/page.tsx\")"
     ]
   }
 }

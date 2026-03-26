@@ -28,11 +28,20 @@ export default async function TaskPage({ params }: TaskPageProps) {
         task.user_id === user?.id &&
         (task.status === "ACTIVE" || task.status === "POSTPONED");
 
-    const [events, pomoSummary, potentialRp] = await Promise.all([
+    const currentPeriod = new Date().toISOString().slice(0, 7);
+
+    const [events, pomoSummary, potentialRp, overrideUsage] = await Promise.all([
         getTaskEvents(id),
         getTaskPomoSummary(id),
         isActiveOwnerTask ? getPotentialRpGain(id, user!.id) : Promise.resolve(null),
+        user?.id
+            ? (supabase.from("overrides" as any)
+                .select("id", { count: "exact", head: true })
+                .eq("user_id", user.id as any)
+                .eq("period", currentPeriod))
+            : Promise.resolve({ count: 0 }),
     ]);
+    const hasUsedOverrideThisMonth = (overrideUsage.count || 0) >= 1;
 
     // @ts-ignore
     const { data: profile } = await supabase
@@ -56,6 +65,7 @@ export default async function TaskPage({ params }: TaskPageProps) {
             viewerId={user?.id || ""}
             viewerCurrency={viewerCurrency}
             potentialRp={potentialRp}
+            hasUsedOverrideThisMonth={hasUsedOverrideThisMonth}
         />
     );
 }
