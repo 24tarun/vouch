@@ -144,6 +144,10 @@ function buildCreateTaskFormData(payload: TaskInputCreatePayload): FormData {
         formData.append("reminders", JSON.stringify(payload.reminderIsos));
     }
 
+    if (payload.isStrict) {
+        formData.append("isStrict", "true");
+    }
+
     if (payload.recurrenceType) {
         formData.append("recurrenceType", payload.recurrenceType);
         formData.append("userTimezone", payload.userTimezone);
@@ -603,6 +607,8 @@ export default function DashboardClient({
             marked_completed_at: shouldAutoCompletePastEvent ? nowIso : null,
             voucher_response_deadline: null,
             recurrence_rule_id: payload.recurrenceType ? "optimistic" : null,
+            start_at: payload.isStrict && payload.eventStartIso ? payload.eventStartIso : null,
+            is_strict: payload.isStrict,
             google_sync_for_task: optimisticIsEventTask,
             google_event_start_at: optimisticIsEventTask ? payload.eventStartIso : null,
             google_event_end_at: optimisticIsEventTask ? payload.eventEndIso : null,
@@ -690,8 +696,9 @@ export default function DashboardClient({
     const handleCompleteTaskOptimistic = async (task: Task) => {
         if (completingTaskIds.has(task.id)) return;
         const submissionWindow = getTaskSubmissionWindowState({
-            startAtIso: task.google_event_start_at ?? null,
+            startAtIso: task.start_at ?? null,
             deadlineIso: task.deadline,
+            isStrict: task.is_strict ?? false,
         });
         if (submissionWindow.beforeStart) {
             toast.error(buildBeforeStartSubmissionMessage(submissionWindow.startDate));

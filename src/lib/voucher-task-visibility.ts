@@ -1,4 +1,3 @@
-import { isTaskScheduledForTodayOrTomorrow } from "./dashboard-task-buckets";
 import type { Task } from "./types";
 import type { TaskStatus } from "./xstate/task-machine";
 
@@ -10,6 +9,13 @@ export function canVoucherSeeTask(
 ): boolean {
     if (!ACTIVE_PENDING_STATUS_SET.has(task.status)) return true;
 
-    return task.user?.voucher_can_view_active_tasks === true &&
-        isTaskScheduledForTodayOrTomorrow(task, reference);
+    if (task.user?.voucher_can_view_active_tasks !== true) return false;
+    const deadlineMs = Date.parse(task.deadline);
+    if (Number.isNaN(deadlineMs)) return false;
+    const now = reference.getTime();
+    const startOfToday = new Date(reference);
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTomorrow = new Date(startOfToday);
+    startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+    return deadlineMs >= startOfToday.getTime() && deadlineMs < startOfTomorrow.getTime();
 }

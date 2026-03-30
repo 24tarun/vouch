@@ -125,6 +125,7 @@ export interface TaskInputCreatePayload {
     recurrenceType: string | null;
     recurrenceDays: number[];
     userTimezone: string;
+    isStrict: boolean;
 }
 
 export function TaskInput({
@@ -904,6 +905,11 @@ export function TaskInput({
         }
 
         const isEventTask = EVENT_TOKEN_REGEX.test(title);
+        const isStrict = /(^|\s)-strict(?=\s|$)/i.test(title);
+        if (isStrict && !isEventTask) {
+            setDeadlineError("-strict requires an event. Add -event to the title.");
+            return;
+        }
         const colorValidation = validateEventColorUsage(title, isEventTask);
         if (colorValidation.error) {
             setDeadlineError(colorValidation.error);
@@ -1000,6 +1006,7 @@ export function TaskInput({
             recurrenceType: effectiveRecurrenceType,
             recurrenceDays: recurrenceDaysToUse,
             userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+            isStrict,
         };
         const timeUntilDeadline = formatTimeUntilDeadline(deadlineToSubmit);
 
@@ -1035,6 +1042,9 @@ export function TaskInput({
                 formData.append("requiredPomoMinutes", String(payload.requiredPomoMinutes));
             }
             formData.append("requiresProof", payload.requiresProof ? "true" : "false");
+            if (payload.isStrict) {
+                formData.append("isStrict", "true");
+            }
             if (payload.reminderIsos.length > 0) {
                 formData.append("reminders", JSON.stringify(payload.reminderIsos));
             }

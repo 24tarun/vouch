@@ -110,7 +110,7 @@ export function NavLinks({ vouchCount = 0, statsBadgeCount = 0 }: NavLinksProps)
                             key={`${link.href}-${link.label}`}
                             href={link.href}
                             prefetch
-                            className={`relative flex h-8 w-full min-w-0 items-center justify-center whitespace-nowrap text-[10px] sm:text-xs font-mono uppercase leading-none tracking-[0.08em] sm:tracking-[0.12em] transition-colors ${isActive ? "text-white font-bold" : "text-slate-400 hover:text-white"
+                            className={`flex h-8 w-full min-w-0 items-center justify-center whitespace-nowrap text-[10px] sm:text-xs font-mono uppercase leading-none tracking-[0.08em] sm:tracking-[0.12em] transition-colors ${isActive ? "text-white font-bold" : "text-slate-400 hover:text-white"
                                 }`}
                             aria-label={ariaLabel}
                             aria-current={isActive ? "page" : undefined}
@@ -119,6 +119,7 @@ export function NavLinks({ vouchCount = 0, statsBadgeCount = 0 }: NavLinksProps)
                             onTouchStart={() => prefetchLink(link.href)}
                             onClick={() => haptics.light()}
                         >
+                        <span className="relative inline-flex">
                             {link.href === "/ledger" ? (
                                 <>
                                     <span className="sr-only">Ledger</span>
@@ -174,10 +175,11 @@ export function NavLinks({ vouchCount = 0, statsBadgeCount = 0 }: NavLinksProps)
                                 link.label
                             )}
                             {badgeText !== null && (
-                                <span className="absolute right-[1px] top-[1px] inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-slate-950">
+                                <span className="absolute -right-2 -top-1 inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-slate-950">
                                     {badgeText}
                                 </span>
                             )}
+                        </span>
                         </Link>
                     );
                 })}

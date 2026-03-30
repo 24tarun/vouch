@@ -48,6 +48,8 @@ export interface Task {
     voucher_response_deadline: string | null;
     recurrence_rule_id: string | null;
     iteration_number?: number | null;
+    start_at?: string | null;
+    is_strict?: boolean;
     google_sync_for_task: boolean;
     google_event_start_at?: string | null;
     google_event_end_at?: string | null;

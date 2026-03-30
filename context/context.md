@@ -118,6 +118,8 @@ User identity + defaults.
 Core domain object.
 - `id`, `user_id` (owner), `voucher_id`, `title`, `status`
 - `deadline`, `failure_cost_cents`, `currency`
+- `start_at` (timestamptz, nullable) — optional submission window start
+- `is_strict` (bool, default false) — if true, task cannot be submitted before `start_at`
 - `marked_completed_at`, `postponed_at`, `voucher_response_deadline`
 - `recurrence_rule_id` (nullable FK â†’ `recurrence_rules`)
 - `requires_proof` (bool), `has_proof` (bool â€” denormalized, set on accept)
@@ -196,6 +198,7 @@ CREATED â”€â”€â”€â”€â”€â”€â”€â”€â”€
 - Self-vouched tasks skip AWAITING_VOUCHER â†’ go directly to COMPLETED
 - Voucher timeout auto-accepts (â†’ COMPLETED) and charges voucher 30 cents, not the owner
 - Owner can postpone once per task
+- **Strict submission window:** If `is_strict` is true (set via `-strict` token), task cannot be marked AWAITING_VOUCHER before `start_at` (the event start time). Error message shows the submission window. Requires `-event` token.
 - **AI Voucher resubmit:** When Orca denies proof, task goes AWAITING_VOUCHER -> AWAITING_USER. Owner can resubmit up to 3 times; on 3rd denial, task -> FAILED. Ledger penalty only charged on final failure. Can escalate to human voucher at any resubmit stage.
 - Failure cost charged on: FAILED (via deny or missed deadline). Rectify creates negative ledger entry to cancel it.
 - `SETTLED` state is sent in settlement email but tasks aren't DB-updated to SETTLED
@@ -324,6 +327,7 @@ ReputationTaskInput {
 | `-end YYYY-MM-DD` or `tmrw`/`tomorrow`/weekday | Deadline |
 | `-event` | Marks as calendar event |
 | `-start HH:MM` / `-end HH:MM` | Event start/end time |
+| `-strict` | Enforce submission window (requires `-event`; task cannot be submitted before event start) |
 | `-color <name>` | Google Calendar color |
 | `vouch <username>` or `.v <username>` | Set voucher |
 | `pomo <n>` or `timer <n>` | Required pomodoro minutes |

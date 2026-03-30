@@ -205,11 +205,12 @@ export default function TaskDetailClient({
 
     const submissionWindow = useMemo(
         () => getTaskSubmissionWindowState({
-            startAtIso: taskState.google_event_start_at ?? null,
+            startAtIso: taskState.start_at ?? null,
             deadlineIso: taskState.deadline,
+            isStrict: taskState.is_strict ?? false,
             now: new Date(nowMs),
         }),
-        [nowMs, taskState.deadline, taskState.google_event_start_at]
+        [nowMs, taskState.deadline, taskState.start_at, taskState.is_strict]
     );
     const deadline = new Date(taskState.deadline);
     const isOverdue =

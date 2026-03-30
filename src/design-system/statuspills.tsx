@@ -9,7 +9,7 @@ import { RecurringIndicator } from "./RecurringIndicator";
 const TASK_STATUS_BADGE_SIZE_CLASS =
     "min-h-[clamp(14px,1.5vw,17px)] !px-[clamp(5px,0.9vw,7px)] py-[clamp(1px,0.2vw,2px)] text-[10px] leading-none";
 export const ACTIVITY_TIMELINE_META_TEXT_CLASS = "text-xs font-mono text-slate-300";
-const CORE_PILL_BASE_CLASS = "leading-none py-[1px]";
+const CORE_PILL_BASE_CLASS = "py-[1px]";
 
 interface CorePillProps {
     className?: string;
@@ -21,9 +21,7 @@ interface CorePillProps {
 function CorePill({ className, children, title, ariaLabel }: CorePillProps) {
     return (
         <Badge variant="outline" className={cn(CORE_PILL_BASE_CLASS, className)} title={title} aria-label={ariaLabel}>
-            <span className="inline-flex items-center leading-none -translate-y-[0.5px]">
-                {children}
-            </span>
+            {children}
         </Badge>
     );
 }

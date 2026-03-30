@@ -25,10 +25,7 @@ export const DISCIPLINE_HEAVY_BREAK_THRESHOLD_DAYS = 15;
 export const COMMUNITY_AUTO_ACCEPT_PENALTY = 30;
 export const COMMUNITY_VOUCH_REWARD = 15;
 
-export const DISCIPLINE_BONUS_MAX = 75;
-export const PROOF_BONUS_MAX = 50;
-export const POMO_POINTS_PER_10_MIN = 1;
-export const POMO_BONUS_MAX = 50;
+export const BONUS_PER_QUALIFYING_TASK = 0.001; // +0.1% per qualifying task (proof, recurring, pomo >1hr)
 
 export const VELOCITY_LOOKBACK_DAYS = 7;
 

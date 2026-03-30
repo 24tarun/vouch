@@ -189,10 +189,12 @@ async function enqueueGoogleCalendarDelete(
     }
 }
 
-function normalizeTaskTitleAndSyncKind(rawTitle: string): { normalizedTitle: string; googleSyncForTask: boolean } {
+function normalizeTaskTitleAndSyncKind(rawTitle: string): { normalizedTitle: string; googleSyncForTask: boolean; isStrict: boolean } {
     const hasEventToken = /(^|\s)-event(?=\s|$)/i.test(rawTitle);
+    const hasStrictToken = /(^|\s)-strict(?=\s|$)/i.test(rawTitle);
     const normalizedTitle = stripProofRequiredTokens(stripEventColorTokens(rawTitle)
         .replace(/(^|\s)-event(?=\s|$)/gi, " ")
+        .replace(/(^|\s)-strict(?=\s|$)/gi, " ")
         .replace(/(?:^|\s)-start\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
         .replace(/(?:^|\s)-end\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
         .replace(/\s+/g, " ")
@@ -201,6 +203,7 @@ function normalizeTaskTitleAndSyncKind(rawTitle: string): { normalizedTitle: str
     return {
         normalizedTitle,
         googleSyncForTask: hasEventToken,
+        isStrict: hasStrictToken,
     };
 }
 
@@ -852,6 +855,9 @@ export async function createTask(formData: FormData) {
     if (!titleSelection.googleSyncForTask && parsedDeadline.getTime() <= Date.now()) {
         return { error: PAST_DEADLINE_ERROR };
     }
+    if (titleSelection.isStrict && !titleSelection.googleSyncForTask) {
+        return { error: "-strict requires an event. Add -event to the title." };
+    }
     const validatedDeadline = parsedDeadline;
     let eventStartAtIso: string | null = null;
     let eventEndAtIso: string | null = null;
@@ -869,16 +875,6 @@ export async function createTask(formData: FormData) {
             : DEFAULT_EVENT_DURATION_MINUTES;
 
     if (titleSelection.googleSyncForTask) {
-        const eventResolution = resolveEventSchedule({
-            rawTitle: rawTitle || "",
-            anchorDate: validatedDeadline,
-            defaultDurationMinutes: defaultEventDurationMinutes,
-        });
-
-        if (eventResolution.error) {
-            return { error: eventResolution.error };
-        }
-
         if (!submittedEventStartIso || !submittedEventEndIso) {
             return { error: EVENT_BOUNDARY_REQUIRED_ERROR };
         }
@@ -1025,6 +1021,8 @@ export async function createTask(formData: FormData) {
             status: shouldAutoCompletePastEvent ? "ACCEPTED" : "ACTIVE",
             marked_completed_at: shouldAutoCompletePastEvent ? creationNowIso : null,
             voucher_response_deadline: null,
+            start_at: titleSelection.isStrict ? eventStartAtIso : null,
+            is_strict: titleSelection.isStrict,
             google_sync_for_task: titleSelection.googleSyncForTask,
             google_event_start_at: eventStartAtIso,
             google_event_end_at: eventEndAtIso,
@@ -1221,8 +1219,9 @@ export async function markTaskCompleteWithProofIntent(
     }
 
     const submissionWindow = getTaskSubmissionWindowState({
-        startAtIso: (task as any).google_event_start_at,
+        startAtIso: (task as any).start_at ?? null,
         deadlineIso: (task as any).deadline,
+        isStrict: Boolean((task as any).is_strict),
         now: new Date(),
     });
 
@@ -1231,7 +1230,11 @@ export async function markTaskCompleteWithProofIntent(
     }
 
     if (submissionWindow.beforeStart) {
-        return { error: TASK_SUBMISSION_BEFORE_START_ERROR };
+        const start = submissionWindow.startDate;
+        const end = submissionWindow.deadlineDate;
+        const fmt = (d: Date) => d.toLocaleString(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+        const window = start && end ? ` between ${fmt(start)} and ${fmt(end)}` : "";
+        return { error: `This task can only be submitted${window}.` };
     }
 
     const { count: incompleteSubtasksCount } = await (supabase.from("task_subtasks") as any)

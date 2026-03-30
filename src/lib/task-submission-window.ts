@@ -12,6 +12,7 @@ export interface TaskSubmissionWindowState {
 interface TaskSubmissionWindowInput {
     startAtIso?: string | null;
     deadlineIso?: string | null;
+    isStrict?: boolean;
     now?: Date;
 }
 
@@ -30,7 +31,7 @@ export function getTaskSubmissionWindowState(input: TaskSubmissionWindowInput): 
         : new Date();
     const startDate = parseIsoDate(input.startAtIso);
     const deadlineDate = parseIsoDate(input.deadlineIso);
-    const beforeStart = Boolean(startDate) && now.getTime() < (startDate as Date).getTime();
+    const beforeStart = Boolean(input.isStrict) && Boolean(startDate) && now.getTime() < (startDate as Date).getTime();
     const pastDeadline = Boolean(deadlineDate) && now.getTime() >= (deadlineDate as Date).getTime();
     const canSubmitNow = !beforeStart && !pastDeadline;
 

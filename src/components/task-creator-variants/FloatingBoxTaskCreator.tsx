@@ -18,9 +18,10 @@ import {
 import type { ParserKeywordCompletion } from "@/lib/task-title-parser";
 import { stripEventColorTokens } from "@/lib/task-title-event-color";
 import {
-    defaultDeadline, defaultEnd, defaultStart,
+    defaultDeadline, defaultEnd, defaultStart, toLocalDT,
     DEFAULT_REMINDER_MINUTES, EVENT_COLORS, REMINDER_PRESETS,
 } from "./shared";
+import { extractEventTokens, parseClockToken } from "@/lib/task-title-event-time";
 
 const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon → Sun
 const WEEKDAY_SHORT: Record<number, string> = { 0: "Su", 1: "Mo", 2: "Tu", 3: "We", 4: "Th", 5: "Fr", 6: "Sa" };
@@ -65,6 +66,9 @@ function FloatingBoxTaskCreator({
     const [subtasks, setSubtasks] = useState<string[]>([]);
     const [subtaskDraft, setSubtaskDraft] = useState("");
     const subtaskInputRef = useRef<HTMLInputElement>(null);
+    const [editingSubtaskIndex, setEditingSubtaskIndex] = useState<number | null>(null);
+    const [editingSubtaskDraft, setEditingSubtaskDraft] = useState("");
+    const editingSubtaskRef = useRef<HTMLInputElement>(null);
 
     // Schedule
     const [deadline, setDeadline] = useState(defaultDeadline);
@@ -270,6 +274,31 @@ function FloatingBoxTaskCreator({
     useLayoutEffect(() => {
         keepSingleLineInputCaretInView(subtaskInputRef.current);
     }, [subtaskDraft, keepSingleLineInputCaretInView]);
+
+    // Sync -event / -start / -end tokens from title into picker state
+    useEffect(() => {
+        const hasEventToken = /(^|\s)-event(?=\s|$)/i.test(title);
+        setIsEvent(hasEventToken);
+        if (!hasEventToken) return;
+        const { startToken, endToken } = extractEventTokens(title);
+        const anchor = parseDateTimeLocal(deadline);
+        if (startToken) {
+            const parsed = parseClockToken(startToken);
+            if (parsed) {
+                const d = new Date(anchor);
+                d.setHours(parsed.hours, parsed.minutes, 0, 0);
+                setEventStart(toLocalDT(d));
+            }
+        }
+        if (endToken) {
+            const parsed = parseClockToken(endToken);
+            if (parsed) {
+                const d = new Date(anchor);
+                d.setHours(parsed.hours, parsed.minutes, 0, 0);
+                setEventEnd(toLocalDT(d));
+            }
+        }
+    }, [title, deadline]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const applyInlineKeywordCompletion = useCallback(() => {
         if (!inlineKeywordCompletion) return;
@@ -520,7 +549,10 @@ function FloatingBoxTaskCreator({
             .replace(/\btimer\s+\d+\b/gi, "")
             .replace(/\s+/g, " ")
             .trim();
-        return stripRepeatTokens(stripEventColorTokens(withoutStandardTokens));
+        return stripRepeatTokens(stripEventColorTokens(withoutStandardTokens
+            .replace(/(^|\s)-strict(?=\s|$)/gi, " ")
+            .replace(/\s+/g, " ")
+            .trim()));
     };
 
     // Parse a datetime-local string ("YYYY-MM-DDTHH:mm") as local time
@@ -550,6 +582,12 @@ function FloatingBoxTaskCreator({
     const handleSubmit = async () => {
         const cleanTitle = stripMetadata(title).trim();
         if (!cleanTitle || isLoading) { titleRef.current?.focus(); return; }
+
+        const isStrict = /(^|\s)-strict(?=\s|$)/i.test(title);
+        if (isStrict && !isEvent) {
+            toast.error("-strict requires an event. Toggle the event option.");
+            return;
+        }
 
         const deadlineDate = parseDateTimeLocal(deadline);
         const now = Date.now();
@@ -589,6 +627,7 @@ function FloatingBoxTaskCreator({
                 recurrenceType: recurrenceType || null,
                 recurrenceDays: customDays,
                 userTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+                isStrict,
             };
             handleClose();
             toast.success(`Deadline in ${parts.join(" ")}`);
@@ -617,6 +656,10 @@ function FloatingBoxTaskCreator({
             }
 
             formData.append("requiresProof", requiresProof ? "true" : "false");
+
+            if (isStrict) {
+                formData.append("isStrict", "true");
+            }
 
             if (reminderIsos.length > 0) {
                 formData.append("reminders", JSON.stringify(reminderIsos));
@@ -821,7 +864,40 @@ function FloatingBoxTaskCreator({
                                 {subtasks.map((s, i) => (
                                     <div key={i} className="flex items-center gap-2.5">
                                         <div className="h-[14px] w-[14px] rounded-full border border-slate-700 shrink-0" />
-                                        <span className="flex-1 text-sm text-slate-400 font-mono">{s}</span>
+                                        {editingSubtaskIndex === i ? (
+                                            <input
+                                                ref={editingSubtaskRef}
+                                                value={editingSubtaskDraft}
+                                                onChange={(e) => setEditingSubtaskDraft(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") {
+                                                        e.preventDefault();
+                                                        const trimmed = editingSubtaskDraft.trim();
+                                                        if (trimmed) setSubtasks((p) => p.map((v, j) => j === i ? trimmed : v));
+                                                        else setSubtasks((p) => p.filter((_, j) => j !== i));
+                                                        setEditingSubtaskIndex(null);
+                                                    } else if (e.key === "Escape") {
+                                                        setEditingSubtaskIndex(null);
+                                                    }
+                                                }}
+                                                onBlur={() => {
+                                                    const trimmed = editingSubtaskDraft.trim();
+                                                    if (trimmed) setSubtasks((p) => p.map((v, j) => j === i ? trimmed : v));
+                                                    else setSubtasks((p) => p.filter((_, j) => j !== i));
+                                                    setEditingSubtaskIndex(null);
+                                                }}
+                                                className="flex-1 bg-transparent text-sm font-mono text-slate-400 focus:outline-none"
+                                                autoFocus
+                                            />
+                                        ) : (
+                                            <span
+                                                className="flex-1 text-sm text-slate-400 font-mono cursor-text"
+                                                onClick={() => {
+                                                    setEditingSubtaskIndex(i);
+                                                    setEditingSubtaskDraft(s);
+                                                }}
+                                            >{s}</span>
+                                        )}
                                         <button
                                             onClick={() => setSubtasks((p) => p.filter((_, j) => j !== i))}
                                             className="text-slate-700 hover:text-red-400 transition-colors"
@@ -1209,14 +1285,6 @@ function FloatingBoxTaskCreator({
                             isEvent ? "max-h-[220px]" : "max-h-0",
                         )}>
                             <div className="space-y-2 pt-1.5">
-                                <Row label="End" icon={<span className="text-slate-600 text-xs font-mono">■</span>}>
-                                    <input
-                                        type="datetime-local"
-                                        value={eventEnd}
-                                        onChange={(e) => setEventEnd(e.target.value)}
-                                        className="bg-transparent text-slate-300 text-sm focus:outline-none font-mono"
-                                    />
-                                </Row>
                                 <div>
                                     <p className="text-[10px] font-mono uppercase tracking-[0.14em] text-slate-700 mb-2.5">Event colour</p>
                                     <div className="flex flex-wrap gap-2">

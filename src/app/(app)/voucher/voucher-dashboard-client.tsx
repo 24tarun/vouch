@@ -658,11 +658,13 @@ export function CompactPendingItem({
                         status={task.pending_display_type === "ACTIVE" ? "ACTIVE" : "AWAITING_VOUCHER"}
                         className="font-medium tracking-normal"
                     />
-                    <VoucherDeadlineBadge
-                        deadlineLabel={deadlineLabel}
-                        hasValidDeadline={hasValidDeadline}
-                        hoursLeft={hoursLeft}
-                    />
+                    {task.pending_display_type !== "ACTIVE" && (
+                        <VoucherDeadlineBadge
+                            deadlineLabel={deadlineLabel}
+                            hasValidDeadline={hasValidDeadline}
+                            hoursLeft={hoursLeft}
+                        />
+                    )}
                     <VoucherPomoAccumulatedBadge totalSeconds={task.pomo_total_seconds || 0} />
                     <VoucherProofRequestBadge
                         proofRequestCount={task.proof_request_open ? (task.proof_request_count || 0) : 0}

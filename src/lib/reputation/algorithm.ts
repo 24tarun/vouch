@@ -12,10 +12,7 @@ import {
     ACCOUNTABILITY_CONSECUTIVE_WINDOW_DAYS,
     COMMUNITY_AUTO_ACCEPT_PENALTY,
     COMMUNITY_VOUCH_REWARD,
-    DISCIPLINE_BONUS_MAX,
-    PROOF_BONUS_MAX,
-    POMO_POINTS_PER_10_MIN,
-    POMO_BONUS_MAX,
+    BONUS_PER_QUALIFYING_TASK,
     VELOCITY_LOOKBACK_DAYS,
     SCORE_TIERS,
 } from "./constants";
@@ -104,11 +101,12 @@ function computeDiscipline(tasks: ReputationTaskInput[]): number | null {
     return Math.min(1000, totalContribution / groups.size);
 }
 
-function computeAccountability(tasks: ReputationTaskInput[]): number | null {
-    const finalized = tasks.filter((t) => FINALIZED_STATUSES.has(t.status));
+function computeAccountability(tasks: ReputationTaskInput[], userId: string): number | null {
+    const ownedTasks = tasks.filter((t) => t.user_id === userId);
+    const finalized = ownedTasks.filter((t) => FINALIZED_STATUSES.has(t.status));
     if (finalized.length === 0) return null;
 
-    const sorted = [...tasks].sort(
+    const sorted = [...ownedTasks].sort(
         (a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
     );
 
@@ -164,7 +162,7 @@ function computeCommunity(tasks: ReputationTaskInput[], userId: string): number 
     const vouchedTasks = tasks.filter((t) => t.voucher_id === userId && t.user_id !== userId);
     if (vouchedTasks.length === 0) return null;
 
-    let score = 1000;
+    let score = SCORE_BASE;
     for (const t of vouchedTasks) {
         if (FINALIZED_STATUSES.has(t.status)) {
             score += COMMUNITY_VOUCH_REWARD;
@@ -189,7 +187,7 @@ function computeRawCategoryScores(tasks: ReputationTaskInput[], userId: string):
     return {
         delivery: computeDelivery(tasks),
         discipline: computeDiscipline(tasks),
-        accountability: computeAccountability(tasks),
+        accountability: computeAccountability(tasks, userId),
         proofQuality: computeProofQuality(tasks, userId),
         community: computeCommunity(tasks, userId),
     };
@@ -210,21 +208,24 @@ function coreScore(raw: RawCategoryScores): number {
     return slots.reduce((s, c) => s + c.value * c.weight, 0) / totalWeight;
 }
 
-// Bonus points on top of core score — only awarded when the feature is used
-function bonusPoints(raw: RawCategoryScores, tasks: ReputationTaskInput[], userId: string): number {
-    const disciplineBonus =
-        raw.discipline !== null ? (raw.discipline / 1000) * DISCIPLINE_BONUS_MAX : 0;
-    const proofBonus =
-        raw.proofQuality !== null ? (raw.proofQuality / 1000) * PROOF_BONUS_MAX : 0;
-
-    // Pomo: 1 point per 10 minutes of pomo time on owned completed tasks, capped at POMO_BONUS_MAX
-    const completedOwned = tasks.filter(
-        (t) => t.user_id === userId && SUCCESS_STATUSES.has(t.status) && t.pomo_total_seconds > 0
+// Per-task multiplier bonuses: each qualifying task gives +0.1% to the core score.
+// Compounds naturally with usage — 30 proof tasks ≈ +3%, 50 ≈ +5%, etc.
+function bonusMultiplier(tasks: ReputationTaskInput[], userId: string): number {
+    const ownedCompleted = tasks.filter(
+        (t) => t.user_id === userId && SUCCESS_STATUSES.has(t.status) && t.voucher_id !== userId
     );
-    const totalPomoMinutes = completedOwned.reduce((s, t) => s + t.pomo_total_seconds / 60, 0);
-    const pomoBonus = Math.min(POMO_BONUS_MAX, totalPomoMinutes * (POMO_POINTS_PER_10_MIN / 10));
 
-    return disciplineBonus + proofBonus + pomoBonus;
+    // Proof: accepted tasks where proof was uploaded
+    const proofCount = ownedCompleted.filter((t) => t.has_uploaded_proof).length;
+
+    // Recurring: accepted tasks that belong to a recurrence rule
+    const recurringCount = ownedCompleted.filter((t) => t.recurrence_rule_id != null).length;
+
+    // Pomo: accepted tasks with more than 1hr of pomo logged
+    const pomoCount = ownedCompleted.filter((t) => t.pomo_total_seconds > 3600).length;
+
+    const totalBonusTasks = proofCount + recurringCount + pomoCount;
+    return Math.pow(1 + BONUS_PER_QUALIFYING_TASK, totalBonusTasks);
 }
 
 // Map raw (nullable) scores to CategoryScores for display — null shows as SCORE_BASE
@@ -246,8 +247,8 @@ export function computeFullReputationScore(
     const finalizedCount = ownedTasks.filter((t) => FINALIZED_STATUSES.has(t.status)).length;
 
     const raw = computeRawCategoryScores(tasks, userId);
-    const rawScore = coreScore(raw) + bonusPoints(raw, tasks, userId); // cap applied after Bayesian so bonuses have real effect
-    const score = Math.round(Math.min(1000, Math.max(0, bayesian(rawScore, finalizedCount))));
+    const bayesianCore = bayesian(coreScore(raw), finalizedCount);
+    const score = Math.round(Math.min(1000, Math.max(0, bayesianCore * bonusMultiplier(tasks, userId))));
 
     // Velocity: re-run with tasks older than 7 days
     let velocityDelta: number | null = null;
@@ -258,9 +259,9 @@ export function computeFullReputationScore(
 
     if (historicalFinalizedCount >= 2) {
         const historicalRaw = computeRawCategoryScores(historicalTasks, userId);
-        const historicalRawScore = coreScore(historicalRaw) + bonusPoints(historicalRaw, historicalTasks, userId);
+        const historicalBayesianCore = bayesian(coreScore(historicalRaw), historicalFinalizedCount);
         const historicalScore = Math.round(
-            Math.min(1000, Math.max(0, bayesian(historicalRawScore, historicalFinalizedCount)))
+            Math.min(1000, Math.max(0, historicalBayesianCore * bonusMultiplier(historicalTasks, userId)))
         );
         velocityDelta = score - historicalScore;
     }

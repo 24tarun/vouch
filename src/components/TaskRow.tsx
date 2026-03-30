@@ -95,11 +95,12 @@ export function TaskRow({
     }, [task.deadline]);
     const submissionWindow = useMemo(
         () => getTaskSubmissionWindowState({
-            startAtIso: task.google_event_start_at ?? null,
+            startAtIso: task.start_at ?? null,
             deadlineIso: task.deadline,
+            isStrict: task.is_strict ?? false,
             now: new Date(nowMs),
         }),
-        [nowMs, task.deadline, task.google_event_start_at]
+        [nowMs, task.deadline, task.start_at, task.is_strict]
     );
     const isOverdue = submissionWindow.pastDeadline && !isActuallyCompleted;
     const isBeforeStart = submissionWindow.beforeStart && !isActuallyCompleted;
