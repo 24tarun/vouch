@@ -12,9 +12,10 @@ import type { TaskInputCreatePayload } from "@/components/TaskInput";
 import {
     applyParserKeywordCompletion,
     buildTaskTitleOverlayModel,
-    stripRepeatTokens,
+    EVENT_TOKEN_REGEX,
     WEEKDAY_TOKEN_REGEX,
 } from "@/lib/task-title-parser";
+import { resolveTaskDeadline, stripMetadata, parseTaskTitleAndSubtasks } from "@/lib/parser_keyword_resolver";
 import type { ParserKeywordCompletion } from "@/lib/task-title-parser";
 import { stripEventColorTokens } from "@/lib/task-title-event-color";
 import {
@@ -61,6 +62,7 @@ function FloatingBoxTaskCreator({
     const [titleCaretIndex, setTitleCaretIndex] = useState(0);
     const [isTitleFocused, setIsTitleFocused] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [isDeadlineManuallyPicked, setIsDeadlineManuallyPicked] = useState(false);
 
     // Subtasks
     const [subtasks, setSubtasks] = useState<string[]>([]);
@@ -74,13 +76,13 @@ function FloatingBoxTaskCreator({
     const [deadline, setDeadline] = useState(defaultDeadline);
     const [isEvent, setIsEvent] = useState(false);
     const [eventStart, setEventStart] = useState(defaultStart);
-    const [eventEnd, setEventEnd] = useState(defaultEnd);
     const [eventColor, setEventColor] = useState<string | null>(null);
 
     // Stakes
     const [failureCost, setFailureCost] = useState(defaultFailureCost);
     const [costEditing, setCostEditing] = useState(false);
     const [costDraft, setCostDraft] = useState("");
+    const [eventEnd, setEventEnd] = useState(defaultEnd);
     const costInputRef = useRef<HTMLInputElement>(null);
     const resolveDefaultVoucher = () => {
         if (defaultVoucherId && friends.some((f) => f.id === defaultVoucherId)) return defaultVoucherId;
@@ -163,7 +165,7 @@ function FloatingBoxTaskCreator({
     }), [focusTitleInput]);
 
     // ── Overlay model ──────────────────────────────────────────────────────────
-    const { titleHighlightSegments, inlineKeywordCompletion, showTitleOverlay } = useMemo(
+    const { titleHighlightSegments, inlineKeywordCompletion } = useMemo(
         () => buildTaskTitleOverlayModel(title, titleCaretIndex, isTitleFocused, false, friends),
         [friends, isTitleFocused, title, titleCaretIndex]
     );
@@ -260,9 +262,7 @@ function FloatingBoxTaskCreator({
         syncTitleHighlightScroll();
     }, [focusTitleInput, syncTitleCaretFromElement, syncTitleHighlightScroll, title, titleCaretIndex]);
 
-    useLayoutEffect(() => {
-        syncTitleHighlightScroll();
-    }, [showTitleOverlay, syncTitleHighlightScroll, title, titleCaretIndex]);
+
 
     // Re-apply scroll after React's DOM commit. React resets input.scrollLeft when it writes
     // input.value during reconciliation. useLayoutEffect fires after that write but before paint,
@@ -275,9 +275,19 @@ function FloatingBoxTaskCreator({
         keepSingleLineInputCaretInView(subtaskInputRef.current);
     }, [subtaskDraft, keepSingleLineInputCaretInView]);
 
+    // Auto-update deadline when typing tmrw, monday, etc.
+    useEffect(() => {
+        if (!isDeadlineManuallyPicked) {
+            const result = resolveTaskDeadline(title, new Date(), 60);
+            if (!result.error) {
+                setDeadline(toLocalDT(result.deadline));
+            }
+        }
+    }, [title, isDeadlineManuallyPicked]);
+
     // Sync -event / -start / -end tokens from title into picker state
     useEffect(() => {
-        const hasEventToken = /(^|\s)-event(?=\s|$)/i.test(title);
+        const hasEventToken = EVENT_TOKEN_REGEX.test(title);
         setIsEvent(hasEventToken);
         if (!hasEventToken) return;
         const { startToken, endToken } = extractEventTokens(title);
@@ -433,6 +443,7 @@ function FloatingBoxTaskCreator({
                     : selfUserId
             );
             setActiveReminders(new Set(DEFAULT_REMINDER_MINUTES));
+            setIsDeadlineManuallyPicked(false);
             window.requestAnimationFrame(() => {
                 scrollBodyRef.current?.scrollTo({ top: 0, behavior: "auto" });
             });
@@ -532,28 +543,7 @@ function FloatingBoxTaskCreator({
         });
     };
 
-    // Strip parser keyword tokens from title to get clean task name
-    const stripMetadata = (text: string) => {
-        const withoutStandardTokens = text
-            .replace(/(^|\s)@(?:\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g, "$1")
-            .replace(/(?:^|\s)-start\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
-            .replace(/(?:^|\s)-end\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
-            .replace(/\b([12]?\d|3[01])(?:st|nd|rd|th)\b/gi, "")
-            .replace(/\b(?:0?[1-9]|[12]\d|3[01])\/(?:0?[1-9]|1[0-2])(?:\/\d{4})?\b/g, "")
-            .replace(/(^|\s)remind@(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, "$1")
-            .replace(/\b(?:tmrw|tomorrow)\b/gi, "")
-            .replace(new RegExp(WEEKDAY_TOKEN_REGEX.source, "gi"), "")
-            .replace(/(?:\bvouch|\.v)\s+[^\s/]+/gi, "")
-            .replace(/(?:^|\s)-proof(?=\s|$)/gi, " ")
-            .replace(/\bpomo\s+\d+\b/gi, "")
-            .replace(/\btimer\s+\d+\b/gi, "")
-            .replace(/\s+/g, " ")
-            .trim();
-        return stripRepeatTokens(stripEventColorTokens(withoutStandardTokens
-            .replace(/(^|\s)-strict(?=\s|$)/gi, " ")
-            .replace(/\s+/g, " ")
-            .trim()));
-    };
+
 
     // Parse a datetime-local string ("YYYY-MM-DDTHH:mm") as local time
     const parseDateTimeLocal = (s: string): Date => {
@@ -580,7 +570,8 @@ function FloatingBoxTaskCreator({
     const handleClose = () => { reset(); onClose(); };
 
     const handleSubmit = async () => {
-        const cleanTitle = stripMetadata(title).trim();
+        const { title: cleanTitle, subtasks: titleSubtasks } = parseTaskTitleAndSubtasks(title);
+        const allSubtasks = [...subtasks, ...titleSubtasks];
         if (!cleanTitle || isLoading) { titleRef.current?.focus(); return; }
 
         const isStrict = /(^|\s)-strict(?=\s|$)/i.test(title);
@@ -615,7 +606,7 @@ function FloatingBoxTaskCreator({
             const payload: TaskInputCreatePayload = {
                 title: cleanTitle,
                 rawTitle: title,
-                subtasks,
+                subtasks: allSubtasks,
                 requiredPomoMinutes: null,
                 requiresProof,
                 deadlineIso: deadlineDate.toISOString(),
@@ -651,8 +642,8 @@ function FloatingBoxTaskCreator({
             formData.append("voucherId", selectedVoucherId);
             formData.append("failureCost", failureCost.toFixed(2));
 
-            if (subtasks.length > 0) {
-                formData.append("subtasks", JSON.stringify(subtasks));
+            if (allSubtasks.length > 0) {
+                formData.append("subtasks", JSON.stringify(allSubtasks));
             }
 
             formData.append("requiresProof", requiresProof ? "true" : "false");
@@ -791,19 +782,7 @@ function FloatingBoxTaskCreator({
                     >
                         {/* Title input with overlay */}
                         <div className="relative">
-                            {showTitleOverlay && (
-                                <div
-                                    ref={titleHighlightRef}
-                                    aria-hidden="true"
-                                    className={cn(
-                                        // Overlay must be horizontally scrollable; otherwise long titles clip on the right.
-                                        "pointer-events-none select-none absolute inset-0 overflow-x-auto overflow-y-hidden no-scrollbar text-white flex items-center",
-                                        TITLE_METRICS
-                                    )}
-                                >
-                                    <span className="whitespace-pre">{titleOverlayRuns}</span>
-                                </div>
-                            )}
+
                             <input
                                 ref={titleRef}
                                 type="text"
@@ -853,7 +832,7 @@ function FloatingBoxTaskCreator({
                                 className={cn(
                                     "w-full bg-transparent placeholder:text-slate-700 focus:outline-none title-input-xl",
                                     TITLE_METRICS,
-                                    showTitleOverlay ? "text-transparent caret-transparent" : "text-slate-50 caret-white",
+                                    "text-slate-50 caret-white",
                                 )}
                             />
                         </div>
@@ -958,7 +937,10 @@ function FloatingBoxTaskCreator({
                             <input
                                 type="datetime-local"
                                 value={deadline}
-                                onChange={(e) => setDeadline(e.target.value)}
+                                onChange={(e) => {
+                                    setDeadline(e.target.value);
+                                    setIsDeadlineManuallyPicked(true);
+                                }}
                                 className="bg-transparent text-amber-400 text-sm focus:outline-none font-mono deadline-input"
                             />
                         </Row>
@@ -1261,7 +1243,10 @@ function FloatingBoxTaskCreator({
                                     ref={eventStartInputRef}
                                     type="datetime-local"
                                     value={eventStart}
-                                    onChange={(e) => setEventStart(e.target.value)}
+                                    onChange={(e) => {
+                                        setEventStart(e.target.value);
+                                        setIsDeadlineManuallyPicked(true);
+                                    }}
                                     className="bg-transparent text-emerald-400 text-sm focus:outline-none font-mono start-time-input pr-6"
                                 />
                                 <button

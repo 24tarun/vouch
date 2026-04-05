@@ -2,16 +2,16 @@ import type { Database } from "@/lib/types";
 
 export const MANUAL_REMINDER_SOURCE = "MANUAL" as const;
 export const DEFAULT_DEADLINE_1H_REMINDER_SOURCE = "DEFAULT_DEADLINE_1H" as const;
-export const DEFAULT_DEADLINE_5M_REMINDER_SOURCE = "DEFAULT_DEADLINE_5M" as const;
+export const DEFAULT_DEADLINE_10M_REMINDER_SOURCE = "DEFAULT_DEADLINE_10M" as const;
 
 export type TaskReminderSource =
     | typeof MANUAL_REMINDER_SOURCE
     | typeof DEFAULT_DEADLINE_1H_REMINDER_SOURCE
-    | typeof DEFAULT_DEADLINE_5M_REMINDER_SOURCE;
+    | typeof DEFAULT_DEADLINE_10M_REMINDER_SOURCE;
 
 export type DefaultDeadlineReminderSource =
     | typeof DEFAULT_DEADLINE_1H_REMINDER_SOURCE
-    | typeof DEFAULT_DEADLINE_5M_REMINDER_SOURCE;
+    | typeof DEFAULT_DEADLINE_10M_REMINDER_SOURCE;
 
 type TaskReminderInsertRow = Database["public"]["Tables"]["task_reminders"]["Insert"];
 
@@ -29,7 +29,7 @@ export function isDefaultDeadlineReminderSource(
 ): source is DefaultDeadlineReminderSource {
     return (
         source === DEFAULT_DEADLINE_1H_REMINDER_SOURCE ||
-        source === DEFAULT_DEADLINE_5M_REMINDER_SOURCE
+        source === DEFAULT_DEADLINE_10M_REMINDER_SOURCE
     );
 }
 
@@ -77,8 +77,8 @@ export function buildDefaultDeadlineReminderRows({
     );
     pushReminder(
         deadlineFinalWarningEnabled,
-        5 * 60 * 1000,
-        DEFAULT_DEADLINE_5M_REMINDER_SOURCE
+        10 * 60 * 1000,
+        DEFAULT_DEADLINE_10M_REMINDER_SOURCE
     );
 
     return Array.from(rowsByReminderMs.entries())

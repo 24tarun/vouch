@@ -5,7 +5,7 @@
  * 1) Finds due task reminders that were not notified yet.
  * 2) Sends owner notifications for active tasks.
  *    - MANUAL reminders: push + email
- *    - DEFAULT_DEADLINE_1H / DEFAULT_DEADLINE_5M reminders: push only
+ *    - DEFAULT_DEADLINE_1H / DEFAULT_DEADLINE_10M reminders: push only
  * 3) Writes deadline warning task events for seeded default reminders.
  * 4) Marks reminders as notified to avoid duplicate sends.
  */
@@ -15,7 +15,7 @@ import { sendNotification } from "@/lib/notifications";
 import type { TaskStatus } from "@/lib/xstate/task-machine";
 import {
     DEFAULT_DEADLINE_1H_REMINDER_SOURCE,
-    DEFAULT_DEADLINE_5M_REMINDER_SOURCE,
+    DEFAULT_DEADLINE_10M_REMINDER_SOURCE,
     MANUAL_REMINDER_SOURCE,
 } from "@/lib/task-reminder-defaults";
 
@@ -42,11 +42,11 @@ interface ReminderUser {
 
 const ACTIVE_STATUSES: TaskStatus[] = ["ACTIVE", "POSTPONED"];
 const ONE_HOUR_REMINDER_EVENT = "DEADLINE_WARNING_1H";
-const FIVE_MIN_REMINDER_EVENT = "DEADLINE_WARNING_5M";
+const TEN_MIN_REMINDER_EVENT = "DEADLINE_WARNING_10M";
 
 function getReminderEventType(source: string): string | null {
     if (source === DEFAULT_DEADLINE_1H_REMINDER_SOURCE) return ONE_HOUR_REMINDER_EVENT;
-    if (source === DEFAULT_DEADLINE_5M_REMINDER_SOURCE) return FIVE_MIN_REMINDER_EVENT;
+    if (source === DEFAULT_DEADLINE_10M_REMINDER_SOURCE) return TEN_MIN_REMINDER_EVENT;
     return null;
 }
 
@@ -180,10 +180,10 @@ async function processDueTaskReminders(
                     });
                 } else {
                     const isOneHour = reminder.source === DEFAULT_DEADLINE_1H_REMINDER_SOURCE;
-                    const title = isOneHour ? "Deadline in 1 hour" : "Deadline in 5 minutes";
+                    const title = isOneHour ? "Deadline in 1 hour" : "Deadline in 10 minutes";
                     const text = isOneHour
                         ? `1 hour left for ${task.title}`
-                        : `5 minutes left for ${task.title}`;
+                        : `10 minutes left for ${task.title}`;
 
                     await sendNotification({
                         userId: reminder.user_id,

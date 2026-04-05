@@ -86,7 +86,7 @@ export interface TaskReminder {
     parent_task_id: string;
     user_id: string;
     reminder_at: string;
-    source: "MANUAL" | "DEFAULT_DEADLINE_1H" | "DEFAULT_DEADLINE_5M";
+    source: "MANUAL" | "DEFAULT_DEADLINE_1H" | "DEFAULT_DEADLINE_10M";
     notified_at: string | null;
     created_at: string;
     updated_at: string;

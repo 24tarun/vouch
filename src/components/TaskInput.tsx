@@ -68,6 +68,7 @@ import {
     TOMORROW_KEYWORD_REGEX,
     WEEKDAY_TOKEN_REGEX,
 } from "@/lib/task-title-parser";
+import { resolveTaskDeadline, stripMetadata, parseTaskTitleAndSubtasks } from "@/lib/parser_keyword_resolver";
 import type { ParserKeywordCompletion } from "@/lib/task-title-parser";
 
 const TIME_TOKEN_REGEX = /(?:^|\s)@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/i;
@@ -206,7 +207,6 @@ export function TaskInput({
     const {
         titleHighlightSegments,
         inlineKeywordCompletion,
-        showTitleOverlay,
     } = useMemo(
         () => buildTaskTitleOverlayModel(title, titleCaretIndex, isTitleFocused, isColorPickerVisible, friends),
         [friends, isColorPickerVisible, isTitleFocused, title, titleCaretIndex]
@@ -541,125 +541,7 @@ export function TaskInput({
     };
 
 
-    const resolveDeadlineFromTitle = useCallback((text: string) => {
-        const now = new Date();
-        const defaultDeadline = getDefaultDeadline(now);
-        const isEventTask = EVENT_TOKEN_REGEX.test(text);
 
-        if (isEventTask) {
-            const anchorResolution = resolveEventAnchorDate(text, now);
-            if (anchorResolution.error) {
-                return {
-                    deadline: defaultDeadline,
-                    error: anchorResolution.error,
-                };
-            }
-
-            const eventResolution = resolveEventSchedule({
-                rawTitle: text,
-                anchorDate: anchorResolution.anchorDate,
-                defaultDurationMinutes: normalizedDefaultEventDurationMinutes,
-                now,
-            });
-
-            if (eventResolution.error || !eventResolution.endDate) {
-                return {
-                    deadline: defaultDeadline,
-                    error: eventResolution.error || "Event end time is invalid.",
-                };
-            }
-
-            return {
-                deadline: eventResolution.endDate,
-                error: null as string | null,
-            };
-        }
-
-        const timerMinutes = parseTimerMinutesToken(text);
-
-        if (timerMinutes !== null) {
-            const timerDeadline = new Date();
-            timerDeadline.setMinutes(timerDeadline.getMinutes() + timerMinutes);
-            return { deadline: timerDeadline, error: null as string | null };
-        }
-
-        const parsedDateTokens = parseDateTokens(text);
-        const parsedWeekdayTokens = extractWeekdayDateTokens(text);
-        if (parsedDateTokens.length > 1 || parsedWeekdayTokens.length > 1) {
-            return {
-                deadline: defaultDeadline,
-                error: "Use only one date token (for example: monday, 28th or 05/03).",
-            };
-        }
-
-        const hasTomorrowKeyword = TOMORROW_KEYWORD_REGEX.test(text);
-        const timeMatch = text.match(TIME_TOKEN_REGEX);
-        const parsedTime = timeMatch ? parseTaskInputTimeToken(timeMatch[1], true) : null;
-
-        if (timeMatch && !parsedTime) {
-            return { deadline: defaultDeadline, error: "Deadline is invalid." };
-        }
-
-        if (parsedDateTokens.length === 1) {
-            const dateToken = parsedDateTokens[0];
-            const year = dateToken.kind === "slash" ? (dateToken.year ?? now.getFullYear()) : now.getFullYear();
-            const month = dateToken.kind === "slash" ? dateToken.month : now.getMonth() + 1;
-            const day = dateToken.day;
-
-            if (!isValidCalendarDate(year, month, day)) {
-                return { deadline: defaultDeadline, error: "Date is invalid. Use 28th, 05/03, or 05/03/2026." };
-            }
-
-            const deadline = new Date(
-                year,
-                month - 1,
-                day,
-                parsedTime?.hours ?? 23,
-                parsedTime?.minutes ?? 59,
-                0,
-                0
-            );
-
-            if (deadline.getTime() <= now.getTime()) {
-                return { deadline, error: "Deadline must be in the future." };
-            }
-
-            return { deadline, error: null as string | null };
-        }
-
-        if (parsedWeekdayTokens.length === 1) {
-            const weekdayToken = parsedWeekdayTokens[0];
-            const deadline = resolveUpcomingWeekdayDate(weekdayToken.weekday, now);
-            deadline.setHours(parsedTime?.hours ?? 23, parsedTime?.minutes ?? 59, 0, 0);
-
-            if (deadline.getTime() <= now.getTime()) {
-                return { deadline, error: "Deadline must be in the future." };
-            }
-
-            return { deadline, error: null as string | null };
-        }
-
-        if (hasTomorrowKeyword) {
-            const deadline = new Date(now);
-            deadline.setDate(deadline.getDate() + 1);
-            deadline.setHours(parsedTime?.hours ?? 23, parsedTime?.minutes ?? 59, 0, 0);
-
-            return { deadline, error: null as string | null };
-        }
-
-        if (parsedTime) {
-            const deadline = new Date(now);
-            deadline.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
-
-            if (deadline.getTime() <= now.getTime()) {
-                return { deadline, error: "Deadline must be in the future." };
-            }
-
-            return { deadline, error: null as string | null };
-        }
-
-        return { deadline: defaultDeadline, error: null as string | null };
-    }, [normalizedDefaultEventDurationMinutes]);
 
     const resetDeadlineToDefault = () => {
         setDeadlineError(null);
@@ -800,11 +682,17 @@ export function TaskInput({
 
     useEffect(() => {
         if (!isDeadlineManuallyPicked) {
-            const parserResolution = resolveDeadlineFromTitle(title);
-            setSelectedDate(parserResolution.deadline);
-            setDeadlineError(parserResolution.error);
+            const result = resolveTaskDeadline(title, new Date(), normalizedDefaultEventDurationMinutes);
+            if (!result.error) {
+                setSelectedDate(result.deadline);
+            } else {
+                setDeadlineError(result.error);
+                setSelectedDate(getDefaultDeadline());
+            }
         }
+    }, [title, isDeadlineManuallyPicked, normalizedDefaultEventDurationMinutes]);
 
+    useEffect(() => {
         if (/(?:\bvouch|\.v)\s+(me|self|myself)(?=\s|$|\/)/i.test(title)) {
             setSelectedVoucherId(selfUserId);
         } else {
@@ -825,40 +713,10 @@ export function TaskInput({
                 }
             }
         }
-    }, [title, friends, isDeadlineManuallyPicked, selfUserId, resolveDeadlineFromTitle]);
+    }, [title, friends, isDeadlineManuallyPicked, selfUserId]);
 
-    useLayoutEffect(() => {
-        syncTitleHighlightScroll();
-    }, [showTitleOverlay, syncTitleHighlightScroll, title, titleCaretIndex]);
 
-    const stripMetadata = (text: string) => {
-        const withoutStandardTokens = text
-            .replace(/(^|\s)@(?:\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g, "$1")
-            .replace(/(?:^|\s)-start\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
-            .replace(/(?:^|\s)-end\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
-            .replace(/\b([12]?\d|3[01])(?:st|nd|rd|th)\b/gi, "")
-            .replace(/\b(?:0?[1-9]|[12]\d|3[01])\/(?:0?[1-9]|1[0-2])(?:\/\d{4})?\b/g, "")
-            .replace(/(^|\s)remind@(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, "$1")
-            .replace(/\b(?:tmrw|tomorrow)\b/gi, "")
-            .replace(new RegExp(WEEKDAY_TOKEN_REGEX.source, "gi"), "")
-            .replace(/(?:\bvouch|\.v)\s+[^\s/]+/gi, "")
-            .replace(/(?:^|\s)-proof(?=\s|$)/gi, " ")
-            .replace(/\bpomo\s+\d+\b/gi, "")
-            .replace(/\btimer\s+\d+\b/gi, "")
-            .replace(/\s+/g, " ")
-            .trim();
 
-        return stripRepeatTokens(stripEventColorTokens(withoutStandardTokens));
-    };
-
-    const parseTaskTitleAndSubtasks = (text: string) => {
-        const cleaned = stripMetadata(text);
-        const segments = cleaned.split("/").map((segment) => segment.trim());
-        const taskTitle = segments[0] || "";
-        const subtasks = segments.slice(1).filter(Boolean);
-
-        return { taskTitle, subtasks };
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -889,7 +747,7 @@ export function TaskInput({
             effectiveReminders = draftResult.reminders;
         }
 
-        const { taskTitle, subtasks } = parseTaskTitleAndSubtasks(title);
+        const { title: taskTitle, subtasks } = parseTaskTitleAndSubtasks(title);
         const requiredPomoParse = parseRequiredPomoFromTitle(title);
         const requiredPomoMinutes = requiredPomoParse.requiredPomoMinutes;
         const requiresProof = parseProofRequiredFromTitle(title);
@@ -920,7 +778,7 @@ export function TaskInput({
             return;
         }
 
-        const parserResolution = effectiveIsDeadlineManuallyPicked ? null : resolveDeadlineFromTitle(title);
+        const parserResolution = effectiveIsDeadlineManuallyPicked ? null : resolveTaskDeadline(title, new Date(), normalizedDefaultEventDurationMinutes);
         if (parserResolution?.error) {
             setDeadlineError(parserResolution.error);
             return;
@@ -1081,19 +939,7 @@ export function TaskInput({
         <form ref={formRef} onSubmit={handleSubmit} className="relative space-y-3 mb-8">
             <div className="bg-slate-900/50 border border-slate-800/50 focus-within:border-slate-700/50 rounded-xl transition-all shadow-2xl overflow-visible">
                 <div className="relative">
-                    {showTitleOverlay && (
-                        <div
-                            ref={titleHighlightRef}
-                            aria-hidden="true"
-                            className={cn(
-                                // Overlay must be horizontally scrollable; otherwise long titles clip on the right.
-                                "pointer-events-none absolute inset-0 overflow-x-auto overflow-y-hidden no-scrollbar px-5 py-4 text-white",
-                                TITLE_TEXT_METRICS_CLASS
-                            )}
-                        >
-                            <span className="whitespace-pre">{titleOverlayRuns}</span>
-                        </div>
-                    )}
+
                     <input
                         ref={titleInputRef}
                         type="text"
@@ -1139,7 +985,7 @@ export function TaskInput({
                         placeholder="click the bulb button on the right"
                         className={cn(
                             "w-full bg-transparent border-none px-5 py-4 placeholder:text-slate-500/70 focus:outline-none transition-colors",
-                            showTitleOverlay ? "text-transparent caret-white" : "text-white caret-white",
+                            "text-white caret-white",
                             TITLE_TEXT_METRICS_CLASS
                         )}
                         disabled={isLoading}

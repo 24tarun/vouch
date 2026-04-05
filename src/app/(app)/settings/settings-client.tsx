@@ -1111,11 +1111,11 @@ export default function SettingsClient({
                     <div className="border-b border-slate-900 py-3">
                         <div className="flex items-start gap-4">
                             <div className="flex-1 min-w-0 space-y-1">
-                                <Label htmlFor="deadlineFinalWarningEnabled" className="text-slate-200">
-                                    Final deadline warning (5 minutes before deadline)
+                                <Label htmlFor="deadlineFinalWarningEnabled" className="flex items-center gap-2 cursor-pointer font-medium text-slate-200">
+                                    Final deadline warning (10 minutes before deadline)
                                 </Label>
                                 <p className="text-xs text-slate-400">
-                                    Auto-adds a 5-minute reminder to each task. You can remove it per task in task details.
+                                    Auto-adds a 10-minute reminder to each task. You can remove it per task in task details.
                                 </p>
                             </div>
                             <GlassToggle

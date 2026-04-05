@@ -1527,7 +1527,7 @@ export default function TaskDetailClient({
         if (["DENIED", "MISSED"].includes(toStatus)) {
             return "danger";
         }
-        if (event.event_type === "DEADLINE_WARNING_1H" || event.event_type === "DEADLINE_WARNING_5M") {
+        if (event.event_type === "DEADLINE_WARNING_1H" || event.event_type === "DEADLINE_WARNING_10M") {
             return "warning";
         }
         if (["PROOF_UPLOAD_FAILED_REVERT", "PROOF_REQUESTED", "PROOF_UPLOADED", "PROOF_REMOVED"].includes(event.event_type)) {
