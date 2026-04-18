@@ -27,6 +27,7 @@ import { resolveWebUserClientInstanceId } from "@/lib/user-client-instance";
 
 type PomoAutoEndSource = "sign_out_auto_end";
 type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
+const DEFAULT_APP_URL = "http://localhost:3000";
 
 const signInSchema = z.object({
     email: z.string().email("Invalid email address"),
@@ -51,6 +52,10 @@ const passwordResetSchema = z.object({
     message: "Passwords do not match",
     path: ["confirmPassword"],
 });
+
+function getAppUrl(): string {
+    return (process.env.NEXT_PUBLIC_APP_URL || DEFAULT_APP_URL).trim().replace(/\/+$/, "");
+}
 
 async function autoEndLingeringPomoSession(
     supabase: SupabaseClient<Database>,
@@ -204,13 +209,16 @@ export async function signUp(formData: FormData) {
         return { error: "Too many attempts. Please try again later." };
     }
 
+    const appUrl = getAppUrl();
+    const emailConfirmationRedirectTo = `${appUrl}/auth/callback?next=${encodeURIComponent("/email-confirmed")}`;
+
     console.log("Attemping sign up for:", email);
 
     const { error, data } = await supabase.auth.signUp({
         email,
         password,
         options: {
-            emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+            emailRedirectTo: emailConfirmationRedirectTo,
             data: {
                 username: email.split("@")[0],
                 privacy_policy_accepted_at: new Date().toISOString(),
@@ -245,7 +253,7 @@ export async function requestPasswordReset(formData: FormData) {
     }
 
     const supabase = await createClient();
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const appUrl = getAppUrl();
     const resetRedirectTo = `${appUrl}/auth/callback?next=${encodeURIComponent("/login?mode=reset")}`;
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -339,7 +347,6 @@ export async function deleteAccount(): Promise<{ success: true } | { error: stri
     const supabaseAdmin = createAdminClient();
 
     const OPEN_VOUCHER_BLOCKING_STATUSES = [
-        "CREATED",
         "ACTIVE",
         "POSTPONED",
         "MARKED_COMPLETED",
@@ -515,7 +522,7 @@ Promise<{ tasks: Array<{ id: string; title: string; ownerUsername: string }> } |
     const { data, error } = await (supabaseAdmin.from("tasks") as any)
         .select("id, title, owner:profiles!tasks_user_id_fkey(username)")
         .eq("voucher_id", user.id as any)
-        .in("status", ["ACTIVE", "POSTPONED", "MARKED_COMPLETE", "AWAITING_VOUCHER", "AWAITING_AI", "AWAITING_USER", "ESCALATED"] as any);
+        .in("status", ["ACTIVE", "POSTPONED", "MARKED_COMPLETED", "MARKED_COMPLETE", "AWAITING_VOUCHER", "AWAITING_AI", "AWAITING_USER", "ESCALATED"] as any);
 
     if (error) {
         return { error: error.message };
