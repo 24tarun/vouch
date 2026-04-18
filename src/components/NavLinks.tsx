@@ -1,14 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Settings, Users } from "lucide-react";
 
 import { haptics } from "@/lib/haptics";
+import { createClient } from "@/lib/supabase/client";
+import {
+    getFriendsVouchRequestsSeenStorageKey,
+    getSettingsFriendRequestsSeenStorageKey,
+} from "@/lib/settings-badge";
 
 interface NavLinksProps {
-    vouchCount?: number;
+    userId?: string;
     statsBadgeCount?: number;
 }
 
@@ -22,21 +27,183 @@ type IdleWindow = Window & {
     cancelIdleCallback?: (id: number) => void;
 };
 
-export function NavLinks({ vouchCount = 0, statsBadgeCount = 0 }: NavLinksProps) {
+export function NavLinks({ userId, statsBadgeCount = 0 }: NavLinksProps) {
     const pathname = usePathname();
     const router = useRouter();
     const prefetchedHrefsRef = useRef<Set<string>>(new Set());
+    const supabaseRef = useRef(createClient());
+    const [settingsBadgeSeenAt, setSettingsBadgeSeenAt] = useState<string | null>(null);
+    const [settingsBadgeCount, setSettingsBadgeCount] = useState(0);
+    const [settingsBadgeReady, setSettingsBadgeReady] = useState(false);
+    const [friendsBadgeSeenAt, setFriendsBadgeSeenAt] = useState<string | null>(null);
+    const [friendsBadgeCount, setFriendsBadgeCount] = useState(0);
+    const [friendsBadgeReady, setFriendsBadgeReady] = useState(false);
+
+    const markSettingsBadgeSeen = useCallback(
+        (visitedAt: string = new Date().toISOString()) => {
+            if (!userId) return;
+            setSettingsBadgeSeenAt(visitedAt);
+            setSettingsBadgeCount(0);
+            window.localStorage.setItem(
+                getSettingsFriendRequestsSeenStorageKey(userId),
+                visitedAt
+            );
+        },
+        [userId]
+    );
+
+    const markFriendsBadgeSeen = useCallback(
+        (visitedAt: string = new Date().toISOString()) => {
+            if (!userId) return;
+            setFriendsBadgeSeenAt(visitedAt);
+            setFriendsBadgeCount(0);
+            window.localStorage.setItem(
+                getFriendsVouchRequestsSeenStorageKey(userId),
+                visitedAt
+            );
+        },
+        [userId]
+    );
+
+    useEffect(() => {
+        if (!userId) {
+            setSettingsBadgeSeenAt(null);
+            setSettingsBadgeCount(0);
+            setSettingsBadgeReady(true);
+            setFriendsBadgeSeenAt(null);
+            setFriendsBadgeCount(0);
+            setFriendsBadgeReady(true);
+            return;
+        }
+
+        setSettingsBadgeReady(false);
+        const storedSeenAt = window.localStorage.getItem(
+            getSettingsFriendRequestsSeenStorageKey(userId)
+        );
+        setSettingsBadgeSeenAt(storedSeenAt);
+        setSettingsBadgeReady(true);
+
+        setFriendsBadgeReady(false);
+        const storedFriendsSeenAt = window.localStorage.getItem(
+            getFriendsVouchRequestsSeenStorageKey(userId)
+        );
+        setFriendsBadgeSeenAt(storedFriendsSeenAt);
+        setFriendsBadgeReady(true);
+    }, [userId]);
+
+    useEffect(() => {
+        if (!userId || !(pathname === "/settings" || pathname.startsWith("/settings/"))) return;
+        markSettingsBadgeSeen();
+    }, [markSettingsBadgeSeen, pathname, userId]);
+
+    useEffect(() => {
+        if (!userId || !(pathname === "/friends" || pathname.startsWith("/friends/"))) return;
+        markFriendsBadgeSeen();
+    }, [markFriendsBadgeSeen, pathname, userId]);
+
+    useEffect(() => {
+        if (!userId || !settingsBadgeReady) return;
+
+        const supabase = supabaseRef.current;
+        let isActive = true;
+
+        const refreshSettingsBadgeCount = async () => {
+            let query = supabase
+                .from("friend_requests")
+                .select("id", { count: "exact", head: true })
+                .eq("receiver_id", userId)
+                .eq("status", "PENDING");
+
+            if (settingsBadgeSeenAt) {
+                query = query.gt("created_at", settingsBadgeSeenAt);
+            }
+
+            const { count, error } = await query;
+            if (!isActive || error) return;
+            setSettingsBadgeCount(count ?? 0);
+        };
+
+        void refreshSettingsBadgeCount();
+
+        const channel = supabase
+            .channel(`settings-friend-request-badge:${userId}`)
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: "friend_requests",
+                    filter: `receiver_id=eq.${userId}`,
+                },
+                () => {
+                    void refreshSettingsBadgeCount();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            isActive = false;
+            void supabase.removeChannel(channel);
+        };
+    }, [settingsBadgeReady, settingsBadgeSeenAt, userId]);
+
+    useEffect(() => {
+        if (!userId || !friendsBadgeReady) return;
+
+        const supabase = supabaseRef.current;
+        let isActive = true;
+
+        const refreshFriendsBadgeCount = async () => {
+            let query = supabase
+                .from("tasks")
+                .select("id", { count: "exact", head: true })
+                .eq("voucher_id", userId)
+                .neq("user_id", userId)
+                .in("status", ["AWAITING_VOUCHER", "MARKED_COMPLETE"]);
+
+            if (friendsBadgeSeenAt) {
+                query = query.gt("marked_completed_at", friendsBadgeSeenAt);
+            }
+
+            const { count, error } = await query;
+            if (!isActive || error) return;
+            setFriendsBadgeCount(count ?? 0);
+        };
+
+        void refreshFriendsBadgeCount();
+
+        const channel = supabase
+            .channel(`friends-vouch-request-badge:${userId}`)
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: "tasks",
+                    filter: `voucher_id=eq.${userId}`,
+                },
+                () => {
+                    void refreshFriendsBadgeCount();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            isActive = false;
+            void supabase.removeChannel(channel);
+        };
+    }, [friendsBadgeReady, friendsBadgeSeenAt, userId]);
 
     const links = useMemo(
         () => [
             { href: "/tasks", label: "Tasks" },
             { href: "/stats", label: "Stats", badge: statsBadgeCount > 0 ? statsBadgeCount : undefined },
-            { href: "/friends", label: "Friends", badge: vouchCount > 0 ? vouchCount : undefined },
+            { href: "/friends", label: "Friends", badge: friendsBadgeCount > 0 ? friendsBadgeCount : undefined },
             { href: "/commit", label: "Commit" },
             { href: "/ledger", label: "Ledger" },
-            { href: "/settings", label: "Settings" },
+            { href: "/settings", label: "Settings", badge: settingsBadgeCount > 0 ? settingsBadgeCount : undefined },
         ],
-        [statsBadgeCount, vouchCount]
+        [friendsBadgeCount, settingsBadgeCount, statsBadgeCount]
     );
 
     const prefetchLink = useCallback(
@@ -96,7 +263,9 @@ export function NavLinks({ vouchCount = 0, statsBadgeCount = 0 }: NavLinksProps)
                         link.badge !== undefined
                             ? link.href === "/stats"
                                 ? `${link.label}, ${link.badge} proof request${link.badge === 1 ? "" : "s"}`
-                                : `${link.label}, ${link.badge} pending voucher request${link.badge === 1 ? "" : "s"}`
+                                : link.href === "/settings"
+                                    ? `${link.label}, ${link.badge} friend request${link.badge === 1 ? "" : "s"}`
+                                : `${link.label}, ${link.badge} vouch request${link.badge === 1 ? "" : "s"}`
                             : link.label;
                     const badgeText =
                         link.badge !== undefined

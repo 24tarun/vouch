@@ -17,6 +17,8 @@ export default function EmailConfirmedPage() {
                 padding: "40px 20px",
                 fontFamily: "Arial, sans-serif",
                 lineHeight: 1.5,
+                color: "#111827",
+                backgroundColor: "#ffffff",
             }}
         >
             <h1 style={{ margin: 0, fontSize: 28 }}>Your email has been verified</h1>

@@ -81,6 +81,11 @@ import {
 } from "@/design-system/badges";
 import { TASK_DETAIL_BUTTON_CLASSES } from "@/design-system/task_detail_buttons";
 import { WebcamCaptureModal, isMobileDevice } from "@/components/WebcamCaptureModal";
+import {
+    getTaskDetailButtonVisibility,
+    getTaskDetailReminderButtonVisibility,
+    getTaskDetailSubtaskButtonVisibility,
+} from "@/lib/task-detail-button-visibility";
 
 interface TaskDetailClientProps {
     task: TaskWithRelations;
@@ -266,6 +271,42 @@ export default function TaskDetailClient({
     const resubmitCount = taskState.resubmit_count ?? 0;
     const MAX_RESUBMITS = 3;
     const canResubmit = taskState.status === "AWAITING_USER" && resubmitCount < MAX_RESUBMITS;
+    const buttonVisibility = getTaskDetailButtonVisibility({
+        status: taskState.status,
+        pendingActions,
+        isOwner,
+        isActiveParentTask,
+        isOverdue,
+        isBeforeStart,
+        incompleteSubtasksCount,
+        hasIncompletePomoRequirement,
+        hasRunningPomoForTask,
+        hasPostponedAt: Boolean(taskState.postponed_at),
+        hasRecurrenceRule: Boolean(taskState.recurrence_rule_id),
+        isRepetitionStopped,
+        canUseOverride,
+        canTempDelete,
+        canResubmit,
+        escalationPending,
+    });
+    const subtaskAddButtonVisibility = getTaskDetailSubtaskButtonVisibility({
+        canManageActionChildren,
+        isPending: false,
+        isAddingSubtask,
+    });
+    const reminderButtonVisibility = getTaskDetailReminderButtonVisibility({
+        canManageActionChildren,
+        isSavePending: pendingActions.has("saveReminders"),
+        hasDraftValue: Boolean(newReminderLocal.trim()),
+        isPastReminder: false,
+    });
+    const showAwaitingOwnerActionRow =
+        buttonVisibility.awaiting.addProof ||
+        buttonVisibility.awaiting.undoComplete;
+    const showAwaitingUserActionRow =
+        buttonVisibility.awaitingUser.resubmitProof ||
+        buttonVisibility.awaitingUser.escalateToFriend;
+    const hasVisibleActionGridButtons = Object.values(buttonVisibility.actions).some(Boolean);
     const aiVouches = taskState.ai_vouches ?? [];
     const denials = aiVouches.filter((v) => v.decision === "denied");
     const latestDenial = denials.at(-1) ?? null;
@@ -1539,7 +1580,7 @@ export default function TaskDetailClient({
         if (["PROOF_UPLOAD_FAILED_REVERT", "PROOF_REQUESTED", "PROOF_UPLOADED", "PROOF_REMOVED"].includes(event.event_type)) {
             return "proof";
         }
-        if (["POMO_COMPLETED", "REPETITION_STOPPED"].includes(event.event_type)) {
+        if (["POMO_COMPLETED", "REPETITION_STOPPED", "UNDO_COMPLETE"].includes(event.event_type)) {
             return "info";
         }
         return "neutral";
@@ -1588,7 +1629,7 @@ export default function TaskDetailClient({
 
     const activitySteps = useMemo<ActivityStep[]>(() => {
         let aiEventCounter = 0;
-        return visibleEvents.map((event) => {
+        return visibleEvents.flatMap((event) => {
             const hasTransition = event.from_status !== event.to_status;
             const toStatus = event.to_status;
             const elapsedSeconds = event.event_type === "POMO_COMPLETED"
@@ -1597,6 +1638,8 @@ export default function TaskDetailClient({
             const tag: ActivityStep["tag"] =
                 event.event_type === "MARK_COMPLETE"
                     ? { kind: "status", status: "MARKED_COMPLETE" }
+                    : event.event_type === "UNDO_COMPLETE"
+                    ? { kind: "event", eventType: event.event_type, elapsedSeconds }
                     : hasTransition && isTaskStatus(toStatus)
                     ? { kind: "status", status: toStatus }
                     : { kind: "event", eventType: event.event_type, elapsedSeconds };
@@ -1624,13 +1667,28 @@ export default function TaskDetailClient({
 
             const detail = detailParts.length > 0 ? detailParts.join(" | ") : null;
 
-            return {
+            const baseStep: ActivityStep = {
                 id: event.id,
                 tag,
                 detail,
                 timestamp: formatEventTimestamp(event),
                 tone: getActivityStepTone(event),
             };
+
+            if (event.event_type === "UNDO_COMPLETE" && hasTransition && isTaskStatus(toStatus)) {
+                return [
+                    baseStep,
+                    {
+                        id: `${event.id}:restored-status`,
+                        tag: { kind: "status", status: toStatus },
+                        detail: null,
+                        timestamp: formatEventTimestamp(event),
+                        tone: "neutral",
+                    },
+                ];
+            }
+
+            return [baseStep];
         });
     }, [visibleEvents, aiVouches]);
 
@@ -1755,22 +1813,23 @@ export default function TaskDetailClient({
                                 ↳ {proofRequestedByLabel} has asked for proof
                             </p>
                         )}
-                        <div className="flex flex-wrap gap-2 pt-1">
-                            {isOwner && (
-                                <Button type="button" variant="outline" onClick={() => openProofPicker("awaiting-upload")} disabled={isActionPending("awaitingProofUpload")}
-                                    className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.awaiting.addProof)}>
-                                    {storedProof ? "Replace Proof" : "Add Proof"}
-                                </Button>
-                            )}
-                            {isOwner && (
-                                <Button type="button" variant="outline" onClick={handleUndoComplete}
-                                    disabled={isActionPending("undoComplete") || isOverdue}
-                                    title={isOverdue ? "Undo complete is unavailable after deadline" : "Undo complete"}
-                                    className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.awaiting.undoComplete)}>
-                                    Undo Complete
-                                </Button>
-                            )}
-                        </div>
+                        {showAwaitingOwnerActionRow && (
+                            <div className="flex flex-wrap gap-2 pt-1">
+                                {buttonVisibility.awaiting.addProof && (
+                                    <Button type="button" variant="outline" onClick={() => openProofPicker("awaiting-upload")}
+                                        className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.awaiting.addProof)}>
+                                        {storedProof ? "Replace Proof" : "Add Proof"}
+                                    </Button>
+                                )}
+                                {buttonVisibility.awaiting.undoComplete && (
+                                    <Button type="button" variant="outline" onClick={handleUndoComplete}
+                                        title="Undo complete"
+                                        className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.awaiting.undoComplete)}>
+                                        Undo Complete
+                                    </Button>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -1786,22 +1845,23 @@ export default function TaskDetailClient({
                         <p className="text-base font-medium text-purple-200">
                             Waiting for AI to review your completion
                         </p>
-                        <div className="flex flex-wrap gap-2 pt-1">
-                            {isOwner && (
-                                <Button type="button" variant="outline" onClick={() => openProofPicker("awaiting-upload")} disabled={isActionPending("awaitingProofUpload")}
-                                    className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.awaiting.addProof)}>
-                                    {storedProof ? "Replace Proof" : "Add Proof"}
-                                </Button>
-                            )}
-                            {isOwner && (
-                                <Button type="button" variant="outline" onClick={handleUndoComplete}
-                                    disabled={isActionPending("undoComplete") || isOverdue}
-                                    title={isOverdue ? "Undo complete is unavailable after deadline" : "Undo complete"}
-                                    className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.awaiting.undoComplete)}>
-                                    Undo Complete
-                                </Button>
-                            )}
-                        </div>
+                        {showAwaitingOwnerActionRow && (
+                            <div className="flex flex-wrap gap-2 pt-1">
+                                {buttonVisibility.awaiting.addProof && (
+                                    <Button type="button" variant="outline" onClick={() => openProofPicker("awaiting-upload")}
+                                        className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.awaiting.addProof)}>
+                                        {storedProof ? "Replace Proof" : "Add Proof"}
+                                    </Button>
+                                )}
+                                {buttonVisibility.awaiting.undoComplete && (
+                                    <Button type="button" variant="outline" onClick={handleUndoComplete}
+                                        title="Undo complete"
+                                        className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.awaiting.undoComplete)}>
+                                        Undo Complete
+                                    </Button>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -1837,48 +1897,21 @@ export default function TaskDetailClient({
                                 </div>
                             </details>
                         )}
-                        <div className="flex flex-wrap gap-2 pt-1">
-                            {canResubmit && isOwner && (
-                                <button type="button" onClick={() => openProofPicker("awaiting-upload")} disabled={isActionPending("awaitingProofUpload")}
-                                    className={cn(TASK_DETAIL_BUTTON_CLASSES.awaiting.resubmitProof, uniformActionButtonClass)}>
-                                    <Camera className="h-3.5 w-3.5" />
-                                    Upload New Proof
-                                </button>
-                            )}
-                            {isOwner && (
-                                <Button variant="ghost" onClick={() => { if (!friends.length && !friendsLoading) loadFriendsForEscalation(); setShowEscalationPicker(true); }} disabled={escalationPending}
-                                    className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.awaiting.escalateToFriend)}>
-                                    Escalate to Friend
-                                </Button>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {taskState.status === "DENIED" && (
-                <div className="td-rise td-d3 rounded-xl border border-red-500/20 bg-red-950/10 overflow-hidden">
-                    <div className="h-px bg-gradient-to-r from-red-500/60 via-red-400/20 to-transparent" />
-                    <div className="px-5 py-4 space-y-3">
-                        <div className="flex items-center gap-3 mb-1">
-                            <div style={{ width: 24, height: 1, background: '#f87171', boxShadow: '0 0 6px rgba(248,113,113,0.4)', flexShrink: 0 }} />
-                            <span className="text-[10px] uppercase tracking-wider font-bold text-red-400">
-                                {taskState.status === "DENIED" ? "task denied" : "task missed"}
-                            </span>
-                        </div>
-                        <p className="text-base font-medium text-red-200">
-                            {taskState.status === "DENIED"
-                                ? (isAiVouched && latestDenial?.reason ? `Denied — ${latestDenial.reason}` : "Denied by voucher.")
-                                : `Missed deadline. ${formattedFailureCost} added to ledger.`}
-                        </p>
-                        {isAiVouched && denials.length > 0 && (
-                            <div className="space-y-1.5">
-                                {denials.map((denial) => (
-                                    <div key={denial.id} className="border-l border-red-500/25 pl-3">
-                                        <p className="text-xs font-mono text-red-400/70">Attempt {denial.attempt_number}:</p>
-                                        <p className="text-red-200/50 text-xs mt-0.5">{denial.reason}</p>
-                                    </div>
-                                ))}
+                        {showAwaitingUserActionRow && (
+                            <div className="flex flex-wrap gap-2 pt-1">
+                                {buttonVisibility.awaitingUser.resubmitProof && (
+                                    <button type="button" onClick={() => openProofPicker("awaiting-upload")}
+                                        className={cn(TASK_DETAIL_BUTTON_CLASSES.awaiting.resubmitProof, uniformActionButtonClass)}>
+                                        <Camera className="h-3.5 w-3.5" />
+                                        Upload New Proof
+                                    </button>
+                                )}
+                                {buttonVisibility.awaitingUser.escalateToFriend && (
+                                    <Button variant="ghost" onClick={() => { if (!friends.length && !friendsLoading) loadFriendsForEscalation(); setShowEscalationPicker(true); }}
+                                        className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.awaiting.escalateToFriend)}>
+                                        Escalate to Friend
+                                    </Button>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1900,8 +1933,8 @@ export default function TaskDetailClient({
                         <span className="text-[10px] uppercase tracking-wider font-bold text-pink-400">
                             completion proof ({storedProof.media_kind})
                         </span>
-                        {isOwner && ["AWAITING_VOUCHER", "AWAITING_AI", "MARKED_COMPLETE"].includes(taskState.status) && (
-                            <Button type="button" variant="ghost" onClick={handleRemoveStoredProof} disabled={isActionPending("removeStoredProof")}
+                        {["AWAITING_VOUCHER", "AWAITING_AI", "MARKED_COMPLETE"].includes(taskState.status) && buttonVisibility.proof.removeStored && (
+                            <Button type="button" variant="ghost" onClick={handleRemoveStoredProof}
                                 className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.proof.removeStored)}>
                                 Remove Proof
                             </Button>
@@ -1971,88 +2004,88 @@ export default function TaskDetailClient({
                         </p>
                     </div>
                 )}
-                <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 sm:p-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                        <div className={cn(!isOwner || !isActiveParentTask ? TASK_DETAIL_BUTTON_CLASSES.actions.pomoWrapperDisabled : "")}>
-                            <PomoButton
-                                taskId={taskState.id}
-                                variant="full"
-                                className={TASK_DETAIL_BUTTON_CLASSES.actions.pomoButton}
-                                defaultDurationMinutes={defaultPomoDurationMinutes}
-                                fullDurationSuffixText="m pomodoro?"
-                            />
+                {hasVisibleActionGridButtons && (
+                    <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3 sm:p-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {buttonVisibility.actions.pomo && (
+                                <div>
+                                    <PomoButton
+                                        taskId={taskState.id}
+                                        variant="full"
+                                        className={TASK_DETAIL_BUTTON_CLASSES.actions.pomoButton}
+                                        defaultDurationMinutes={defaultPomoDurationMinutes}
+                                        fullDurationSuffixText="m pomodoro?"
+                                    />
+                                </div>
+                            )}
+                            {buttonVisibility.actions.attachProof && (
+                                <Button type="button" variant="ghost" onClick={() => openProofPicker("draft")}
+                                    className={cn(TASK_DETAIL_BUTTON_CLASSES.actions.attachProofBase,
+                                        proofDraft
+                                            ? TASK_DETAIL_BUTTON_CLASSES.actions.attachProofAttached
+                                            : TASK_DETAIL_BUTTON_CLASSES.actions.attachProofEnabled)}
+                                    style={proofDraft ? { boxShadow: '0 0 12px rgba(244,114,182,0.2)' } : {}}
+                                    title={proofDraft ? "Proof attached" : (requiresProofForCompletion ? "Attach proof (required)" : "Attach proof (optional)")}
+                                    aria-label="Attach proof">
+                                    <Camera className="h-5 w-5" />
+                                </Button>
+                            )}
+                            {buttonVisibility.actions.markComplete && (
+                                <Button onClick={handleMarkComplete}
+                                    className={cn(activeRowActionButtonClass, "w-full justify-center transition-all border",
+                                        TASK_DETAIL_BUTTON_CLASSES.actions.markCompleteEnabled)}
+                                    title={isBeforeStart ? beforeStartMessage : "Mark complete"}>
+                                    Mark Complete
+                                </Button>
+                            )}
+                            {buttonVisibility.actions.postpone && (
+                                <Button type="button" variant="outline" onClick={() => setIsPostponeDialogOpen(true)}
+                                    className={cn(activeRowActionButtonClass, "w-full justify-center border",
+                                        TASK_DETAIL_BUTTON_CLASSES.actions.postponeEnabled)}>
+                                    Postpone once?
+                                </Button>
+                            )}
+                            {buttonVisibility.actions.cancelRepetition && (
+                                <Button variant="ghost" onClick={handleCancelRepetition}
+                                    className={cn(activeRowActionButtonClass, "w-full justify-center border",
+                                        TASK_DETAIL_BUTTON_CLASSES.actions.stopRepeatingEnabled)}>
+                                    <Repeat className="mr-1.5 h-3.5 w-3.5" />
+                                    Stop Repeating
+                                </Button>
+                            )}
+                            {buttonVisibility.actions.override && (
+                                <Button variant="ghost" onClick={handleOverride}
+                                    className={cn(activeRowActionButtonClass, "w-full justify-center border",
+                                        TASK_DETAIL_BUTTON_CLASSES.actions.overrideEnabled)}>
+                                    Use Override
+                                </Button>
+                            )}
+                            {buttonVisibility.actions.tempDelete && (
+                                <Button type="button" variant="ghost" onClick={handleTempDelete}
+                                    className={cn("h-12 w-full p-0 border transition-colors justify-center",
+                                        TASK_DETAIL_BUTTON_CLASSES.actions.deleteEnabled)}
+                                    title="Delete task"
+                                    aria-label="Delete task">
+                                    <Trash2 className="h-5 w-5" />
+                                </Button>
+                            )}
+                            {buttonVisibility.actions.subtasksToggle && (
+                                <Button type="button" variant="ghost" onClick={handleToggleSubtasksSection}
+                                    className={cn(activeRowActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.actions.toggleBase,
+                                        TASK_DETAIL_BUTTON_CLASSES.actions.addSubtask)}>
+                                    <span className="text-[13px] leading-none">Subtasks</span>
+                                    <span className="text-[13px] leading-none opacity-80">{completedSubtasksCount}/{subtasks.length}</span>
+                                </Button>
+                            )}
+                            {buttonVisibility.actions.remindersToggle && (
+                                <Button type="button" variant="ghost" onClick={handleToggleRemindersSection}
+                                    className={cn(activeRowActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.actions.toggleBase,
+                                        TASK_DETAIL_BUTTON_CLASSES.actions.addReminder)}>
+                                    <span className="text-[13px] leading-none">Reminders</span>
+                                    <span className="text-[13px] leading-none opacity-80">{reminders.length}</span>
+                                </Button>
+                            )}
                         </div>
-                        <Button type="button" variant="ghost" onClick={() => openProofPicker("draft")} disabled={isActionPending("markComplete") || !isOwner}
-                            className={cn(TASK_DETAIL_BUTTON_CLASSES.actions.attachProofBase,
-                                proofDraft && isOwner
-                                    ? TASK_DETAIL_BUTTON_CLASSES.actions.attachProofAttached
-                                    : TASK_DETAIL_BUTTON_CLASSES.actions.attachProofEnabled,
-                                (!isOwner) && TASK_DETAIL_BUTTON_CLASSES.actions.attachProofDisabled)}
-                            style={proofDraft && isOwner ? { boxShadow: '0 0 12px rgba(244,114,182,0.2)' } : {}}
-                            title={proofDraft ? "Proof attached" : (requiresProofForCompletion ? "Attach proof (required)" : "Attach proof (optional)")}
-                            aria-label="Attach proof">
-                            <Camera className="h-5 w-5" />
-                        </Button>
-                        <Button onClick={handleMarkComplete}
-                            disabled={isActionPending("markComplete") || !isOwner || !isActiveParentTask || isOverdue || isBeforeStart || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask}
-                            className={cn(activeRowActionButtonClass, "w-full justify-center transition-all border",
-                                (!isOwner || !isActiveParentTask || isBeforeStart || incompleteSubtasksCount > 0 || hasIncompletePomoRequirement || hasRunningPomoForTask || isOverdue)
-                                    ? TASK_DETAIL_BUTTON_CLASSES.actions.markCompleteDisabled
-                                    : TASK_DETAIL_BUTTON_CLASSES.actions.markCompleteEnabled)}
-                            title={isBeforeStart ? beforeStartMessage : "Mark complete"}>
-                            {isActionPending("markComplete") ? "..." : "Mark Complete"}
-                        </Button>
-                        <Button type="button" variant="outline" onClick={() => setIsPostponeDialogOpen(true)}
-                            disabled={isActionPending("postpone") || !isOwner || taskState.status !== "ACTIVE" || Boolean(taskState.postponed_at) || isOverdue}
-                            className={cn(activeRowActionButtonClass, "w-full justify-center border",
-                                (!isOwner || taskState.status !== "ACTIVE" || Boolean(taskState.postponed_at) || isOverdue)
-                                    ? TASK_DETAIL_BUTTON_CLASSES.actions.postponeDisabled
-                                    : TASK_DETAIL_BUTTON_CLASSES.actions.postponeEnabled)}>
-                            Postpone once?
-                        </Button>
-                        <Button variant="ghost" onClick={handleCancelRepetition}
-                            disabled={isActionPending("cancelRepetition") || !isOwner || !taskState.recurrence_rule_id || isRepetitionStopped}
-                            className={cn(activeRowActionButtonClass, "w-full justify-center border",
-                                (!isOwner || !taskState.recurrence_rule_id || isRepetitionStopped)
-                                    ? TASK_DETAIL_BUTTON_CLASSES.actions.stopRepeatingDisabled
-                                    : TASK_DETAIL_BUTTON_CLASSES.actions.stopRepeatingEnabled)}>
-                            <Repeat className="mr-1.5 h-3.5 w-3.5" />
-                            {isRepetitionStopped ? "Repetitions Stopped" : "Stop Repeating"}
-                        </Button>
-                        <Button variant="ghost" onClick={handleOverride}
-                            disabled={isActionPending("override") || !canUseOverride}
-                            className={cn(activeRowActionButtonClass, "w-full justify-center border",
-                                !canUseOverride
-                                    ? TASK_DETAIL_BUTTON_CLASSES.actions.overrideDisabled
-                                    : TASK_DETAIL_BUTTON_CLASSES.actions.overrideEnabled)}>
-                            Use Override
-                        </Button>
-                        <Button type="button" variant="ghost" onClick={handleTempDelete} disabled={isActionPending("tempDelete") || !isOwner || !canTempDelete}
-                            className={cn("h-12 w-full p-0 border transition-colors justify-center",
-                                (isOwner && canTempDelete)
-                                    ? TASK_DETAIL_BUTTON_CLASSES.actions.deleteEnabled
-                                    : TASK_DETAIL_BUTTON_CLASSES.actions.deleteDisabled)}
-                            title={canTempDelete ? "Delete task" : "Delete available only within 5 min of creation"}
-                            aria-label="Delete task">
-                            <Trash2 className="h-5 w-5" />
-                        </Button>
-                        <Button type="button" variant="ghost" onClick={handleToggleSubtasksSection} disabled={!isOwner}
-                            className={cn(activeRowActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.actions.toggleBase,
-                                !isOwner
-                                    ? TASK_DETAIL_BUTTON_CLASSES.actions.toggleDisabled
-                                    : TASK_DETAIL_BUTTON_CLASSES.actions.addSubtask)}>
-                            <span className="text-[13px] leading-none">Subtasks</span>
-                            <span className="text-[13px] leading-none opacity-80">{completedSubtasksCount}/{subtasks.length}</span>
-                        </Button>
-                        <Button type="button" variant="ghost" onClick={handleToggleRemindersSection} disabled={!isOwner}
-                            className={cn(activeRowActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.actions.toggleBase,
-                                !isOwner
-                                    ? TASK_DETAIL_BUTTON_CLASSES.actions.toggleDisabled
-                                    : TASK_DETAIL_BUTTON_CLASSES.actions.addReminder)}>
-                            <span className="text-[13px] leading-none">Reminders</span>
-                            <span className="text-[13px] leading-none opacity-80">{reminders.length}</span>
-                        </Button>
-                    </div>
                     {isOwner && (subtasksSectionOpen || remindersSectionOpen) && (
                         <div className="mt-4 border-t border-slate-800/80 pt-4 space-y-4">
                             {subtasksSectionOpen && (
@@ -2064,28 +2097,35 @@ export default function TaskDetailClient({
                                                 className={cn("h-8 font-mono text-xs bg-slate-900/50 border-slate-800 text-slate-300 placeholder:text-slate-700",
                                                     !canManageActionChildren && "border-slate-900 text-slate-600 cursor-not-allowed")}
                                                 disabled={!canManageActionChildren || isAddingSubtask} />
-                                            <Button type="submit" onPointerDown={(e) => e.preventDefault()}
-                                                disabled={!canManageActionChildren || isAddingSubtask}
-                                                className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.actions.addSubtask)}>
-                                                <Plus className="h-4 w-4" />
-                                                Add Subtask
-                                            </Button>
+                                            {subtaskAddButtonVisibility.add && (
+                                                <Button type="submit" onPointerDown={(e) => e.preventDefault()}
+                                                    className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.actions.addSubtask)}>
+                                                    <Plus className="h-4 w-4" />
+                                                    Add Subtask
+                                                </Button>
+                                            )}
                                         </div>
                                     </form>
                                     {subtasks.length > 0 && (
                                         <div className="space-y-0.5">
                                             {subtasks.map((subtask) => {
                                                 const isPending = pendingSubtaskIds.has(subtask.id);
+                                                const subtaskButtonVisibility = getTaskDetailSubtaskButtonVisibility({
+                                                    canManageActionChildren,
+                                                    isPending,
+                                                    isAddingSubtask: false,
+                                                });
                                                 return (
                                                     <div key={subtask.id} className="flex items-center gap-3 px-1 py-1.5 rounded-lg hover:bg-slate-900/40 transition-colors group/sub">
-                                                        <button type="button" disabled={!canManageActionChildren || isPending}
-                                                            onClick={() => handleToggleSubtask(subtask.id)}
-                                                            className={cn("h-5 w-5 rounded-full border flex items-center justify-center shrink-0 transition-all",
-                                                                subtask.is_completed ? "border-emerald-500/50 bg-emerald-600/15 text-emerald-400" : "border-slate-700 text-transparent hover:border-slate-500",
-                                                                (!canManageActionChildren || isPending) && "cursor-not-allowed opacity-40")}
-                                                            style={subtask.is_completed ? { boxShadow: "0 0 6px rgba(52,211,153,0.25)" } : {}}>
-                                                            {subtask.is_completed && <Check className="h-3 w-3" strokeWidth={3} />}
-                                                        </button>
+                                                        {subtaskButtonVisibility.toggle && (
+                                                            <button type="button"
+                                                                onClick={() => handleToggleSubtask(subtask.id)}
+                                                                className={cn("h-5 w-5 rounded-full border flex items-center justify-center shrink-0 transition-all",
+                                                                    subtask.is_completed ? "border-emerald-500/50 bg-emerald-600/15 text-emerald-400" : "border-slate-700 text-transparent hover:border-slate-500")}
+                                                                style={subtask.is_completed ? { boxShadow: "0 0 6px rgba(52,211,153,0.25)" } : {}}>
+                                                                {subtask.is_completed && <Check className="h-3 w-3" strokeWidth={3} />}
+                                                            </button>
+                                                        )}
                                                         {editingSubtaskId === subtask.id ? (
                                                             <input
                                                                 type="text"
@@ -2106,28 +2146,37 @@ export default function TaskDetailClient({
                                                                 disabled={isPending}
                                                                 className="flex-1 min-w-0 bg-transparent border-b border-slate-500 text-sm font-mono text-slate-300 focus:outline-none focus:border-slate-400 py-0.5"
                                                             />
-                                                        ) : (
+                                                        ) : subtaskButtonVisibility.rename ? (
                                                             <button
                                                                 type="button"
-                                                                disabled={!canManageActionChildren || isPending}
                                                                 onClick={() => startEditingSubtask(subtask.id, subtask.title)}
                                                                 className={cn(
                                                                     "flex-1 min-w-0 text-left text-sm font-mono transition-colors py-0.5",
                                                                     subtask.is_completed ? "text-slate-600 line-through" : "text-slate-300",
-                                                                    canManageActionChildren && !isPending && "hover:text-white cursor-text",
-                                                                    (!canManageActionChildren || isPending) && "cursor-not-allowed"
+                                                                    "hover:text-white cursor-text"
                                                                 )}
-                                                                title={canManageActionChildren ? "Click to edit" : "Subtasks are locked"}
+                                                                title="Click to edit"
                                                             >
                                                                 <span className="truncate block">{subtask.title}</span>
                                                             </button>
+                                                        ) : (
+                                                            <span
+                                                                className={cn(
+                                                                    "flex-1 min-w-0 text-left text-sm font-mono py-0.5",
+                                                                    subtask.is_completed ? "text-slate-600 line-through" : "text-slate-300"
+                                                                )}
+                                                            >
+                                                                <span className="truncate block">{subtask.title}</span>
+                                                            </span>
                                                         )}
-                                                        <button type="button" disabled={!canManageActionChildren || isPending}
-                                                            onClick={() => handleDeleteSubtask(subtask.id)}
-                                                            className="h-6 w-6 flex items-center justify-center text-red-400 hover:text-red-300 transition-colors opacity-100 cursor-pointer"
-                                                            aria-label="Delete subtask">
-                                                            <Trash2 className="h-3.5 w-3.5" />
-                                                        </button>
+                                                        {subtaskButtonVisibility.delete && (
+                                                            <button type="button"
+                                                                onClick={() => handleDeleteSubtask(subtask.id)}
+                                                                className="h-6 w-6 flex items-center justify-center text-red-400 hover:text-red-300 transition-colors opacity-100 cursor-pointer"
+                                                                aria-label="Delete subtask">
+                                                                <Trash2 className="h-3.5 w-3.5" />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 );
                                             })}
@@ -2145,11 +2194,12 @@ export default function TaskDetailClient({
                                                 disabled={!canManageActionChildren || isActionPending("saveReminders")}
                                                 className={cn("h-8 font-mono text-xs bg-slate-900/50 border-slate-800 text-slate-300 [color-scheme:dark]",
                                                     (!canManageActionChildren || isActionPending("saveReminders")) && "opacity-40 cursor-not-allowed")} />
-                                            <Button type="submit" variant="outline"
-                                                disabled={!canManageActionChildren || isActionPending("saveReminders") || !newReminderLocal.trim()}
-                                                className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.actions.addReminder)}>
-                                                Add Reminder
-                                            </Button>
+                                            {reminderButtonVisibility.add && (
+                                                <Button type="submit" variant="outline"
+                                                    className={cn(uniformActionButtonClass, TASK_DETAIL_BUTTON_CLASSES.actions.addReminder)}>
+                                                    Add Reminder
+                                                </Button>
+                                            )}
                                         </div>
                                     </form>
                                     {reminders.length > 0 && (
@@ -2159,6 +2209,12 @@ export default function TaskDetailClient({
                                                 const reminderMs = reminderDate.getTime();
                                                 const reminderIso = Number.isNaN(reminderMs) ? reminder.reminder_at : reminderDate.toISOString();
                                                 const isPastReminder = Number.isNaN(reminderMs) || reminderMs <= nowMs;
+                                                const reminderRowButtonVisibility = getTaskDetailReminderButtonVisibility({
+                                                    canManageActionChildren,
+                                                    isSavePending: isActionPending("saveReminders"),
+                                                    hasDraftValue: Boolean(newReminderLocal.trim()),
+                                                    isPastReminder,
+                                                });
                                                 const notifiedAtMs = reminder.notified_at ? new Date(reminder.notified_at).getTime() : Number.NaN;
                                                 const createdAtMs = new Date(reminder.created_at).getTime();
                                                 const showPastForSeededHistory = isDefaultDeadlineReminderSource(reminder.source) && !Number.isNaN(notifiedAtMs) && !Number.isNaN(createdAtMs) && createdAtMs === notifiedAtMs;
@@ -2172,14 +2228,13 @@ export default function TaskDetailClient({
                                                             <span className="text-[10px] uppercase tracking-wider font-bold text-slate-700">
                                                                 {pastReminderLabel}
                                                             </span>
-                                                        ) : (
+                                                        ) : reminderRowButtonVisibility.remove ? (
                                                             <button type="button"
-                                                                disabled={!canManageActionChildren || isActionPending("saveReminders")}
                                                                 onClick={() => void handleRemoveReminder(reminderIso)}
-                                                                className="text-xs font-mono text-red-500/60 hover:text-red-400 transition-colors disabled:text-slate-700 disabled:cursor-not-allowed cursor-pointer">
+                                                                className="text-xs font-mono text-red-500/60 hover:text-red-400 transition-colors cursor-pointer">
                                                                 Remove
                                                             </button>
-                                                        )}
+                                                        ) : null}
                                                     </div>
                                                 );
                                             })}
@@ -2190,6 +2245,7 @@ export default function TaskDetailClient({
                         </div>
                     )}
                 </div>
+                )}
             </div>
 
             {/* Divider */}
@@ -2199,11 +2255,11 @@ export default function TaskDetailClient({
             <div className="td-rise td-d5 space-y-4">
                 <div className="mx-auto flex w-full max-w-2xl items-center gap-3">
                     <div className="h-px flex-1 bg-cyan-400/80 shadow-[0_0_6px_rgba(0,217,255,0.35)]" />
-                    <span className="text-[10px] uppercase tracking-wider font-bold text-cyan-400">activity</span>
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-cyan-400">timeline</span>
                     <div className="h-px flex-1 bg-cyan-400/80 shadow-[0_0_6px_rgba(0,217,255,0.35)]" />
                 </div>
                 {activitySteps.length === 0 ? (
-                    <p className="text-center text-xs font-mono text-slate-700">No activity yet</p>
+                    <p className="text-center text-xs font-mono text-slate-700">No timeline yet</p>
                 ) : (
                     <div className="relative mx-auto w-full max-w-3xl">
                         <div className="pointer-events-none absolute left-1/2 top-2 bottom-2 w-px -translate-x-1/2 bg-cyan-500/35" />
@@ -2318,11 +2374,13 @@ export default function TaskDetailClient({
                                 <p className="text-xs font-mono text-slate-600 py-4">No friends available</p>
                             ) : (
                                 friends.map((friend) => (
-                                    <button key={friend.id} onClick={() => handleEscalateToFriend(friend.id)} disabled={escalationPending}
-                                        className="w-full text-left px-4 py-3 rounded-lg bg-slate-800/40 hover:bg-slate-800/70 border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer disabled:opacity-50">
-                                        <div className="text-sm font-medium text-slate-200">{friend.username || friend.email}</div>
-                                        {friend.username && <div className="text-xs font-mono text-slate-600">{friend.email}</div>}
-                                    </button>
+                                    buttonVisibility.awaitingUser.escalationChoice ? (
+                                        <button key={friend.id} onClick={() => handleEscalateToFriend(friend.id)}
+                                            className="w-full text-left px-4 py-3 rounded-lg bg-slate-800/40 hover:bg-slate-800/70 border border-slate-800 hover:border-slate-700 transition-colors cursor-pointer">
+                                            <div className="text-sm font-medium text-slate-200">{friend.username || friend.email}</div>
+                                            {friend.username && <div className="text-xs font-mono text-slate-600">{friend.email}</div>}
+                                        </button>
+                                    ) : null
                                 ))
                             )}
                         </div>
@@ -2333,4 +2391,3 @@ export default function TaskDetailClient({
         </>
     );
 }
-

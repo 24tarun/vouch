@@ -186,13 +186,16 @@ export async function voucherDeny(taskId: string) {
 
     // Create ledger entry (use admin client to bypass RLS — voucher's auth.uid() ≠ task owner)
     const adminForLedger = createAdminClient();
-    await (adminForLedger.from("ledger_entries" as any) as any).insert({
+    const { error: ledgerError } = await (adminForLedger.from("ledger_entries" as any) as any).insert({
         user_id: (task as any).user_id,
         task_id: taskId as any,
         period: currentPeriod,
         amount_cents: (task as any).failure_cost_cents,
         entry_type: "failure",
     });
+    if (ledgerError) {
+        console.error(`[voucherDeny] Failed to insert ledger entry for task ${taskId}:`, ledgerError);
+    }
 
     // @ts-ignore
     await (supabase.from("task_events") as any).insert({
@@ -384,14 +387,17 @@ export async function authorizeRectify(taskId: string) {
 
     // Create negative ledger entry to cancel out the failure
     // Use admin client to bypass RLS — voucher's auth.uid() ≠ task owner
-    const adminForLedger = createAdminClient();
-    await (adminForLedger.from("ledger_entries" as any) as any).insert({
+    const adminForLedgerRectify = createAdminClient();
+    const { error: rectifyLedgerError } = await (adminForLedgerRectify.from("ledger_entries" as any) as any).insert({
         user_id: (task as any).user_id,
         task_id: (taskId as any),
         period: currentPeriod,
         amount_cents: -(task as any).failure_cost_cents,
         entry_type: "rectified",
     });
+    if (rectifyLedgerError) {
+        console.error(`[authorizeRectify] Failed to insert ledger entry for task ${taskId}:`, rectifyLedgerError);
+    }
 
     // @ts-ignore
     await (supabase.from("task_events") as any).insert({
@@ -869,14 +875,18 @@ export async function acceptDenial(
         return { error: updateError.message };
     }
 
-    // Charge failure cost on accept denial
-    await (supabase.from("ledger_entries" as any) as any).insert({
+    // Charge failure cost on accept denial (use admin client — no INSERT RLS policy on ledger_entries)
+    const adminForLedger = createAdminClient();
+    const { error: ledgerError } = await (adminForLedger.from("ledger_entries" as any) as any).insert({
         user_id: user.id,
         task_id: taskId as any,
         period: currentPeriod,
         amount_cents: (task as any).failure_cost_cents,
         entry_type: "failure",
     });
+    if (ledgerError) {
+        console.error(`[acceptDenial] Failed to insert ledger entry for task ${taskId}:`, ledgerError);
+    }
 
     await (supabase.from("task_events") as any).insert({
         task_id: taskId as any,

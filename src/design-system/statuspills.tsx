@@ -171,6 +171,7 @@ function getActivityEventBadgeClass(eventType: string): string {
 function formatActivityEventLabel(eventType: string, elapsedSeconds?: number): string {
     if (eventType === "ACTIVE" || eventType === "CREATED") return "ACTIVE";
     if (eventType === "MARK_COMPLETE") return "MARKED COMPLETE";
+    if (eventType === "UNDO_COMPLETE") return "UNDO COMPLETE";
     if (eventType === "POMO_COMPLETED") return `POMO COMPLETED (${formatActivityEventDuration(elapsedSeconds ?? 0)})`;
     if (eventType === "PROOF_UPLOAD_FAILED_REVERT") return "PROOF UPLOAD FAILED";
     if (eventType === "PROOF_REQUESTED") return "PROOF REQUESTED";

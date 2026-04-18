@@ -1,8 +1,11 @@
+"use client";
+
 import { formatCurrencyFromCents, type SupportedCurrency } from "@/lib/currency";
 import { TaskStatusBadge } from "@/design-system/badges";
 import type { TaskStatus } from "@/lib/xstate/task-machine";
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 interface LedgerEntryRowProps {
     id?: string;
@@ -59,6 +62,7 @@ export function LedgerEntryRow({
     taskHref,
     compact = false,
 }: LedgerEntryRowProps) {
+    const router = useRouter();
     const absAmountLabel = formatCurrencyFromCents(Math.abs(amountCents), currency);
     const createdAtDate = new Date(createdAt);
     const rowId = id || `${entryType}-${String(createdAt)}-${title}`;
@@ -67,7 +71,8 @@ export function LedgerEntryRow({
     return (
         <div
             key={rowId}
-            className={`group flex items-center gap-3 ${compact ? "py-5 border-b border-slate-900/50" : "py-6 border-b border-slate-900"} last:border-0 hover:bg-slate-900/10 -mx-4 px-4 transition-colors`}
+            onClick={taskHref ? () => router.push(taskHref) : undefined}
+            className={`group flex items-center gap-3 ${compact ? "py-5 border-b border-slate-900/50" : "py-6 border-b border-slate-900"} last:border-0 hover:bg-slate-900/10 -mx-4 px-4 transition-colors ${taskHref ? "cursor-pointer" : ""}`}
         >
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -79,6 +84,7 @@ export function LedgerEntryRow({
                         <Link
                             href={taskHref}
                             prefetch
+                            onClick={(e) => e.stopPropagation()}
                             className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors inline-flex items-center justify-center"
                             aria-label="Open task"
                             title="Open task"

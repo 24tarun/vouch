@@ -77,6 +77,7 @@ src/
     PomodoroTimer.tsx
     RealtimeListener.tsx
     ...
+  app/(app)/tasks/[id]/task-detail-client.tsx # Shared task detail UI used on web and inside Capacitor mobile wrappers; timeline shows explicit undo-complete action followed by restored status, and only currently actionable task-detail buttons are rendered
   lib/
     commitment-status.ts # Pure derived status / counters / day-status grid
     reputation/

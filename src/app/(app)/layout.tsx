@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCachedPendingVouchCountForVoucher } from "@/actions/voucher";
 import { NavLinks } from "@/components/NavLinks";
 import { RealtimeListener } from "@/components/RealtimeListener";
 import { PomodoroProvider } from "@/components/PomodoroProvider";
@@ -19,16 +18,13 @@ export default async function DashboardLayout({
         redirect("/login");
     }
 
-    const [vouchCount, proofRequestCountResult] = await Promise.all([
-        getCachedPendingVouchCountForVoucher(user.id),
-        supabase
-            .from("tasks")
-            .select("*", { count: "exact", head: true })
-            .eq("user_id", user.id)
-            .eq("proof_request_open", true)
-            .in("status", ["AWAITING_VOUCHER", "AWAITING_AI", "MARKED_COMPLETE"]),
-    ]);
-    const statsBadgeCount = proofRequestCountResult.count || 0;
+    const { count: statsBadgeCountRaw } = await supabase
+        .from("tasks")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("proof_request_open", true)
+        .in("status", ["AWAITING_VOUCHER", "AWAITING_AI", "MARKED_COMPLETE"]);
+    const statsBadgeCount = statsBadgeCountRaw || 0;
 
     return (
         <PomodoroProvider>
@@ -39,7 +35,7 @@ export default async function DashboardLayout({
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                         <div className="h-14 flex items-center">
                             <div className="mx-auto w-full max-w-3xl px-4 md:px-0">
-                                <NavLinks vouchCount={vouchCount} statsBadgeCount={statsBadgeCount} />
+                                <NavLinks userId={user.id} statsBadgeCount={statsBadgeCount} />
                             </div>
                         </div>
                     </div>
