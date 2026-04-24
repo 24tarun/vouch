@@ -15,7 +15,7 @@ import {
 } from "@/lib/task-title-parser";
 import { stripEventColorTokens } from "@/lib/task-title-event-color";
 
-const TIME_TOKEN_REGEX = /(?:^|\s)@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/i;
+const TIME_TOKEN_REGEX = /(?:^|\s)@(\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?)\b/i;
 
 export interface ResolveTaskDeadlineResult {
     deadline: Date;
@@ -148,12 +148,12 @@ export function resolveTaskDeadline(
 export function stripMetadata(text: string): string {
     if (!text) return "";
     const withoutStandardTokens = text
-        .replace(/(^|\s)@(?:\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/g, "$1")
-        .replace(/(?:^|\s)-start\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
-        .replace(/(?:^|\s)-end\s*(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, " ")
+        .replace(/(^|\s)@(?:\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?)\b/gi, "$1")
+        .replace(/(?:^|\s)-start\s*(?:\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?)\b/gi, " ")
+        .replace(/(?:^|\s)-end\s*(?:\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?)\b/gi, " ")
         .replace(/\b([12]?\d|3[01])(?:st|nd|rd|th)\b/gi, "")
         .replace(/\b(?:0?[1-9]|[12]\d|3[01])\/(?:0?[1-9]|1[0-2])(?:\/\d{4})?\b/g, "")
-        .replace(/(^|\s)remind@(?:\d{1,2}:\d{2}|\d{1,4})\b/gi, "$1")
+        .replace(/(^|\s)remind@(?:\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?)\b/gi, "$1")
         .replace(/\b(?:tmrw|tomorrow)\b/gi, "")
         .replace(new RegExp(WEEKDAY_TOKEN_REGEX.source, "gi"), "")
         .replace(/(?:\bvouch|\.v)\s+[^\s/]+/gi, "")

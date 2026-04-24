@@ -88,7 +88,20 @@ export interface ParsedClockToken {
 }
 
 export function parseTaskInputTimeToken(token: string, allowHourOnly: boolean): ParsedClockToken | null {
-    const normalized = token.trim();
+    const normalized = token.trim().toLowerCase();
+
+    const amPmMatch = normalized.match(/^(\d{1,2})(?::?(\d{2}))?\s*(am|pm)$/i);
+    if (amPmMatch) {
+        let hours = Number.parseInt(amPmMatch[1], 10);
+        const minutes = amPmMatch[2] ? Number.parseInt(amPmMatch[2], 10) : 0;
+        const meridiem = amPmMatch[3].toLowerCase();
+
+        if (hours < 1 || hours > 12 || minutes < 0 || minutes > 59) return null;
+        if (meridiem === "pm" && hours < 12) hours += 12;
+        if (meridiem === "am" && hours === 12) hours = 0;
+        return { hours, minutes };
+    }
+
     let hours = Number.NaN;
     let minutes = Number.NaN;
 
@@ -133,14 +146,14 @@ export function parseClockToken(raw: string): ParsedClockToken | null {
 
 export const EVENT_TOKEN_REGEX = /(^|\s)-event(?=\s|$)/i;
 const HIGHLIGHT_EVENT_TOKEN_REGEX = /(^|\s)(-event)(?=\s|$)/gi;
-const HIGHLIGHT_TIME_TOKEN_REGEX = /(^|\s)(@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2}))\b/g;
-const HIGHLIGHT_EVENT_START_TOKEN_REGEX = /(^|\s)(-start\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
-const HIGHLIGHT_EVENT_END_TOKEN_REGEX = /(^|\s)(-end\s*(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
+const HIGHLIGHT_TIME_TOKEN_REGEX = /(^|\s)(@(\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?))\b/gi;
+const HIGHLIGHT_EVENT_START_TOKEN_REGEX = /(^|\s)(-start\s*(\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?))\b/gi;
+const HIGHLIGHT_EVENT_END_TOKEN_REGEX = /(^|\s)(-end\s*(\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?))\b/gi;
 const HIGHLIGHT_EVENT_COLOR_HELPER_TOKEN_REGEX = /(^|\s)(-color)(?=\s|$)/gi;
 const HIGHLIGHT_PROOF_TOKEN_REGEX = /(^|\s)(-proof)(?=\s|$)/gi;
 const HIGHLIGHT_TIMER_TOKEN_REGEX = /\b(timer)\s+(\d+)\b/gi;
 const HIGHLIGHT_POMO_TOKEN_REGEX = /\b(pomo)\s+(\d+)\b/gi;
-const HIGHLIGHT_REMIND_TOKEN_REGEX = /(^|\s)(remind@(\d{1,2}:\d{2}|\d{1,4}))\b/gi;
+const HIGHLIGHT_REMIND_TOKEN_REGEX = /(^|\s)(remind@(\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?))\b/gi;
 const HIGHLIGHT_REPEAT_TOKEN_REGEX = /\b(repeat)\s+(daily|weekly|monthly|yearly)\b/gi;
 const HIGHLIGHT_TOMORROW_TOKEN_REGEX = /\b(tmrw|tomorrow)\b/gi;
 const HIGHLIGHT_VOUCH_TOKEN_REGEX = /(^|\s)(vouch|\.v)\s+(me|self|myself|[^\s/]+)(?=\s|$|\/)/gi;
@@ -607,7 +620,7 @@ export function stripProofRequiredTokens(text: string): string {
 }
 
 export function parseReminderTimesFromTitle(text: string): Array<{ hours: number; minutes: number }> {
-    const regex = /(?:^|\s)remind@(\d{1,2}:\d{2}|\d{1,4})\b/gi;
+    const regex = /(?:^|\s)remind@(\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?)\b/gi;
     const results: Array<{ hours: number; minutes: number }> = [];
     let match: RegExpExecArray | null;
 

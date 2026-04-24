@@ -40,13 +40,24 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${origin}/login?error=not_authenticated`);
     }
 
+    const mobileReturnUrl = cookieStore.get("vouch_google_oauth_mobile_return")?.value || null;
+    cookieStore.delete("vouch_google_oauth_mobile_return");
+
     try {
         const tokens = await exchangeGoogleCodeForTokens(code);
         const accountEmail = extractEmailFromIdToken(tokens.id_token);
         await upsertGoogleConnectionTokens(supabase, user.id, tokens, accountEmail);
+
+        if (mobileReturnUrl) {
+            const returnWithStatus = `${mobileReturnUrl}?status=connected`;
+            return NextResponse.redirect(returnWithStatus);
+        }
         return NextResponse.redirect(`${origin}/settings?googleCalendar=connected`);
     } catch (callbackError) {
         console.error("Google OAuth callback failed:", callbackError);
+        if (mobileReturnUrl) {
+            return NextResponse.redirect(`${mobileReturnUrl}?status=connect_failed`);
+        }
         return NextResponse.redirect(`${origin}/settings?googleCalendar=connect_failed`);
     }
 }

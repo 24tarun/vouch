@@ -2,7 +2,7 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createTask } from "@/actions/tasks";
-import { Calendar, Camera, Check, Loader2, Repeat, User } from "lucide-react";
+import { Calendar, CalendarDays, Camera, Check, Loader2, Repeat, User } from "lucide-react";
 import {
     Select,
     SelectContent,
@@ -71,7 +71,7 @@ import {
 import { resolveTaskDeadline, stripMetadata, parseTaskTitleAndSubtasks } from "@/lib/parser_keyword_resolver";
 import type { ParserKeywordCompletion } from "@/lib/task-title-parser";
 
-const TIME_TOKEN_REGEX = /(?:^|\s)@(\d{1,2}:\d{2}|\d{3,4}|\d{1,2})\b/i;
+const TIME_TOKEN_REGEX = /(?:^|\s)@(\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?)\b/i;
 const TITLE_TEXT_METRICS_CLASS =
     "text-base sm:text-lg font-medium leading-normal [font-kerning:none] [font-variant-ligatures:none] [font-feature-settings:'liga'_0,'clig'_0]";
 
@@ -955,6 +955,23 @@ export const TaskInput = forwardRef<TaskInputHandle, TaskInputProps>(function Ta
         }
     };
 
+    const isEventTask = EVENT_TOKEN_REGEX.test(title);
+
+    const handleEventToggle = useCallback(() => {
+        const titleWithoutEvent = title
+            .replace(/(^|\s)-event(?=\s|$)/gi, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+
+        const baseTitle = title.trimEnd();
+        const nextTitle = isEventTask
+            ? titleWithoutEvent
+            : `${baseTitle}${baseTitle ? " " : ""}-event`;
+
+        commitTitleAndCaret(nextTitle, nextTitle.length);
+        keepTitleTypingInView(titleInputRef.current, true);
+    }, [commitTitleAndCaret, isEventTask, keepTitleTypingInView, title]);
+
     return (
         <form ref={formRef} onSubmit={handleSubmit} className="relative space-y-3 mb-8">
             <div className="bg-slate-900/50 border border-slate-800/50 focus-within:border-slate-700/50 rounded-xl transition-all shadow-2xl overflow-visible">
@@ -1063,7 +1080,7 @@ export const TaskInput = forwardRef<TaskInputHandle, TaskInputProps>(function Ta
                                 />
                             </div>
 
-                            <div className={`flex-1 min-w-[92px] shrink ${showShake ? "animate-shake" : ""}`}>
+                            <div className={`min-w-[112px] max-w-[220px] flex-1 shrink ${showShake ? "animate-shake" : ""}`}>
                                 <Select value={selectedVoucherId} onValueChange={setSelectedVoucherId}>
                                     <SelectTrigger className="h-9 w-full bg-slate-800/30 border-slate-700/30 text-slate-300 text-[10px] font-mono focus:ring-0 rounded-lg px-2.5">
                                         <span className="flex min-w-0 items-center">
@@ -1110,6 +1127,21 @@ export const TaskInput = forwardRef<TaskInputHandle, TaskInputProps>(function Ta
                                     {formatDeadlineLabel(selectedDate)}
                                     {reminders.length > 0 ? ` • ${reminders.length}R` : ""}
                                 </span>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleEventToggle}
+                                className={cn(
+                                    "h-9 px-2.5 shrink-0 border rounded-lg transition-all flex items-center justify-center gap-1.5 text-[10px] font-mono",
+                                    isEventTask
+                                        ? "bg-indigo-500/15 border-indigo-400/40 text-indigo-200"
+                                        : "bg-slate-800/30 hover:bg-slate-700/30 border-slate-700/30 text-slate-400 hover:text-slate-200"
+                                )}
+                                title={isEventTask ? "Event enabled for this task" : "Mark this task as an event"}
+                            >
+                                <CalendarDays className="h-3.5 w-3.5" />
+                                <span>Event</span>
                             </button>
 
                             <DropdownMenu>

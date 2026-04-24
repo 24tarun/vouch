@@ -2,7 +2,17 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { sendNotification } from "@/lib/notifications";
-import { formatCurrencyFromCents, normalizeCurrency } from "@/lib/currency";
+import { formatCurrencyFromCents } from "@/lib/currency";
+import { compileLedgerTillDateEmailData } from "@/lib/ledger/till-date";
+
+interface LedgerPeriodRow {
+    period: string | null;
+}
+
+interface LedgerEntryForPeriod {
+    amount_cents: number | null;
+    [key: string]: unknown;
+}
 
 export async function getLedgerPeriods(): Promise<string[]> {
     const supabase = await createClient();
@@ -11,7 +21,6 @@ export async function getLedgerPeriods(): Promise<string[]> {
 
     const currentPeriod = new Date().toISOString().slice(0, 7);
 
-    // @ts-ignore
     const { data } = await supabase
         .from("ledger_entries")
         .select("period")
@@ -19,7 +28,7 @@ export async function getLedgerPeriods(): Promise<string[]> {
         .neq("period", currentPeriod);
 
     if (!data) return [];
-    const unique = [...new Set((data as any[]).map((r) => r.period as string))];
+    const unique = [...new Set((data as LedgerPeriodRow[]).map((r) => r.period).filter((period): period is string => typeof period === "string"))];
     return unique.sort((a, b) => b.localeCompare(a));
 }
 
@@ -28,7 +37,6 @@ export async function getLedgerEntriesForPeriod(period: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { entries: [], totalCents: 0 };
 
-    // @ts-ignore
     const { data: entries } = await supabase
         .from("ledger_entries")
         .select(`*, task:tasks(*)`)
@@ -36,20 +44,13 @@ export async function getLedgerEntriesForPeriod(period: string) {
         .eq("period", period)
         .order("created_at", { ascending: false });
 
-    const totalCents = (entries as any[])?.reduce(
-        (sum: number, e: any) => sum + e.amount_cents,
+    const typedEntries = (entries ?? []) as LedgerEntryForPeriod[];
+    const totalCents = typedEntries.reduce(
+        (sum: number, entry) => sum + Number(entry.amount_cents ?? 0),
         0
-    ) ?? 0;
+    );
 
-    return { entries: (entries ?? []) as any[], totalCents };
-}
-
-function formatLedgerEntryType(entryType: string, taskStatus?: string): string {
-    if (entryType === "voucher_timeout_penalty") return "Voucher Timeout Penalty";
-    if (entryType === "override") return "Override";
-    if (entryType === "failure") return taskStatus === "DENIED" ? "Denied" : "Missed";
-    if (entryType === "rectified") return "Rectified";
-    return entryType;
+    return { entries: typedEntries, totalCents };
 }
 
 export async function sendLedgerReportEmail() {
@@ -61,83 +62,65 @@ export async function sendLedgerReportEmail() {
     if (!user || !user.email) {
         return { error: "Not authenticated or email missing" };
     }
-    const { data: profile } = await supabase
-        .from("profiles")
-        .select("currency")
-        .eq("id", user.id)
-        .maybeSingle();
-    const currency = normalizeCurrency((profile as { currency?: string | null } | null)?.currency);
 
-    const currentPeriod = new Date().toISOString().slice(0, 7);
-
-    // Get ledger entries
-    // @ts-ignore
-    const { data: entries } = await supabase
-        .from("ledger_entries")
-        .select(`
-          *,
-          task:tasks(*)
-        `)
-        .eq("user_id", user.id)
-        .eq("period", currentPeriod)
-        .order("created_at", { ascending: false });
-
-    if (!entries || entries.length === 0) {
-        return { error: "No ledger entries to report for this month." };
+    const compiled = await compileLedgerTillDateEmailData(supabase, user.id);
+    if (compiled.error || !compiled.data) {
+        return { error: compiled.error ?? "Could not compile ledger till date." };
     }
 
-    const totalAmountCents = (entries as any).reduce((sum: number, entry: any) => sum + entry.amount_cents, 0);
-    const totalAmount = formatCurrencyFromCents(totalAmountCents, currency);
-
-    const rowsHtml = (entries as any).map((entry: any) => `
+    const { summary, entries } = compiled.data;
+    const rowsHtml = entries.map((entry) => `
         <tr>
-            <td style="padding: 8px; border-bottom: 1px solid #eee;">${new Date(entry.created_at).toLocaleDateString()}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #eee;">${entry.task?.title || "Manual Entry"}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #eee;">${formatLedgerEntryType(entry.entry_type, entry.task?.status)}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: ${entry.amount_cents > 0 ? '#dc322f' : '#859900'}; font-family: monospace;">
-                ${entry.amount_cents > 0 ? '+' : ''}${formatCurrencyFromCents(entry.amount_cents, currency)}
+            <td style="padding: 8px; border-bottom: 1px solid #eee;">${entry.title}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee;">${entry.entryTypeLabel}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right; color: ${entry.amountCents > 0 ? "#dc322f" : "#859900"}; font-family: monospace;">
+                ${entry.amountCents > 0 ? "+" : ""}${formatCurrencyFromCents(entry.amountCents, summary.currency)}
             </td>
         </tr>
     `).join("");
 
-    const html = `
-        <div style="font-family: sans-serif; color: #333; max-width: 600px; margin: 0 auto;">
-            <h1 style="color: #6366f1;">Ledger Report</h1>
-            <p>Here is your current ledger breakdown for ${new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}.</p>
-            
-            <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-                <thead>
-                    <tr style="background: #f8fafc; text-align: left;">
-                        <th style="padding: 8px; border-bottom: 2px solid #e2e8f0;">Date</th>
-                        <th style="padding: 8px; border-bottom: 2px solid #e2e8f0;">Task</th>
-                        <th style="padding: 8px; border-bottom: 2px solid #e2e8f0;">Type</th>
-                        <th style="padding: 8px; border-bottom: 2px solid #e2e8f0; text-align: right;">Amount</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rowsHtml}
-                </tbody>
-                <tfoot>
-                    <tr>
-                        <td colspan="3" style="padding: 16px 8px; text-align: right; font-weight: bold;">Current Total:</td>
-                        <td style="padding: 16px 8px; text-align: right; font-weight: bold; font-family: monospace; font-size: 1.2em; color: #db2777;">
-                            ${totalAmount}
-                        </td>
-                    </tr>
-                </tfoot>
-            </table>
-            
-            <p style="font-size: 0.9em; color: #666; border-top: 1px solid #eee; padding-top: 20px;">
-                This ledger settles at the end of the month. Keep up your streaks!
-            </p>
-        </div>
-    `;
+    const totalHeaderLabel = summary.donationCents > 0 ? "Total Charitable Commitment" : "Current Balance";
+    const title = summary.donationCents > 0 ? "Ledger Till Date" : "Ledger Till Date: No Donation Due";
+    const charityLine = summary.charityName
+        ? `<p style="margin: 24px 0 8px 0; font-size: 15px; color: #1e293b;">Please send this amount manually to <strong>${summary.charityName}</strong>.</p>`
+        : `<p style="margin: 24px 0 8px 0; font-size: 15px; color: #1e293b;">No active charity is selected in your preferences.</p>`;
 
     await sendNotification({
         to: user.email,
-        subject: `Your Ledger Report - ${totalAmount} Pending`,
-        html,
-        text: `Your ledger report for ${currentPeriod}. Total pending: ${totalAmount}.`,
+        userId: user.id,
+        push: false,
+        subject: `Ledger Till Date: ${summary.donationFormatted}`,
+        title,
+        html: `
+            <div style="font-family: sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px;">
+                <h1 style="color: #6366f1; margin-bottom: 8px; font-size: 24px;">Ledger Till Date</h1>
+                <p style="color: #64748b; margin-top: 0; font-size: 16px;">Compiled through <strong>${new Date().toLocaleDateString()}</strong>.</p>
+
+                <div style="background: #fff1f2; border: 1px solid #fecdd3; padding: 20px; border-radius: 8px; margin: 24px 0; text-align: center;">
+                    <p style="margin: 0; font-size: 14px; color: #9f1239; text-transform: uppercase; font-weight: bold; letter-spacing: 0.05em;">${totalHeaderLabel}</p>
+                    <p style="margin: 8px 0 0 0; font-size: 42px; font-weight: 800; color: #e11d48;">${summary.donationFormatted}</p>
+                </div>
+
+                <h3 style="margin-top: 32px; font-size: 18px; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 8px;">Detailed Breakdown</h3>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
+                    <thead>
+                        <tr style="background: #f8fafc; text-align: left;">
+                            <th style="padding: 8px; border-bottom: 2px solid #e2e8f0;">Task</th>
+                            <th style="padding: 8px; border-bottom: 2px solid #e2e8f0;">Type</th>
+                            <th style="padding: 8px; border-bottom: 2px solid #e2e8f0; text-align: right;">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    ${rowsHtml}
+                    </tbody>
+                </table>
+
+                ${charityLine}
+                <p style="margin: 0; font-size: 14px; color: #475569;">Payment is not processed in-app.</p>
+                <p style="font-size: 12px; color: #94a3b8; text-align: center; margin-top: 40px;">${summary.message}</p>
+            </div>
+        `,
+        text: summary.message,
     });
 
     return { success: true };

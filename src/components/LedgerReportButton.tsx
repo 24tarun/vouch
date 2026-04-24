@@ -14,14 +14,14 @@ export function LedgerReportButton() {
         setStatus("loading");
         try {
             const result = await sendLedgerReportEmail();
-            if (result.success) {
+            if ("success" in result && result.success) {
                 setStatus("success");
                 setTimeout(() => setStatus("idle"), 3000);
             } else {
                 setStatus("error");
                 setTimeout(() => setStatus("idle"), 3000);
             }
-        } catch (error) {
+        } catch {
             setStatus("error");
             setTimeout(() => setStatus("idle"), 3000);
         }
@@ -42,7 +42,7 @@ export function LedgerReportButton() {
             ) : (
                 <Mail className="h-3 w-3" />
             )}
-            {status === "loading" ? "Sending..." : status === "success" ? "Sent!" : status === "error" ? "Failed" : "request ledger till date"}
+            {status === "loading" ? "Sending..." : status === "success" ? "Sent!" : status === "error" ? "Failed" : "Request Ledger Till Date"}
         </Button>
     );
 }

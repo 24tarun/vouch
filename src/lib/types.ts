@@ -232,6 +232,8 @@ export interface GoogleCalendarConnection {
     last_webhook_at: string | null;
     last_sync_at: string | null;
     last_error: string | null;
+    deadline_source_preference: 'start' | 'end';
+    default_event_duration_minutes: number;
     created_at: string;
     updated_at: string;
 }

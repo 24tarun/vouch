@@ -409,7 +409,10 @@ function mapGoogleEventToEnd(event: GoogleCalendarEvent): string | null {
     return null;
 }
 
-export function buildGoogleEventPayload(task: Pick<Task, "id" | "title" | "description" | "deadline" | "google_event_start_at" | "google_event_end_at" | "google_event_color_id">): GoogleCalendarEvent {
+export function buildGoogleEventPayload(
+    task: Pick<Task, "id" | "title" | "description" | "deadline" | "google_event_start_at" | "google_event_end_at" | "google_event_color_id">,
+    defaultDurationMinutes: number = 60
+): GoogleCalendarEvent {
     const deadlineAsEnd = new Date(task.deadline);
     const explicitStart = task.google_event_start_at ? new Date(task.google_event_start_at) : null;
     const explicitLegacyEnd = task.google_event_end_at ? new Date(task.google_event_end_at) : null;
@@ -431,7 +434,7 @@ export function buildGoogleEventPayload(task: Pick<Task, "id" | "title" | "descr
             explicitLegacyEnd.getTime() > start.getTime()
         )
             ? (explicitLegacyEnd as Date)
-            : new Date(start.getTime() + 30 * 60 * 1000);
+            : new Date(start.getTime() + defaultDurationMinutes * 60 * 1000);
 
     return {
         summary: task.title,
@@ -457,9 +460,10 @@ async function googleCreateOrUpdateEvent(
     accessToken: string,
     calendarId: string,
     task: Pick<Task, "id" | "title" | "description" | "deadline" | "google_event_start_at" | "google_event_end_at" | "google_event_color_id">,
-    existingEventId?: string
+    existingEventId?: string,
+    defaultDurationMinutes: number = 60
 ): Promise<GoogleCalendarEvent> {
-    const payload = buildGoogleEventPayload(task);
+    const payload = buildGoogleEventPayload(task, defaultDurationMinutes);
     const url = existingEventId
         ? `${GOOGLE_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(existingEventId)}`
         : `${GOOGLE_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events`;
@@ -540,6 +544,39 @@ async function initializeGoogleSyncToken(accessToken: string, calendarId: string
     );
 
     return response.nextSyncToken || null;
+}
+
+async function backfillAndInitGoogleSyncToken(
+    accessToken: string,
+    calendarId: string
+): Promise<{ syncToken: string | null; items: GoogleCalendarEvent[] }> {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const allItems: GoogleCalendarEvent[] = [];
+    let pageToken: string | undefined;
+    let nextSyncToken: string | null = null;
+
+    do {
+        const params = new URLSearchParams({
+            showDeleted: "false",
+            maxResults: "2500",
+            timeMin: thirtyDaysAgo,
+        });
+        if (pageToken) params.set("pageToken", pageToken);
+
+        const response = await googleFetch<GoogleEventDeltaResponse>(
+            `${GOOGLE_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
+            { headers: { Authorization: `Bearer ${accessToken}` } },
+            "Could not backfill Google Calendar events."
+        );
+
+        for (const item of response.items || []) {
+            if (item.status !== "cancelled") allItems.push(item);
+        }
+        nextSyncToken = response.nextSyncToken || nextSyncToken;
+        pageToken = response.nextPageToken;
+    } while (pageToken);
+
+    return { syncToken: nextSyncToken, items: allItems };
 }
 
 async function createGoogleCalendarWatch(
@@ -846,9 +883,13 @@ export async function enableGoogleCalendarGoogleToAppForUser(userId: string): Pr
     }
 
     const fresh = await ensureFreshGoogleAccessToken(supabase, connection);
+
     let syncToken = connection.sync_token;
+    let backfillItems: GoogleCalendarEvent[] = [];
     if (!syncToken) {
-        syncToken = await initializeGoogleSyncToken(fresh.accessToken, connection.selected_calendar_id);
+        const result = await backfillAndInitGoogleSyncToken(fresh.accessToken, connection.selected_calendar_id);
+        syncToken = result.syncToken;
+        backfillItems = result.items;
     }
 
     if (connection.watch_channel_id && connection.watch_resource_id) {
@@ -880,8 +921,15 @@ export async function enableGoogleCalendarGoogleToAppForUser(userId: string): Pr
         throw new Error(error.message);
     }
 
-    // Run one immediate delta pass so connection health is visible right away
-    // and we don't wait for the first webhook/cron cycle.
+    // Import any events collected during the initial backfill (calendar selection or first enable).
+    if (backfillItems.length > 0) {
+        const refreshedConnection = await getConnectionByUserId(supabase, userId);
+        if (refreshedConnection) {
+            await processGoogleEventsForUser(supabase, userId, refreshedConnection, backfillItems);
+        }
+    }
+
+    // Run one incremental delta pass for any changes that arrived during the backfill window.
     await processGoogleCalendarDeltaForUser(userId);
 }
 
@@ -1033,6 +1081,44 @@ async function markOutboxDone(supabase: SupabaseClient<Database>, outboxId: numb
         .eq("id", outboxId as any);
 }
 
+async function insertTombstone(
+    supabase: SupabaseClient<Database>,
+    userId: string,
+    calendarId: string,
+    googleEventId: string
+): Promise<void> {
+    await (supabase.from("google_calendar_event_tombstones") as any)
+        .upsert({
+            user_id: userId,
+            calendar_id: calendarId,
+            google_event_id: googleEventId,
+            deleted_at: new Date().toISOString(),
+        } as any, { onConflict: "user_id,calendar_id,google_event_id" });
+}
+
+async function isTombstoned(
+    supabase: SupabaseClient<Database>,
+    userId: string,
+    calendarId: string,
+    googleEventId: string
+): Promise<boolean> {
+    const { data } = await (supabase.from("google_calendar_event_tombstones") as any)
+        .select("google_event_id")
+        .eq("user_id", userId as any)
+        .eq("calendar_id", calendarId as any)
+        .eq("google_event_id", googleEventId as any)
+        .maybeSingle();
+    return Boolean(data);
+}
+
+export async function pruneGoogleCalendarTombstones(): Promise<void> {
+    const supabase = createAdminClient();
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    await (supabase.from("google_calendar_event_tombstones") as any)
+        .delete()
+        .lt("deleted_at", cutoff as any);
+}
+
 async function markOutboxFailed(
     supabase: SupabaseClient<Database>,
     outboxId: number,
@@ -1138,12 +1224,16 @@ export async function processGoogleCalendarOutboxItem(outboxId: number): Promise
     }
 
     const attemptCount = Number((outbox as any).attempt_count || 0) + 1;
-    await (supabase.from("google_calendar_sync_outbox") as any)
+    const { data: claimed } = await (supabase.from("google_calendar_sync_outbox") as any)
         .update({
             status: "PROCESSING",
             attempt_count: attemptCount,
         } as any)
-        .eq("id", outboxId as any);
+        .eq("id", outboxId as any)
+        .in("status", ["PENDING", "FAILED"] as any)
+        .select("id")
+        .maybeSingle();
+    if (!claimed) return;
 
     try {
         const userId = (outbox as any).user_id as string;
@@ -1196,6 +1286,7 @@ export async function processGoogleCalendarOutboxItem(outboxId: number): Promise
         if (shouldFinalize) {
             if (shouldDeleteRemoteEvent && googleEventId && calendarId) {
                 await googleDeleteEvent(fresh.accessToken, calendarId, googleEventId);
+                await insertTombstone(supabase, userId, calendarId, googleEventId);
             }
 
             await (supabase.from("google_calendar_task_links") as any)
@@ -1223,7 +1314,8 @@ export async function processGoogleCalendarOutboxItem(outboxId: number): Promise
             fresh.accessToken,
             calendarId,
             taskBeforeUpsert,
-            googleEventId || undefined
+            googleEventId || undefined,
+            Number(connection.default_event_duration_minutes) || 60
         );
 
         if (!event.id) {
@@ -1324,218 +1416,7 @@ export async function processGoogleCalendarDeltaForUser(userId: string): Promise
             connection.sync_token
         );
 
-        const { data: profile } = await (supabase.from("profiles") as any)
-            .select("default_voucher_id, default_failure_cost_cents")
-            .eq("id", userId as any)
-            .maybeSingle();
-
-        const defaultFailureCostCents = Number((profile as any)?.default_failure_cost_cents || 50);
-        const voucherId = await ensureValidDefaultVoucherId(
-            supabase,
-            userId,
-            ((profile as any)?.default_voucher_id as string | null) || null
-        );
-        const pendingDeleteEventKeys = await listPendingDeleteEventKeys(
-            supabase,
-            userId,
-            connection.selected_calendar_id
-        );
-        const importOnlyTaggedGoogleEvents = Boolean(connection.import_only_tagged_google_events);
-
-        for (const event of delta.items || []) {
-            if (!event.id) continue;
-
-            const { data: link } = await (supabase.from("google_calendar_task_links") as any)
-                .select("*")
-                .eq("user_id", userId as any)
-                .eq("calendar_id", connection.selected_calendar_id as any)
-                .eq("google_event_id", event.id as any)
-                .maybeSingle();
-
-            const existingLink = (link as GoogleCalendarTaskLink | null) || null;
-
-            if (event.status === "cancelled") {
-                if (existingLink?.task_id) {
-                    const { data: task } = await (supabase.from("tasks") as any)
-                        .select("id, status, google_sync_for_task")
-                        .eq("id", existingLink.task_id as any)
-                        .eq("user_id", userId as any)
-                        .maybeSingle();
-
-                    if (task) {
-                        const nowIso = new Date().toISOString();
-                        await (supabase.from("tasks") as any)
-                            .update({
-                                google_sync_for_task: false,
-                                updated_at: nowIso,
-                            } as any)
-                            .eq("id", existingLink.task_id as any)
-                            .eq("user_id", userId as any);
-
-                        await (supabase.from("task_events") as any).insert({
-                            task_id: existingLink.task_id,
-                            event_type: "GOOGLE_EVENT_CANCELLED",
-                            actor_id: SYSTEM_ACTOR_PROFILE_ID,
-                            from_status: (task as any).status,
-                            to_status: (task as any).status,
-                            metadata: {
-                                source: "google_calendar",
-                                google_event_id: event.id,
-                                app_task_retained: true,
-                            },
-                        });
-                    }
-
-                    await (supabase.from("google_calendar_task_links") as any)
-                        .delete()
-                        .eq("task_id", existingLink.task_id as any);
-                    console.info(
-                        "[google-sync] retained app task after Google cancellation",
-                        { userId, taskId: existingLink.task_id, googleEventId: event.id }
-                    );
-                }
-                continue;
-            }
-
-            if (
-                !existingLink &&
-                pendingDeleteEventKeys.has(
-                    buildGoogleEventKey(connection.selected_calendar_id, event.id)
-                )
-            ) {
-                console.info(
-                    "[google-sync] skipped import because pending delete exists",
-                    { userId, calendarId: connection.selected_calendar_id, googleEventId: event.id }
-                );
-                continue;
-            }
-
-            if (!existingLink && importOnlyTaggedGoogleEvents && !shouldImportGoogleEventByTag(event)) {
-                console.info(
-                    "[google-sync] skipped import because tagged-only import is enabled and event has no -event tag",
-                    { userId, calendarId: connection.selected_calendar_id, googleEventId: event.id }
-                );
-                continue;
-            }
-
-            const eventStartIso = mapGoogleEventToStart(event);
-            const eventEndIso = mapGoogleEventToEnd(event);
-            if (!eventEndIso) {
-                continue;
-            }
-            const eventColorId = isGoogleEventColorId(event.colorId) ? event.colorId : null;
-
-            const googleUpdatedTs = parseIsoTimestamp(event.updated);
-
-            if (existingLink?.task_id) {
-                const { data: task } = await (supabase.from("tasks") as any)
-                    .select("id, user_id, status, title, description, deadline, updated_at")
-                    .eq("id", existingLink.task_id as any)
-                    .eq("user_id", userId as any)
-                    .maybeSingle();
-
-                if (!task) {
-                    await (supabase.from("google_calendar_task_links") as any)
-                        .delete()
-                        .eq("task_id", existingLink.task_id as any);
-                    continue;
-                }
-
-                const taskUpdatedTs = parseIsoTimestamp((task as any).updated_at as string);
-                if (taskUpdatedTs > googleUpdatedTs && existingLink.last_origin === "APP") {
-                    continue;
-                }
-
-                if (!SOFT_DELETEABLE_STATUSES.has((task as any).status) && !ACTIVE_SYNC_TASK_STATUSES.has((task as any).status)) {
-                    continue;
-                }
-
-                await (supabase.from("tasks") as any)
-                    .update({
-                        title: normalizeGoogleEventTitle(event),
-                        description: event.description || null,
-                        deadline: eventEndIso,
-                        google_event_start_at: eventStartIso,
-                        google_event_end_at: eventEndIso,
-                        google_event_color_id: eventColorId,
-                        google_sync_for_task: true,
-                        status: SOFT_DELETEABLE_STATUSES.has((task as any).status) ? (task as any).status : "ACTIVE",
-                        updated_at: new Date().toISOString(),
-                    } as any)
-                    .eq("id", existingLink.task_id as any)
-                    .eq("user_id", userId as any);
-
-                await (supabase.from("google_calendar_task_links") as any)
-                    .update({
-                        last_google_etag: event.etag || null,
-                        last_google_updated_at: event.updated || null,
-                        last_origin: "GOOGLE",
-                    } as any)
-                    .eq("task_id", existingLink.task_id as any);
-
-                continue;
-            }
-
-            const nowIso = new Date().toISOString();
-            const { data: insertedTask, error: insertTaskError } = await (supabase.from("tasks") as any)
-                .insert({
-                    user_id: userId,
-                    voucher_id: voucherId,
-                    title: normalizeGoogleEventTitle(event),
-                    description: event.description || null,
-                    failure_cost_cents: defaultFailureCostCents,
-                    deadline: eventEndIso,
-                    google_event_start_at: eventStartIso,
-                    google_event_end_at: eventEndIso,
-                    google_event_color_id: eventColorId,
-                    status: "ACTIVE",
-                    google_sync_for_task: true,
-                    postponed_at: null,
-                    marked_completed_at: null,
-                    voucher_response_deadline: null,
-                    recurrence_rule_id: null,
-                    required_pomo_minutes: null,
-                    proof_request_open: false,
-                    proof_requested_at: null,
-                    proof_requested_by: null,
-                    created_at: nowIso,
-                    updated_at: nowIso,
-                } as any)
-                .select("id, status")
-                .single();
-
-            if (insertTaskError || !insertedTask?.id) {
-                console.error("Failed to import Google event into task:", insertTaskError);
-                continue;
-            }
-
-            await (supabase.from("task_events") as any).insert({
-                task_id: insertedTask.id,
-                event_type: "ACTIVE",
-                actor_id: SYSTEM_ACTOR_PROFILE_ID,
-                from_status: "ACTIVE",
-                to_status: "ACTIVE",
-                metadata: {
-                    source: "google_calendar",
-                    google_event_id: event.id,
-                },
-            });
-
-            await (supabase.from("google_calendar_task_links") as any).insert({
-                task_id: insertedTask.id,
-                user_id: userId,
-                calendar_id: connection.selected_calendar_id,
-                google_event_id: event.id,
-                last_google_etag: event.etag || null,
-                last_google_updated_at: event.updated || null,
-                last_app_updated_at: nowIso,
-                last_origin: "GOOGLE",
-            } as any);
-
-            // Ensure Google-originated items include the backlink to Vouch task details.
-            // This enqueues an APP-origin upsert that appends the task URL in Google text.
-            await enqueueGoogleCalendarOutbox(userId, insertedTask.id, "UPSERT");
-        }
+        await processGoogleEventsForUser(supabase, userId, connection, delta.items || []);
 
         await (supabase.from("google_calendar_connections") as any)
             .update({
@@ -1569,6 +1450,245 @@ export async function processGoogleCalendarDeltaForUser(userId: string): Promise
     }
 }
 
+async function processGoogleEventsForUser(
+    supabase: SupabaseClient<Database>,
+    userId: string,
+    connection: GoogleCalendarConnection,
+    events: GoogleCalendarEvent[]
+): Promise<void> {
+    if (!connection.selected_calendar_id || events.length === 0) return;
+
+    const { data: profile } = await (supabase.from("profiles") as any)
+        .select("default_voucher_id, default_failure_cost_cents")
+        .eq("id", userId as any)
+        .maybeSingle();
+
+    const defaultFailureCostCents = Number((profile as any)?.default_failure_cost_cents || 50);
+    const voucherId = await ensureValidDefaultVoucherId(
+        supabase,
+        userId,
+        ((profile as any)?.default_voucher_id as string | null) || null
+    );
+    const pendingDeleteEventKeys = await listPendingDeleteEventKeys(
+        supabase,
+        userId,
+        connection.selected_calendar_id
+    );
+    const importOnlyTaggedGoogleEvents = Boolean(connection.import_only_tagged_google_events);
+    const deadlineSource = connection.deadline_source_preference || "start";
+
+    for (const event of events) {
+        if (!event.id) continue;
+
+        const { data: link } = await (supabase.from("google_calendar_task_links") as any)
+            .select("*")
+            .eq("user_id", userId as any)
+            .eq("calendar_id", connection.selected_calendar_id as any)
+            .eq("google_event_id", event.id as any)
+            .maybeSingle();
+
+        const existingLink = (link as GoogleCalendarTaskLink | null) || null;
+
+        if (event.status === "cancelled") {
+            if (existingLink?.task_id) {
+                const { data: task } = await (supabase.from("tasks") as any)
+                    .select("id, status, google_sync_for_task")
+                    .eq("id", existingLink.task_id as any)
+                    .eq("user_id", userId as any)
+                    .maybeSingle();
+
+                if (task) {
+                    const nowIso = new Date().toISOString();
+                    await (supabase.from("tasks") as any)
+                        .update({
+                            google_sync_for_task: false,
+                            updated_at: nowIso,
+                        } as any)
+                        .eq("id", existingLink.task_id as any)
+                        .eq("user_id", userId as any);
+
+                    await (supabase.from("task_events") as any).insert({
+                        task_id: existingLink.task_id,
+                        event_type: "GOOGLE_EVENT_CANCELLED",
+                        actor_id: SYSTEM_ACTOR_PROFILE_ID,
+                        from_status: (task as any).status,
+                        to_status: (task as any).status,
+                        metadata: {
+                            source: "google_calendar",
+                            google_event_id: event.id,
+                            app_task_retained: true,
+                        },
+                    });
+                }
+
+                await (supabase.from("google_calendar_task_links") as any)
+                    .delete()
+                    .eq("task_id", existingLink.task_id as any);
+                console.info(
+                    "[google-sync] retained app task after Google cancellation",
+                    { userId, taskId: existingLink.task_id, googleEventId: event.id }
+                );
+            }
+            continue;
+        }
+
+        if (
+            !existingLink &&
+            pendingDeleteEventKeys.has(
+                buildGoogleEventKey(connection.selected_calendar_id, event.id)
+            )
+        ) {
+            console.info(
+                "[google-sync] skipped import because pending delete exists",
+                { userId, calendarId: connection.selected_calendar_id, googleEventId: event.id }
+            );
+            continue;
+        }
+
+        if (!existingLink && await isTombstoned(supabase, userId, connection.selected_calendar_id, event.id)) {
+            console.info(
+                "[google-sync] skipped import because event is tombstoned",
+                { userId, calendarId: connection.selected_calendar_id, googleEventId: event.id }
+            );
+            continue;
+        }
+
+        if (!existingLink && importOnlyTaggedGoogleEvents && !shouldImportGoogleEventByTag(event)) {
+            console.info(
+                "[google-sync] skipped import because tagged-only import is enabled and event has no -event tag",
+                { userId, calendarId: connection.selected_calendar_id, googleEventId: event.id }
+            );
+            continue;
+        }
+
+        const eventStartIso = mapGoogleEventToStart(event);
+        const eventEndIso = mapGoogleEventToEnd(event);
+        if (!eventEndIso) {
+            continue;
+        }
+        const eventColorId = isGoogleEventColorId(event.colorId) ? event.colorId : null;
+        const deadlineIso = deadlineSource === "start" ? (eventStartIso || eventEndIso) : eventEndIso;
+
+        const googleUpdatedTs = parseIsoTimestamp(event.updated);
+
+        if (existingLink?.task_id) {
+            const { data: task } = await (supabase.from("tasks") as any)
+                .select("id, user_id, status, title, description, deadline, updated_at")
+                .eq("id", existingLink.task_id as any)
+                .eq("user_id", userId as any)
+                .maybeSingle();
+
+            if (!task) {
+                await (supabase.from("google_calendar_task_links") as any)
+                    .delete()
+                    .eq("task_id", existingLink.task_id as any);
+                continue;
+            }
+
+            const taskUpdatedTs = parseIsoTimestamp((task as any).updated_at as string);
+            if (taskUpdatedTs > googleUpdatedTs && existingLink.last_origin === "APP") {
+                continue;
+            }
+
+            if (!SOFT_DELETEABLE_STATUSES.has((task as any).status) && !ACTIVE_SYNC_TASK_STATUSES.has((task as any).status)) {
+                continue;
+            }
+
+            await (supabase.from("tasks") as any)
+                .update({
+                    title: normalizeGoogleEventTitle(event),
+                    description: event.description || null,
+                    deadline: deadlineIso,
+                    google_event_start_at: eventStartIso,
+                    google_event_end_at: eventEndIso,
+                    google_event_color_id: eventColorId,
+                    google_sync_for_task: true,
+                    status: SOFT_DELETEABLE_STATUSES.has((task as any).status) ? (task as any).status : "ACTIVE",
+                    updated_at: new Date().toISOString(),
+                } as any)
+                .eq("id", existingLink.task_id as any)
+                .eq("user_id", userId as any);
+
+            await (supabase.from("google_calendar_task_links") as any)
+                .update({
+                    last_google_etag: event.etag || null,
+                    last_google_updated_at: event.updated || null,
+                    last_origin: "GOOGLE",
+                } as any)
+                .eq("task_id", existingLink.task_id as any);
+
+            continue;
+        }
+
+        const nowIso = new Date().toISOString();
+        const { data: insertedTask, error: insertTaskError } = await (supabase.from("tasks") as any)
+            .insert({
+                user_id: userId,
+                voucher_id: voucherId,
+                title: normalizeGoogleEventTitle(event),
+                description: event.description || null,
+                failure_cost_cents: defaultFailureCostCents,
+                deadline: deadlineIso,
+                google_event_start_at: eventStartIso,
+                google_event_end_at: eventEndIso,
+                google_event_color_id: eventColorId,
+                status: "ACTIVE",
+                google_sync_for_task: true,
+                postponed_at: null,
+                marked_completed_at: null,
+                voucher_response_deadline: null,
+                recurrence_rule_id: null,
+                required_pomo_minutes: null,
+                proof_request_open: false,
+                proof_requested_at: null,
+                proof_requested_by: null,
+                created_at: nowIso,
+                updated_at: nowIso,
+            } as any)
+            .select("id, status")
+            .single();
+
+        if (insertTaskError || !insertedTask?.id) {
+            console.error("Failed to import Google event into task:", insertTaskError);
+            continue;
+        }
+
+        await (supabase.from("task_events") as any).insert({
+            task_id: insertedTask.id,
+            event_type: "ACTIVE",
+            actor_id: SYSTEM_ACTOR_PROFILE_ID,
+            from_status: "ACTIVE",
+            to_status: "ACTIVE",
+            metadata: {
+                source: "google_calendar",
+                google_event_id: event.id,
+            },
+        });
+
+        const { data: linkInsertResult } = await (supabase.from("google_calendar_task_links") as any)
+            .upsert({
+                task_id: insertedTask.id,
+                user_id: userId,
+                calendar_id: connection.selected_calendar_id,
+                google_event_id: event.id,
+                last_google_etag: event.etag || null,
+                last_google_updated_at: event.updated || null,
+                last_app_updated_at: nowIso,
+                last_origin: "GOOGLE",
+            } as any, { onConflict: "user_id,calendar_id,google_event_id", ignoreDuplicates: true })
+            .select("task_id")
+            .maybeSingle();
+
+        if (!linkInsertResult) {
+            // Another concurrent worker already imported this event; clean up the orphan task.
+            await (supabase.from("tasks") as any).delete().eq("id", insertedTask.id as any);
+            continue;
+        }
+
+        await enqueueGoogleCalendarOutbox(userId, insertedTask.id, "UPSERT");
+    }
+}
+
 export async function syncGoogleCalendarForEnabledConnections(limit: number = 200): Promise<void> {
     const supabase = createAdminClient();
 
@@ -1582,6 +1702,9 @@ export async function syncGoogleCalendarForEnabledConnections(limit: number = 20
     for (const row of (rows as Array<{ user_id: string }> | null) || []) {
         await processGoogleCalendarDeltaForUser(row.user_id);
     }
+
+    // Prune tombstones older than 30 days as part of the regular sweep.
+    await pruneGoogleCalendarTombstones();
 }
 
 export async function renewExpiringGoogleCalendarWatches(): Promise<void> {
@@ -1620,11 +1743,10 @@ export async function renewExpiringGoogleCalendarWatches(): Promise<void> {
                 } as any)
                 .eq("user_id", row.user_id as any);
         } catch (error) {
-            console.error(`Failed renewing Google watch for user ${row.user_id}:`, error);
+            const msg = error instanceof Error ? error.message : "Watch renew failed.";
+            console.error(`[google-sync] WATCH RENEWAL FAILED for user ${row.user_id} — Google→App sync will go dark until resolved: ${msg}`);
             await (supabase.from("google_calendar_connections") as any)
-                .update({
-                    last_error: error instanceof Error ? error.message : "Watch renew failed.",
-                } as any)
+                .update({ last_error: `Watch renewal failed: ${msg}` } as any)
                 .eq("user_id", row.user_id as any);
         }
     }
@@ -1695,4 +1817,27 @@ export async function listCalendarsForUserConnection(
 
         throw error;
     }
+}
+
+export async function setGoogleCalendarDeadlineSourcePreference(
+    supabase: SupabaseClient<Database>,
+    userId: string,
+    preference: "start" | "end"
+): Promise<void> {
+    const { error } = await (supabase.from("google_calendar_connections") as any)
+        .update({ deadline_source_preference: preference } as any)
+        .eq("user_id", userId as any);
+    if (error) throw new Error(error.message);
+}
+
+export async function setGoogleCalendarDefaultEventDuration(
+    supabase: SupabaseClient<Database>,
+    userId: string,
+    durationMinutes: number
+): Promise<void> {
+    const clamped = Math.min(1440, Math.max(5, Math.round(durationMinutes)));
+    const { error } = await (supabase.from("google_calendar_connections") as any)
+        .update({ default_event_duration_minutes: clamped } as any)
+        .eq("user_id", userId as any);
+    if (error) throw new Error(error.message);
 }
