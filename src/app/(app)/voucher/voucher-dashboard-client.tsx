@@ -7,7 +7,7 @@ import { sortPendingTasks } from "@/lib/voucher-pending-sort";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import type { FriendPomoActivity, TaskWithRelations, VoucherPendingTask } from "@/lib/types";
-import { Check, ChevronDown, ChevronRight, CircleHelp, Loader2, Timer, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Loader2, Timer, X } from "lucide-react";
 import { runOptimisticMutation } from "@/lib/ui/runOptimisticMutation";
 import { toast } from "sonner";
 import { HardRefreshButton } from "@/components/HardRefreshButton";
@@ -708,39 +708,37 @@ export function CompactPendingItem({
                 {canReview && (
                     <>
                         <Button
-                            size="sm"
-                            onClick={onAccept}
-                            disabled={isLoading}
-                            aria-label={`Accept task ${task.title}`}
-                            title="Accept task"
-                            className="h-9 w-9 p-0 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 hover:text-emerald-200 border border-emerald-500/30 transition-all"
-                        >
-                            <Check className="h-4 w-4" strokeWidth={3} />
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="ghost"
+                            size="icon"
                             onClick={onDeny}
                             disabled={isLoading}
                             aria-label={`Deny task ${task.title}`}
                             title="Deny task"
-                            className="h-9 w-9 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-red-500/30"
+                            className="h-10 w-10 rounded-full border border-black/20 bg-red-500 text-slate-900 shadow-[0_0_10px_rgba(239,68,68,0.175)] hover:bg-red-400 hover:text-slate-900"
                         >
                             <X className="h-4 w-4" strokeWidth={3} />
                         </Button>
                         {canRequestProof && (
                             <Button
-                                size="sm"
-                                variant="ghost"
+                                size="icon"
                                 onClick={onRequestProof}
                                 disabled={isLoading}
                                 aria-label={`Request proof for task ${task.title}`}
                                 title="Request proof"
-                                className="h-9 w-9 p-0 text-pink-400 hover:text-pink-300 hover:bg-pink-400/10 border border-pink-400/30"
+                                className="h-10 w-10 rounded-full border border-black/20 bg-amber-400 text-slate-900 shadow-[0_0_10px_rgba(251,191,36,0.175)] hover:bg-amber-300 hover:text-slate-900"
                             >
-                                <CircleHelp className="h-4 w-4" strokeWidth={2.5} />
+                                <span className="text-xl font-normal leading-none">?</span>
                             </Button>
                         )}
+                        <Button
+                            size="icon"
+                            onClick={onAccept}
+                            disabled={isLoading}
+                            aria-label={`Accept task ${task.title}`}
+                            title="Accept task"
+                            className="h-10 w-10 rounded-full border border-black/20 bg-emerald-500 text-slate-900 shadow-[0_0_10px_rgba(16,185,129,0.175)] hover:bg-emerald-400 hover:text-slate-900"
+                        >
+                            <Check className="h-4 w-4" strokeWidth={3} />
+                        </Button>
                     </>
                 )}
             </div>

@@ -1,13 +1,7 @@
 import { schedules, task } from "@trigger.dev/sdk/v3";
 import {
-    processGoogleCalendarDeltaForUser,
-    processGoogleCalendarInboxItem,
     processGoogleCalendarOutboxItem,
-    reconcileStaleGoogleCalendarConnections,
-    renewExpiringGoogleCalendarWatches,
-    retryPendingGoogleCalendarInbox,
     retryPendingGoogleCalendarOutbox,
-    syncGoogleCalendarForEnabledConnections,
 } from "@/lib/google-calendar/sync";
 
 export const googleCalendarDispatch = task({
@@ -18,38 +12,11 @@ export const googleCalendarDispatch = task({
     },
 });
 
-export const googleCalendarInboxDispatch = task({
-    id: "google-calendar-inbox-dispatch",
-    run: async (payload: { inboxId: number }) => {
-        if (!payload?.inboxId) return;
-        await processGoogleCalendarInboxItem(payload.inboxId);
-    },
-});
-
-export const googleCalendarSyncConnection = task({
-    id: "google-calendar-sync-connection",
-    run: async (payload: { userId: string; reason?: string }) => {
-        if (!payload?.userId) return;
-        await processGoogleCalendarDeltaForUser(payload.userId);
-    },
-});
-
-// Single maintenance sweep for Google integration every hour.
-export const googleCalendarSyncSweeper = schedules.task({
-    id: "google-calendar-sync-sweeper",
+// Hourly sweep to retry any failed or stuck outbox items.
+export const googleCalendarOutboxSweeper = schedules.task({
+    id: "google-calendar-outbox-sweeper",
     cron: "0 * * * *",
     run: async () => {
-        await syncGoogleCalendarForEnabledConnections(200);
         await retryPendingGoogleCalendarOutbox(200);
-        await retryPendingGoogleCalendarInbox(200);
-        await reconcileStaleGoogleCalendarConnections();
-    },
-});
-
-export const googleCalendarWatchRenew = schedules.task({
-    id: "google-calendar-watch-renew",
-    cron: "0 * * * *",
-    run: async () => {
-        await renewExpiringGoogleCalendarWatches();
     },
 });
