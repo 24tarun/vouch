@@ -60,20 +60,28 @@ pnpm install
 1.  Run the migrations in the `supabase/migrations` folder against your Supabase project (using the Supabase Dashboard SQL Editor or CLI).
 2.  Ensure your database schema matches the types expected by the application.
 
-### Supabase Edge Function (Mobile Proof Upload)
+### Supabase Edge Functions (Mobile)
 
-This repo also contains the `task-proof-upload` edge function used by mobile for signed proof uploads:
+This repo also contains Supabase edge functions used by mobile:
 
-- Path: `supabase/functions/task-proof-upload/index.ts`
+- Path: `supabase/edgefunctions/task-proof-upload.ts`
 - Required function env vars:
   - `SUPABASE_URL`
   - `SUPABASE_ANON_KEY`
   - `SUPABASE_SERVICE_ROLE_KEY`
 
+- Path: `supabase/edgefunctions/google-calendar-dispatch-mobile.ts`
+- Required function env vars:
+  - `SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `TRIGGER_SECRET_KEY`
+  - `TRIGGER_API_URL` (optional)
+
 Deploy with Supabase CLI:
 
 ```bash
 supabase functions deploy task-proof-upload --project-ref <your-project-ref>
+supabase functions deploy google-calendar-dispatch-mobile --project-ref <your-project-ref>
 ```
 
 ## 4. Run Development Server

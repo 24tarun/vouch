@@ -68,7 +68,12 @@ import {
     TOMORROW_KEYWORD_REGEX,
     WEEKDAY_TOKEN_REGEX,
 } from "@/lib/task-title-parser";
-import { resolveTaskDeadline, stripMetadata, parseTaskTitleAndSubtasks } from "@/lib/parser_keyword_resolver";
+import {
+    hasParserDrivenDeadlineHint,
+    resolveTaskDeadline,
+    stripMetadata,
+    parseTaskTitleAndSubtasks,
+} from "@/lib/parser_keyword_resolver";
 import type { ParserKeywordCompletion } from "@/lib/task-title-parser";
 
 const TIME_TOKEN_REGEX = /(?:^|\s)@(\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?)\b/i;
@@ -699,15 +704,18 @@ export const TaskInput = forwardRef<TaskInputHandle, TaskInputProps>(function Ta
     };
 
     useEffect(() => {
-        if (!isDeadlineManuallyPicked) {
-            const result = resolveTaskDeadline(title, new Date(), normalizedDefaultEventDurationMinutes);
-            if (!result.error) {
-                setSelectedDate(result.deadline);
-            } else {
-                setDeadlineError(result.error);
-                setSelectedDate(getDefaultDeadline());
-            }
+        const shouldApplyParserDeadline = !isDeadlineManuallyPicked || hasParserDrivenDeadlineHint(title);
+        if (!shouldApplyParserDeadline) return;
+
+        const result = resolveTaskDeadline(title, new Date(), normalizedDefaultEventDurationMinutes);
+        if (!result.error) {
+            setDeadlineError(null);
+            setSelectedDate(result.deadline);
+            return;
         }
+
+        setDeadlineError(result.error);
+        setSelectedDate(getDefaultDeadline());
     }, [title, isDeadlineManuallyPicked, normalizedDefaultEventDurationMinutes]);
 
     useEffect(() => {
@@ -796,7 +804,11 @@ export const TaskInput = forwardRef<TaskInputHandle, TaskInputProps>(function Ta
             return;
         }
 
-        const parserResolution = effectiveIsDeadlineManuallyPicked ? null : resolveTaskDeadline(title, new Date(), normalizedDefaultEventDurationMinutes);
+        const shouldApplyParserDeadline =
+            !effectiveIsDeadlineManuallyPicked || hasParserDrivenDeadlineHint(title);
+        const parserResolution = shouldApplyParserDeadline
+            ? resolveTaskDeadline(title, new Date(), normalizedDefaultEventDurationMinutes)
+            : null;
         if (parserResolution?.error) {
             setDeadlineError(parserResolution.error);
             return;

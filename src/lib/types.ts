@@ -265,6 +265,12 @@ export interface GoogleCalendarSyncOutbox {
     updated_at: string;
 }
 
+export interface EnqueueGoogleCalendarTaskResult {
+    status: "enqueued" | "skipped";
+    reason: "task_not_event" | "google_not_connected" | "app_to_google_disabled" | "calendar_not_selected" | "google_event_missing" | null;
+    outbox_id: number | null;
+}
+
 export type CommitmentStatus = "DRAFT" | "ACTIVE" | "COMPLETED" | "FAILED";
 
 export interface Commitment {
@@ -476,7 +482,20 @@ export interface Database {
             [_ in never]: never
         }
         Functions: {
-            [_ in never]: never
+            enqueue_google_calendar_task_upsert: {
+                Args: {
+                    p_task_id: string
+                }
+                Returns: EnqueueGoogleCalendarTaskResult[]
+            }
+            enqueue_google_calendar_task_delete: {
+                Args: {
+                    p_task_id: string
+                    p_google_event_id?: string | null
+                    p_calendar_id?: string | null
+                }
+                Returns: EnqueueGoogleCalendarTaskResult[]
+            }
         }
         Enums: {
             [_ in never]: never

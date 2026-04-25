@@ -232,7 +232,6 @@ export async function markTaskCompleteWithProofIntent(
 
         invalidateActiveTasksCache((user as any).id);
         invalidatePendingVoucherRequestsCache((task as any).voucher_id);
-        await enqueueGoogleCalendarUpsert((user as any).id, taskId);
         revalidatePath("/tasks");
         revalidatePath("/stats");
         revalidatePath("/friends");
@@ -387,7 +386,6 @@ export async function markTaskCompleteWithProofIntent(
 
     invalidateActiveTasksCache((user as any).id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);
-    await enqueueGoogleCalendarUpsert((user as any).id, taskId);
     revalidatePath("/tasks");
     revalidatePath("/stats");
     revalidatePath("/friends");
@@ -464,8 +462,6 @@ export async function undoTaskComplete(taskId: string) {
         from_status: (task as any).status,
         to_status: restoredStatus,
     });
-
-    await enqueueGoogleCalendarUpsert(user.id, taskId);
 
     invalidateActiveTasksCache(user.id);
     invalidatePendingVoucherRequestsCache((task as any).voucher_id);

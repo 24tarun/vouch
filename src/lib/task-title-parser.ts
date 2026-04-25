@@ -155,7 +155,7 @@ const HIGHLIGHT_TIMER_TOKEN_REGEX = /\b(timer)\s+(\d+)\b/gi;
 const HIGHLIGHT_POMO_TOKEN_REGEX = /\b(pomo)\s+(\d+)\b/gi;
 const HIGHLIGHT_REMIND_TOKEN_REGEX = /(^|\s)(remind@(\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?))\b/gi;
 const HIGHLIGHT_REPEAT_TOKEN_REGEX = /\b(repeat)\s+(daily|weekly|monthly|yearly)\b/gi;
-const HIGHLIGHT_TOMORROW_TOKEN_REGEX = /\b(tmrw|tomorrow)\b/gi;
+const HIGHLIGHT_TOMORROW_TOKEN_REGEX = /\b(tmr|tmrw|tomorrow)\b/gi;
 const HIGHLIGHT_VOUCH_TOKEN_REGEX = /(^|\s)(vouch|\.v)\s+(me|self|myself|[^\s/]+)(?=\s|$|\/)/gi;
 const HIGHLIGHT_ORDINAL_DATE_TOKEN_REGEX = /\b([12]?\d|3[01])(st|nd|rd|th)\b/gi;
 const HIGHLIGHT_SLASH_DATE_TOKEN_REGEX = /\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}))?\b/g;
@@ -516,7 +516,7 @@ export function buildTaskTitleOverlayModel(
 // Date helpers (extracted from TaskInput.tsx)
 // ---------------------------------------------------------------------------
 
-export const TOMORROW_KEYWORD_REGEX = /\b(?:tmrw|tomorrow)\b/i;
+export const TOMORROW_KEYWORD_REGEX = /\b(?:tmr|tmrw|tomorrow)\b/i;
 export const ORDINAL_DATE_TOKEN_REGEX = /\b([12]?\d|3[01])(st|nd|rd|th)\b/gi;
 export const SLASH_DATE_TOKEN_REGEX = /\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}))?\b/g;
 

@@ -22,6 +22,16 @@ export interface ResolveTaskDeadlineResult {
     error: string | null;
 }
 
+export function hasParserDrivenDeadlineHint(text: string): boolean {
+    if (!text) return false;
+    if (EVENT_TOKEN_REGEX.test(text)) return true;
+    if (parseTimerMinutesToken(text) !== null) return true;
+    if (parseDateTokens(text).length > 0) return true;
+    if (extractWeekdayDateTokens(text).length > 0) return true;
+    if (TOMORROW_KEYWORD_REGEX.test(text)) return true;
+    return TIME_TOKEN_REGEX.test(text);
+}
+
 export function resolveTaskDeadline(
     text: string,
     now: Date,
@@ -154,7 +164,7 @@ export function stripMetadata(text: string): string {
         .replace(/\b([12]?\d|3[01])(?:st|nd|rd|th)\b/gi, "")
         .replace(/\b(?:0?[1-9]|[12]\d|3[01])\/(?:0?[1-9]|1[0-2])(?:\/\d{4})?\b/g, "")
         .replace(/(^|\s)remind@(?:\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?)\b/gi, "$1")
-        .replace(/\b(?:tmrw|tomorrow)\b/gi, "")
+        .replace(/\b(?:tmr|tmrw|tomorrow)\b/gi, "")
         .replace(new RegExp(WEEKDAY_TOKEN_REGEX.source, "gi"), "")
         .replace(/(?:\bvouch|\.v)\s+[^\s/]+/gi, "")
         .replace(/(?:^|\s)-proof(?=\s|$)/gi, " ")
