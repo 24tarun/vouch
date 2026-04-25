@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+    enqueueGoogleCalendarInbox,
     findUserIdByWatchChannel,
-    processGoogleCalendarDeltaForUser,
+    processGoogleCalendarInboxItem,
     touchGoogleWebhookReceipt,
-    triggerGoogleCalendarSyncConnection,
 } from "@/lib/google-calendar/sync";
 import { webhookLimiter, checkRateLimit } from "@/lib/rate-limit";
+import { tasks as triggerTasks } from "@trigger.dev/sdk/v3";
 
 export async function POST(request: NextRequest) {
     const channelId = request.headers.get("x-goog-channel-id");
@@ -36,9 +37,14 @@ export async function POST(request: NextRequest) {
 
     // "sync" is the watch handshake event and carries no actionable change set.
     if (resourceState !== "sync") {
-        const triggered = await triggerGoogleCalendarSyncConnection(userId, "webhook");
-        if (!triggered) {
-            await processGoogleCalendarDeltaForUser(userId);
+        const inboxId = await enqueueGoogleCalendarInbox(userId, channelId, resourceState ?? "exists");
+        if (inboxId) {
+            try {
+                await triggerTasks.trigger("google-calendar-inbox-dispatch", { inboxId });
+            } catch {
+                // Trigger.dev unavailable — process inline as fallback.
+                await processGoogleCalendarInboxItem(inboxId);
+            }
         }
     }
 

@@ -1373,6 +1373,104 @@ export async function triggerGoogleCalendarSyncConnection(userId: string, reason
         return false;
     }
 }
+
+export async function enqueueGoogleCalendarInbox(
+    userId: string,
+    channelId: string,
+    resourceState: string
+): Promise<number | null> {
+    const supabase = createAdminClient();
+
+    // Reuse an existing PENDING row for this user to avoid pile-up from rapid webhooks.
+    const { data: existing } = await (supabase.from("google_calendar_sync_inbox") as any)
+        .select("id")
+        .eq("user_id", userId as any)
+        .eq("status", "PENDING" as any)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (existing) {
+        await (supabase.from("google_calendar_sync_inbox") as any)
+            .update({ next_attempt_at: new Date().toISOString(), updated_at: new Date().toISOString() } as any)
+            .eq("id", (existing as any).id as any);
+        return (existing as any).id as number;
+    }
+
+    const { data, error } = await (supabase.from("google_calendar_sync_inbox") as any)
+        .insert({
+            user_id: userId,
+            channel_id: channelId,
+            resource_state: resourceState,
+            status: "PENDING",
+            next_attempt_at: new Date().toISOString(),
+        } as any)
+        .select("id")
+        .single();
+
+    if (error) {
+        console.error("Failed to enqueue Google Calendar inbox item:", error);
+        return null;
+    }
+
+    return (data as { id: number }).id;
+}
+
+export async function processGoogleCalendarInboxItem(inboxId: number): Promise<void> {
+    const supabase = createAdminClient();
+
+    const { data: inbox, error: inboxError } = await (supabase.from("google_calendar_sync_inbox") as any)
+        .select("*")
+        .eq("id", inboxId as any)
+        .maybeSingle();
+
+    if (inboxError || !inbox) return;
+    if ((inbox as any).status === "DONE") return;
+
+    const attemptCount = Number((inbox as any).attempt_count || 0) + 1;
+    const { data: claimed } = await (supabase.from("google_calendar_sync_inbox") as any)
+        .update({ status: "PROCESSING", attempt_count: attemptCount, updated_at: new Date().toISOString() } as any)
+        .eq("id", inboxId as any)
+        .in("status", ["PENDING", "FAILED"] as any)
+        .select("id")
+        .maybeSingle();
+
+    if (!claimed) return;
+
+    try {
+        await processGoogleCalendarDeltaForUser((inbox as any).user_id as string);
+        await (supabase.from("google_calendar_sync_inbox") as any)
+            .update({ status: "DONE", last_error: null, updated_at: new Date().toISOString() } as any)
+            .eq("id", inboxId as any);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : "Google inbox sync failed.";
+        const backoffSeconds = Math.min(60 * 2 ** (attemptCount - 1), 3600);
+        await (supabase.from("google_calendar_sync_inbox") as any)
+            .update({
+                status: "FAILED",
+                last_error: message,
+                next_attempt_at: new Date(Date.now() + backoffSeconds * 1000).toISOString(),
+                updated_at: new Date().toISOString(),
+            } as any)
+            .eq("id", inboxId as any);
+    }
+}
+
+export async function retryPendingGoogleCalendarInbox(limit: number = 100): Promise<void> {
+    const supabase = createAdminClient();
+    const nowIso = new Date().toISOString();
+
+    const { data: rows } = await (supabase.from("google_calendar_sync_inbox") as any)
+        .select("id")
+        .in("status", ["PENDING", "FAILED"] as any)
+        .lte("next_attempt_at", nowIso)
+        .order("next_attempt_at", { ascending: true })
+        .limit(limit);
+
+    for (const row of (rows as Array<{ id: number }> | null) || []) {
+        await processGoogleCalendarInboxItem(row.id);
+    }
+}
 export async function processGoogleCalendarDeltaForUser(userId: string): Promise<void> {
     const supabase = createAdminClient();
     const connection = await getConnectionByUserId(supabase, userId);

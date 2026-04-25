@@ -1,9 +1,11 @@
 import { schedules, task } from "@trigger.dev/sdk/v3";
 import {
     processGoogleCalendarDeltaForUser,
+    processGoogleCalendarInboxItem,
     processGoogleCalendarOutboxItem,
     reconcileStaleGoogleCalendarConnections,
     renewExpiringGoogleCalendarWatches,
+    retryPendingGoogleCalendarInbox,
     retryPendingGoogleCalendarOutbox,
     syncGoogleCalendarForEnabledConnections,
 } from "@/lib/google-calendar/sync";
@@ -13,6 +15,14 @@ export const googleCalendarDispatch = task({
     run: async (payload: { outboxId: number }) => {
         if (!payload?.outboxId) return;
         await processGoogleCalendarOutboxItem(payload.outboxId);
+    },
+});
+
+export const googleCalendarInboxDispatch = task({
+    id: "google-calendar-inbox-dispatch",
+    run: async (payload: { inboxId: number }) => {
+        if (!payload?.inboxId) return;
+        await processGoogleCalendarInboxItem(payload.inboxId);
     },
 });
 
@@ -31,6 +41,7 @@ export const googleCalendarSyncSweeper = schedules.task({
     run: async () => {
         await syncGoogleCalendarForEnabledConnections(200);
         await retryPendingGoogleCalendarOutbox(200);
+        await retryPendingGoogleCalendarInbox(200);
         await reconcileStaleGoogleCalendarConnections();
     },
 });
