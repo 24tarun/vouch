@@ -28,7 +28,7 @@ export async function saveSubscription(subscription: unknown) {
         return { success: false, error: "User not authenticated" };
     }
 
-    const { error } = await supabase.from("web_push_subscriptions").upsert(
+    const { error } = await (supabase.from("web_push_subscriptions" as any) as any).upsert(
         {
             user_id: user.id,
             subscription: parsedSubscription.data,
@@ -64,8 +64,8 @@ export async function deleteSubscription(subscription: unknown) {
 
     const subscriptionPayload: PushSubscriptionPayload = parsedSubscription.data;
 
-    const { error } = await supabase
-        .from("web_push_subscriptions")
+    const { error } = await (supabase
+        .from("web_push_subscriptions" as any) as any)
         .delete()
         .eq("user_id", user.id)
         .eq("subscription", subscriptionPayload);
