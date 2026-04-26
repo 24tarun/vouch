@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { saveSubscription } from "@/actions/push";
 import { haptics } from "@/lib/haptics";
 
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
+const VAPID_PUBLIC_KEY = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "").trim();
 
 export function PushInitializer() {
     const hasVapidKey = VAPID_PUBLIC_KEY.length > 0;
@@ -133,8 +133,9 @@ export function PushInitializer() {
 }
 
 function urlBase64ToUint8Array(base64String: string) {
-    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
+    const normalized = base64String.trim();
+    const padding = "=".repeat((4 - (normalized.length % 4)) % 4);
+    const base64 = (normalized + padding).replace(/\-/g, "+").replace(/_/g, "/");
     const rawData = window.atob(base64);
     const outputArray = new Uint8Array(rawData.length);
     for (let i = 0; i < rawData.length; ++i) {

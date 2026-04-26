@@ -2,7 +2,6 @@
 
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { revalidatePath } from "next/cache";
 
 const pushSubscriptionSchema = z.object({
     endpoint: z.string().url(),
@@ -11,11 +10,12 @@ const pushSubscriptionSchema = z.object({
         auth: z.string().min(1),
     }),
 });
+type PushSubscriptionPayload = z.infer<typeof pushSubscriptionSchema>;
 
 /**
  * Saves a web push subscription for the current user.
  */
-export async function saveSubscription(subscription: any) {
+export async function saveSubscription(subscription: unknown) {
     const parsedSubscription = pushSubscriptionSchema.safeParse(subscription);
     if (!parsedSubscription.success) {
         return { success: false, error: "Invalid push subscription data" };
@@ -25,16 +25,22 @@ export async function saveSubscription(subscription: any) {
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
-        throw new Error("User not authenticated");
+        return { success: false, error: "User not authenticated" };
     }
 
-    const { error } = await (supabase.from("web_push_subscriptions") as any).upsert({
-        user_id: user.id,
-        subscription,
-        updated_at: new Date().toISOString(),
-    }, {
-        onConflict: "user_id, subscription"
-    });
+    const { error } = await supabase.from("web_push_subscriptions").upsert(
+        {
+            user_id: user.id,
+            subscription: parsedSubscription.data,
+            updated_at: new Date().toISOString(),
+        },
+        {
+            onConflict: "user_id, subscription",
+            // RLS allows INSERT/SELECT/DELETE on this table (no UPDATE policy), so avoid
+            // ON CONFLICT DO UPDATE behavior that can fail under RLS in production.
+            ignoreDuplicates: true,
+        }
+    );
 
     if (error) {
         console.error("Error saving subscription:", error);
@@ -47,17 +53,22 @@ export async function saveSubscription(subscription: any) {
 /**
  * Deletes a web push subscription.
  */
-export async function deleteSubscription(subscription: any) {
+export async function deleteSubscription(subscription: unknown) {
+    const parsedSubscription = pushSubscriptionSchema.safeParse(subscription);
+    if (!parsedSubscription.success) return;
+
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) return;
 
-    const { error } = await (supabase
-        .from("web_push_subscriptions") as any)
+    const subscriptionPayload: PushSubscriptionPayload = parsedSubscription.data;
+
+    const { error } = await supabase
+        .from("web_push_subscriptions")
         .delete()
         .eq("user_id", user.id)
-        .eq("subscription", subscription);
+        .eq("subscription", subscriptionPayload);
 
     if (error) {
         console.error("Error deleting subscription:", error);

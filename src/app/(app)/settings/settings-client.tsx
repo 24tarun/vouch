@@ -62,7 +62,7 @@ import { AI_VOUCHER_DISPLAY_NAME, AI_PROFILE_ID } from "@/lib/ai-voucher/constan
 import { normalizePomoDurationMinutes } from "@/lib/pomodoro";
 import { formatTimeZoneLabel, getTimeZoneOptions } from "@/lib/timezones";
 
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
+const VAPID_PUBLIC_KEY = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "").trim();
 
 interface SettingsClientProps {
     profile: Profile;
@@ -704,7 +704,11 @@ export default function SettingsClient({
             setMobileNotificationsEnabled(true);
         } catch (error) {
             console.error(error);
-            setMobileNotificationsError("Could not update mobile notification setting.");
+            setMobileNotificationsError(
+                error instanceof Error && error.message
+                    ? error.message
+                    : "Could not update mobile notification setting."
+            );
         } finally {
             setIsMobileNotificationsLoading(false);
         }
@@ -1918,8 +1922,9 @@ export default function SettingsClient({
 }
 
 function urlBase64ToUint8Array(base64String: string) {
-    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-    const base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
+    const normalized = base64String.trim();
+    const padding = "=".repeat((4 - (normalized.length % 4)) % 4);
+    const base64 = (normalized + padding).replace(/\-/g, "+").replace(/_/g, "/");
     const rawData = window.atob(base64);
     const outputArray = new Uint8Array(rawData.length);
     for (let i = 0; i < rawData.length; ++i) {
