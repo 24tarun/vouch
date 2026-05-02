@@ -30,7 +30,7 @@ type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 const DEFAULT_APP_URL = "http://localhost:3000";
 
 const signInSchema = z.object({
-    email: z.string().email("Invalid email address"),
+    identifier: z.string().trim().min(1, "Email or username is required"),
     password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
@@ -146,24 +146,46 @@ async function autoEndLingeringPomoSession(
 }
 
 export async function signIn(formData: FormData) {
-    const email = formData.get("email") as string;
+    const identifier = (formData.get("email") as string | null)?.trim() || "";
     const password = formData.get("password") as string;
     const supabase = await createClient();
 
-    const parsedSignIn = signInSchema.safeParse({ email, password });
+    const parsedSignIn = signInSchema.safeParse({ identifier, password });
     if (!parsedSignIn.success) {
         return { error: parsedSignIn.error.issues[0].message };
     }
 
-    const { limited: signInLimited } = await checkRateLimit(authLimiter, `signin:${email}`);
+    const { limited: signInLimited } = await checkRateLimit(authLimiter, `signin:${identifier.toLowerCase()}`);
     if (signInLimited) {
         return { error: "Too many attempts. Please try again later." };
     }
 
-    console.log("Attemping sign in for:", email);
+    let emailToUse = identifier;
+    const looksLikeEmail = identifier.includes("@");
+    if (!looksLikeEmail) {
+        const { data: matchedProfile, error: profileLookupError } = await supabase
+            .from("profiles")
+            .select("email")
+            .ilike("username", identifier)
+            .maybeSingle();
+
+        if (profileLookupError) {
+            console.error("Sign in username lookup error:", profileLookupError);
+            return { error: "Authentication failed" };
+        }
+
+        const matchedEmail = (matchedProfile as { email?: string | null } | null)?.email?.trim();
+        if (!matchedEmail) {
+            // Keep auth response generic to avoid username enumeration.
+            return { error: "Authentication failed" };
+        }
+        emailToUse = matchedEmail;
+    }
+
+    console.log("Attemping sign in for:", identifier);
 
     const { error, data } = await supabase.auth.signInWithPassword({
-        email,
+        email: emailToUse,
         password,
     });
 
@@ -192,7 +214,7 @@ export async function signIn(formData: FormData) {
     }
 
     revalidatePath("/", "layout");
-    redirect("/tasks");
+    return { success: true as const };
 }
 
 export async function signUp(formData: FormData) {

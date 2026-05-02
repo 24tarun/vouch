@@ -440,7 +440,7 @@ Deno.serve(async (request) => {
       return json(400, { success: false, error: finalizeRow?.error || 'Could not finalize proof upload.' });
     }
 
-    const AI_PROFILE_ID = '00000000-0000-0000-0000-000000000001';
+    const AI_PROFILE_ID = '11111111-1111-1111-1111-111111111111';
     if ((task as { voucher_id: string }).voucher_id === AI_PROFILE_ID) {
       const triggerSecretKey = Deno.env.get('TRIGGER_SECRET_KEY');
       if (triggerSecretKey) {

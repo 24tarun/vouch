@@ -93,7 +93,12 @@ function LoginContent() {
             if (result?.error) {
                 setMessage({ type: "error", text: result.error });
             } else if (result && "success" in result && result.success) {
-                setMessage({ type: "success", text: result.message || "Success!" });
+                if (mode === "signin") {
+                    router.push("/tasks");
+                    return;
+                }
+                const successText = "message" in result ? result.message : "Success!";
+                setMessage({ type: "success", text: successText });
                 if (mode === "forgot") setEmail("");
                 else if (mode === "reset") {
                     setPassword("");
@@ -386,16 +391,18 @@ function LoginContent() {
 
                         {mode !== "reset" && (
                             <div>
-                                <label className="auth-label" htmlFor="email">Email</label>
+                                <label className="auth-label" htmlFor="email">
+                                    {mode === "signin" ? "Email or Username" : "Email"}
+                                </label>
                                 <input
                                     className="auth-input"
                                     id="email"
-                                    type="email"
-                                    placeholder="name@domain.com"
+                                    type={mode === "signin" ? "text" : "email"}
+                                    placeholder={mode === "signin" ? "name@domain.com or username" : "name@domain.com"}
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
-                                    autoComplete="email"
+                                    autoComplete={mode === "signin" ? "username" : "email"}
                                 />
                             </div>
                         )}

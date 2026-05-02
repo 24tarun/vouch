@@ -6,7 +6,7 @@
  */
 
 // Stable UUID for AI system user
-export const AI_PROFILE_ID = "00000000-0000-0000-0000-000000000001";
+export const AI_PROFILE_ID = "11111111-1111-1111-1111-111111111111";
 
 // AI-vouched tasks count at 0.5x reputation weight vs human-vouched (no discount for denials)
 export const AI_VOUCHER_REPUTATION_MULTIPLIER = 0.5;
