@@ -18,6 +18,13 @@ export default async function DashboardLayout({
         redirect("/login");
     }
 
+    const { data: { session } } = await supabase.auth.getSession();
+    const amr = (session?.user as unknown as { amr?: { method: string }[] })?.amr;
+    if (amr?.some((m) => m.method === "recovery")) {
+        await supabase.auth.signOut();
+        redirect("/");
+    }
+
     const { count: statsBadgeCountRaw } = await supabase
         .from("tasks")
         .select("*", { count: "exact", head: true })
