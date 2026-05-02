@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import React, { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
     postponeTask,
@@ -297,8 +297,9 @@ export default function TaskDetailClient({
 
     const isActionPending = (action: string) => pendingActions.has(action);
 
-    const setTaskProofDraft = (nextDraft: TaskProofDraft | null) => {
+    const setTaskProofDraft: React.Dispatch<React.SetStateAction<TaskProofDraft | null>> = (value) => {
         setProofDraft((prev) => {
+            const nextDraft = typeof value === "function" ? value(prev) : value;
             if (prev?.previewUrl && (!nextDraft || prev.previewUrl !== nextDraft.previewUrl)) {
                 URL.revokeObjectURL(prev.previewUrl);
             }
