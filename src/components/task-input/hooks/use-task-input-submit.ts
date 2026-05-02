@@ -93,9 +93,10 @@ export function useTaskInputSubmit(args: UseTaskInputSubmitArgs) {
             effectiveReminders = draftResult.reminders;
         }
 
-        const { taskTitle, subtasks, titleRequiresProof } = parseTaskTitleAndSubtasks(title);
+        const { title: taskTitle, subtasks } = parseTaskTitleAndSubtasks(title);
+        const titleRequiresProof = false;
         const requiredPomoParse = parseRequiredPomoFromTitle(title);
-        const requiredPomoMinutes = requiredPomoParse.minutes;
+        const requiredPomoMinutes = requiredPomoParse.requiredPomoMinutes;
         const parsedRepeatType = parseRepeatTokenFromTitle(title);
         const effectiveRecurrenceType = parsedRepeatType ?? (recurrenceType || null);
 

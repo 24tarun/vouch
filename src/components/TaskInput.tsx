@@ -86,6 +86,8 @@ import type { ParserKeywordCompletion } from "@/lib/task-title-parser";
 import { useTaskInputSubmit } from "@/components/task-input/hooks/use-task-input-submit";
 
 const TIME_TOKEN_REGEX = /(?:^|\s)@(\d{1,2}:\d{2}(?:\s*(?:am|pm))?|\d{1,4}(?:\s*(?:am|pm))?|\d{1,2}(?:\s*(?:am|pm))?)\b/i;
+const weekdayOrder = [1, 2, 3, 4, 5, 6, 0]; // Mon–Sun
+const weekdayShort = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const TITLE_TEXT_METRICS_CLASS =
     "text-base sm:text-lg font-medium leading-normal [font-kerning:none] [font-variant-ligatures:none] [font-feature-settings:'liga'_0,'clig'_0]";
 

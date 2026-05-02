@@ -140,7 +140,7 @@ export function useTaskDetailActions({
 
             if (!error && data) {
                 const friendsList = data
-                    .map((f) => f.friend as FriendOption | null)
+                    .map((f) => f.friend as unknown as FriendOption | null)
                     .filter((f): f is FriendOption => Boolean(f && f.id));
                 setFriends(friendsList);
             }
