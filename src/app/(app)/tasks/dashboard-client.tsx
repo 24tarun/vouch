@@ -1008,7 +1008,7 @@ export default function DashboardClient({
             className="group flex items-center justify-between gap-3 py-2 md:py-3 rounded-md hover:bg-slate-900/20 -mx-4 px-4 transition-colors"
         >
             <div className="min-w-0 flex items-center gap-2 overflow-hidden">
-                <p className="min-w-0 truncate text-sm font-medium text-white">{task.title}</p>
+                <p className="min-w-0 truncate text-lg font-medium text-white">{task.title}</p>
                 <TaskStatusBadge status={task.status} className="font-medium tracking-normal shrink-0" />
             </div>
             <ExternalLink className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-white" />
@@ -1051,11 +1051,11 @@ export default function DashboardClient({
     };
 
     return (
-        <div className="max-w-3xl mx-auto space-y-4 md:space-y-6 px-4 md:px-0 pb-14">
+        <div className="max-w-4xl mx-auto space-y-4 md:space-y-6 px-4 md:px-0 pb-14">
             <TaskDetailPrefetcher tasks={prefetchTasks} />
             <div className="mb-4 md:mb-8 space-y-3">
                 <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-bold text-white">{`Hi ${username}`}</h1>
+                    <h1 className="text-3xl font-bold text-white">{`Hi ${username}`}</h1>
                     <DashboardHeaderActions
                         tipsVisible={!tipsHidden}
                         onToggleTips={() => {
@@ -1080,7 +1080,7 @@ export default function DashboardClient({
                                     type="search"
                                     value={taskSearchQuery}
                                     onChange={(event) => setTaskSearchQuery(event.target.value)}
-                                    className="min-w-0 w-full bg-transparent py-2 pl-1 pr-2 text-sm text-slate-100 focus:outline-none"
+                                    className="min-w-0 w-full bg-transparent py-2 pl-1 pr-2 text-base text-slate-100 focus:outline-none"
                                     aria-label="Search tasks"
                                 />
                             </div>
@@ -1100,7 +1100,7 @@ export default function DashboardClient({
                 onCreateTaskOptimistic={handleCreateTaskOptimistic}
             />
             {!tipsHidden && (
-                <div className="space-y-1 px-1 text-[10px] text-slate-400 font-mono uppercase tracking-wider">
+                <div className="space-y-1 px-1 text-xs text-slate-400 font-mono uppercase tracking-wider">
                     <p>Parser tips:</p>
                     <p>Time: use @20:45, @2045, or @8</p>
                     <p>Date: use 28th, 05/03, 5/3, or 05/03/2026</p>
@@ -1123,22 +1123,22 @@ export default function DashboardClient({
 
             {isTaskSearchActive ? (
                 <div className="space-y-2">
-                    <div className="px-1 text-[10px] text-slate-400 font-mono uppercase tracking-wider">
+                    <div className="px-1 text-xs text-slate-400 font-mono uppercase tracking-wider">
                         {isTaskSearchLoading
                             ? "Searching tasks..."
                             : `${taskSearchResults.length} result${taskSearchResults.length === 1 ? "" : "s"}`}
                     </div>
                     {taskSearchError ? (
                         <div className="text-center py-10">
-                            <p className="text-red-400 text-sm">{taskSearchError}</p>
+                            <p className="text-red-400 text-base">{taskSearchError}</p>
                         </div>
                     ) : isTaskSearchLoading ? (
                         <div className="text-center py-10">
-                            <p className="text-slate-500 text-sm">Searching…</p>
+                            <p className="text-slate-500 text-base">Searching…</p>
                         </div>
                     ) : taskSearchResults.length === 0 ? (
                         <div className="text-center py-10">
-                            <p className="text-slate-500 text-sm">No matching tasks found.</p>
+                            <p className="text-slate-500 text-base">No matching tasks found.</p>
                         </div>
                     ) : (
                         <div className="flex flex-col">
@@ -1151,7 +1151,7 @@ export default function DashboardClient({
                     <div className="flex flex-col">
                         {activeDueSoonTasks.length === 0 ? (
                             <div className="text-center py-12">
-                                <p className="text-slate-500 text-sm">no tasks for today or tmrw, maybe check future?</p>
+                                <p className="text-slate-500 text-base">no tasks for today or tmrw, maybe check future?</p>
                             </div>
                         ) : (
                             activeDueSoonTasks.map((task) => renderActiveTaskRow(task))

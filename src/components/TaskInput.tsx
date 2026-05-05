@@ -821,7 +821,7 @@ export const TaskInput = forwardRef<TaskInputHandle, TaskInputProps>(function Ta
                                 />
                             </div>
 
-                            <div className={`min-w-[112px] max-w-[220px] flex-1 shrink ${showShake ? "animate-shake" : ""}`}>
+                            <div className={`min-w-[112px] flex-1 shrink ${showShake ? "animate-shake" : ""}`}>
                                 <Select value={selectedVoucherId} onValueChange={setSelectedVoucherId}>
                                     <SelectTrigger className="h-9 w-full bg-slate-800/30 border-slate-700/30 text-slate-300 text-[10px] font-mono focus:ring-0 rounded-lg px-2.5">
                                         <span className="flex min-w-0 items-center">
@@ -858,7 +858,7 @@ export const TaskInput = forwardRef<TaskInputHandle, TaskInputProps>(function Ta
                                 onClick={handleCalendarClick}
                                 onDoubleClick={resetDeadlineToDefault}
                                 className={cn(
-                                    "h-9 max-w-[180px] shrink-0 px-2.5 bg-slate-800/30 hover:bg-slate-700/30 border border-slate-700/30 text-slate-400 hover:text-slate-200 rounded-lg transition-all flex items-center justify-start gap-1.5",
+                                    "h-9 min-w-[160px] flex-1 px-2.5 bg-slate-800/30 hover:bg-slate-700/30 border border-slate-700/30 text-slate-400 hover:text-slate-200 rounded-lg transition-all flex items-center justify-start gap-1.5",
                                     selectedDate && "text-blue-400 border-blue-500/30 bg-blue-500/5"
                                 )}
                                 title={formatDeadlineTitle(selectedDate, hasMounted)}

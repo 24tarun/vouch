@@ -503,7 +503,7 @@ export function TaskRow({
                 taskId={task.id}
                 variant="icon"
                 defaultDurationMinutes={normalizedDefaultPomoDuration}
-                className="h-10 w-10 p-0 justify-center text-cyan-300 hover:text-cyan-200 disabled:text-slate-500 [&_svg]:h-[18px] [&_svg]:w-[18px]"
+                className="h-10 w-10 p-0 justify-center text-cyan-300 hover:text-cyan-200 hover:bg-slate-800 disabled:text-slate-500 [&_svg]:h-[18px] [&_svg]:w-[18px]"
             />
 
             {canDeleteButtonBeShown && (
@@ -603,7 +603,7 @@ export function TaskRow({
                     <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
                             <p
                                 className={cn(
-                                "min-w-0 text-sm font-medium truncate",
+                                "min-w-0 text-lg font-medium truncate",
                                     isActuallyCompleted
                                         ? cn("line-through", currentStatusColor || "text-slate-400")
                                         : "text-white"
@@ -613,7 +613,7 @@ export function TaskRow({
                         </p>
                         {task.recurrence_rule_id && <RecurringIndicator />}
                         {hasSubtasks && (
-                            <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                            <span className="text-xs text-slate-500 font-mono shrink-0">
                                 {completedSubtasksCount}/{subtasks.length}
                             </span>
                         )}
@@ -627,13 +627,13 @@ export function TaskRow({
                                 type="button"
                                 variant="ghost"
                                 onClick={handleExpandToggle}
-                                className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700/80 js-subtask-toggle"
+                                className="h-9 w-9 p-0 text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700/80 js-subtask-toggle"
                                 aria-label={isExpanded ? "Collapse subtasks" : (hasSubtasks ? "Expand subtasks" : "Add subtasks")}
                                 title={isExpanded ? "Collapse subtasks" : (hasSubtasks ? "Expand subtasks" : "Add subtasks")}
                             >
                                 {isExpanded
-                                    ? <ChevronDown className="h-3.5 w-3.5" />
-                                    : (hasSubtasks ? <ChevronRight className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />)
+                                    ? <ChevronDown className="h-[18px] w-[18px]" />
+                                    : (hasSubtasks ? <ChevronRight className="h-[18px] w-[18px]" /> : <Plus className="h-[18px] w-[18px]" />)
                                 }
                             </Button>
                         )}
@@ -644,7 +644,7 @@ export function TaskRow({
                                 variant="ghost"
                                 onClick={() => onAttachProof?.(task)}
                                 className={cn(
-                                    "h-7 w-7 p-0 border",
+                                    "h-9 w-9 p-0 border",
                                     hasProofAttached
                                         ? "text-pink-400 border-pink-400/40 bg-pink-400/10 hover:bg-pink-400/20"
                                         : "text-slate-300 border-slate-700/80 hover:text-white hover:bg-slate-800"
@@ -652,7 +652,7 @@ export function TaskRow({
                                 aria-label="Attach proof"
                                 title={hasProofAttached ? "Proof attached" : (requiresProofForCompletion ? "Attach proof (required)" : "Attach proof (optional)")}
                             >
-                                <Camera className="h-3.5 w-3.5" />
+                                <Camera className="h-[18px] w-[18px]" />
                             </Button>
                         )}
 
@@ -663,7 +663,7 @@ export function TaskRow({
                                 onClick={handleDelete}
                                 disabled={isDeleting || !canDelete}
                                 className={cn(
-                                    "h-7 w-7 p-0 border transition-colors",
+                                    "h-9 w-9 p-0 border transition-colors",
                                     canDelete
                                         ? "text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-500/30"
                                         : "text-slate-500 border-slate-700/80 cursor-not-allowed"
@@ -675,14 +675,14 @@ export function TaskRow({
                                         ? "Saving task..."
                                         : "Delete available only within 10 minutes of creation"}
                             >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Trash2 className="h-[18px] w-[18px]" />
                             </Button>
                         )}
 
                         <Button
                             asChild={!task.id.startsWith("temp-")}
                             variant="ghost"
-                            className="h-7 w-7 p-0 text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-default"
+                            className="h-9 w-9 p-0 text-slate-300 hover:text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-default"
                             aria-label="Open task"
                             title="Open task"
                             disabled={task.id.startsWith("temp-")}
@@ -693,7 +693,7 @@ export function TaskRow({
                             }}
                         >
                             <Link href={detailPath} prefetch>
-                                <ExternalLink className="h-3.5 w-3.5" />
+                                <ExternalLink className="h-[18px] w-[18px]" />
                             </Link>
                         </Button>
                     </div>
@@ -715,7 +715,7 @@ export function TaskRow({
                             {renderCheckQuickAction()}
                             <p
                                 className={cn(
-                                    "min-w-0 text-sm font-medium truncate",
+                                    "min-w-0 text-lg font-medium truncate",
                                     isActuallyCompleted
                                         ? cn("line-through", currentStatusColor || "text-slate-400")
                                         : "text-white"
@@ -726,13 +726,13 @@ export function TaskRow({
                             </p>
                             {task.recurrence_rule_id && <RecurringIndicator />}
                             {hasSubtasks && (
-                                <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                                <span className="text-xs text-slate-500 font-mono shrink-0">
                                     {completedSubtasksCount}/{subtasks.length}
                                 </span>
                             )}
                         </div>
                         <div className="shrink-0 flex items-center gap-2">
-                            <span suppressHydrationWarning className={cn("text-xs whitespace-nowrap", isOverdue ? "text-red-500 font-bold" : "text-slate-400")}>
+                            <span suppressHydrationWarning className={cn("text-sm whitespace-nowrap", isOverdue ? "text-red-500 font-bold" : "text-slate-400")}>
                                 {deadlineLabel}
                             </span>
                             {renderActiveQuickActions(false)}
@@ -762,7 +762,7 @@ export function TaskRow({
                             <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
                                 <p
                                     className={cn(
-                                        "text-sm font-medium truncate",
+                                        "text-lg font-medium truncate",
                                         isActuallyCompleted
                                             ? cn("line-through", currentStatusColor || "text-slate-400")
                                             : "text-white"
@@ -773,7 +773,7 @@ export function TaskRow({
                                 </p>
                                 {task.recurrence_rule_id && <RecurringIndicator />}
                                 {hasSubtasks && (
-                                    <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                                    <span className="text-xs text-slate-500 font-mono shrink-0">
                                         {completedSubtasksCount}/{subtasks.length}
                                     </span>
                                 )}
@@ -821,7 +821,7 @@ export function TaskRow({
                                     taskId={task.id}
                                     variant="icon"
                                     defaultDurationMinutes={normalizedDefaultPomoDuration}
-                                    className="h-10 w-10 p-0 justify-center text-cyan-300 disabled:text-slate-600 [&_svg]:h-[18px] [&_svg]:w-[18px]"
+                                    className="h-10 w-10 p-0 justify-center text-cyan-300 hover:bg-slate-800 disabled:text-slate-600 [&_svg]:h-[18px] [&_svg]:w-[18px]"
                                 />
 
                                 <button
@@ -943,7 +943,7 @@ export function TaskRow({
                                         }}
                                         onBlur={() => void handleSubtaskRename()}
                                         autoFocus
-                                        className="flex-1 min-w-0 bg-transparent border-b border-slate-500 text-base md:text-sm text-slate-300 focus:outline-none focus:border-slate-400 py-0.5"
+                                        className="flex-1 min-w-0 bg-transparent border-b border-slate-500 text-base text-slate-300 focus:outline-none focus:border-slate-400 py-0.5"
                                     />
                                 ) : (
                                     <button
@@ -951,7 +951,7 @@ export function TaskRow({
                                         disabled={isPending}
                                         onClick={() => startEditingSubtask(subtask.id, subtask.title)}
                                         className={cn(
-                                            "flex-1 min-w-0 text-left text-sm transition-colors py-1",
+                                            "flex-1 min-w-0 text-left text-base transition-colors py-1",
                                             subtask.is_completed ? "text-slate-500 line-through" : "text-slate-300",
                                             canEditSubtasks && !isPending && "hover:text-white cursor-text",
                                             isPending && "cursor-not-allowed opacity-60"
@@ -1009,7 +1009,7 @@ export function TaskRow({
                                 }}
                                 placeholder="Add subtask…"
                                 ref={newSubtaskInputRef}
-                                className="flex-1 min-w-0 bg-transparent border-b border-slate-700/60 text-base md:text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-slate-500 py-1"
+                                className="flex-1 min-w-0 bg-transparent border-b border-slate-700/60 text-base text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-slate-500 py-1"
                             />
                         </div>
                     )

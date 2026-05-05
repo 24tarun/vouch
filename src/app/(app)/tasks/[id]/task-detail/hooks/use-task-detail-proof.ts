@@ -404,9 +404,6 @@ export function useTaskDetailProof({
                 } else if (!proofIntent) {
                     void purgeLocalProofMedia(taskState.id);
                 }
-                if (potentialRp !== null && potentialRp > 0) {
-                    toast.success(`You may earn +${potentialRp} RP`);
-                }
                 refreshInBackground();
             },
         });

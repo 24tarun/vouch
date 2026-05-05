@@ -30,7 +30,7 @@ export function PomoButton({
     const normalizedDefaultDuration = normalizePomoDurationMinutes(defaultDurationMinutes);
     const [durationInput, setDurationInput] = useState(String(normalizedDefaultDuration));
     const isActive = session?.task_id === taskId && session?.status === "ACTIVE";
-    const iconButtonClass = "inline-flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+    const iconButtonClass = "inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 
     useEffect(() => {
         setDurationInput(String(normalizedDefaultDuration));
